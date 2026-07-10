@@ -10,6 +10,7 @@ packages/shared      Zod contracts shared by every app (Bible §8, §10)
 apps/api             Express API + Claude multi-agent decision engine (Bible §7, §8, §10)
 apps/extension       Chrome MV3 extension — LinkedIn sidebar (Bible §6.1, §18 Epic 1)
 apps/slack-bot       Bolt.js Socket Mode bot — alerts, outcome nudges, /argus-queue (Bible §6.4, §18 Epic 3)
+apps/dashboard       Next.js 16 App Router + Clerk + Today Queue (Bible §6.2, §18 Epic 5)
 ```
 
 ## Prerequisites
@@ -46,6 +47,7 @@ npm run build         # builds packages/database and packages/shared first (depe
 ```
 npm run dev:api        # apps/api in watch mode (tsx)
 npm run dev --workspace=@argus/slack-bot   # Slack Bot in watch mode
+npm run dev --workspace=@argus/dashboard   # Dashboard on http://localhost:3000
 ```
 
 The Chrome extension is loaded unpacked from `apps/extension/dist` after `npm run build --workspace=@argus/extension` (or `npm run dev --workspace=@argus/extension` for HMR during development): open `chrome://extensions`, enable Developer Mode, "Load unpacked", select that folder.
@@ -57,6 +59,8 @@ Every JWT-authenticated request (`middleware/auth.ts`) looks up a `User` row by 
 1. In the Clerk Dashboard, add a webhook endpoint pointing at `POST /api/v1/webhooks/clerk`, subscribed to `user.created` and `user.updated`. Copy its signing secret into `CLERK_WEBHOOK_SECRET`.
 2. On `user.created`, ARGUS auto-provisions a personal FREE-tier `Team` for the new user (Bible has no "create your team" onboarding wireframe — this is the standard solo-signup pattern, matching the Founder Sam persona in §4.3) and creates the `User` row with `id` set to Clerk's user id.
 3. `user.deleted` is intentionally not implemented yet — see Known gaps.
+
+The dashboard additionally needs its own Clerk SDK credentials (distinct from the JWT-verification config above) in `apps/dashboard/.env.local`: `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`, from the same Clerk Dashboard's API Keys page. Without real values, `next dev`/`next build` still run, but every page 500s with `@clerk/backend: Missing publishableKey` — an honest, correct failure mode, not a bug to paper over with a fake-looking key.
 
 ### Connecting Slack
 
@@ -74,6 +78,9 @@ The Slack Bot serves every connected team from one process (Bible §18 Epic 3), 
 - The Full Debate View (§6.5) is an explicit P1 roadmap item — Slack's "View More" shows expanded evidence, not the full 5-agent debate.
 - `Integration.config` stores the Slack bot token and a generated API key in plaintext JSON — Bible §18 INF-4 ("Data encryption at rest") is an explicit, not-yet-built P1 item.
 - Clerk's `user.deleted` webhook is logged, not acted on — hard-deleting would violate the Decision/Outcome/MessageDraft foreign keys against that user, and a real implementation needs a GDPR-safe anonymization strategy (Bible §16.1 Risk #7, itself an explicit not-yet-built item).
+- The dashboard's Today Queue page has no filter/sort controls yet (Bible §18 DSH-2's "Filter and sort controls" is an explicit P1 item) and no Analytics/Company Memory/Settings pages (DSH-3/4/5, mostly P1/P2).
+- Queue item cards link out to the prospect's real LinkedIn profile instead of wiring up the wireframe's View/Message/Snooze buttons — those need the same ActionTaken write path noted above, which doesn't exist yet.
+- A transitive `postcss` vulnerability (GHSA-qx2v-qp2m-jg93) ships inside Next.js's own vendored dependency (`next/node_modules/postcss`) with no fix currently available upstream — not introduced by this codebase and not safely fixable without downgrading Next.js.
 
 ## Testing
 
