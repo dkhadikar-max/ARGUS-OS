@@ -9,6 +9,7 @@ import {
   linkSlackUser as linkSlackUserRecord,
 } from "./integration.repository.js";
 import type { SlackIntegrationConfig } from "./integration.repository.js";
+import { track } from "../../lib/analytics.js";
 
 const ADMIN_ROLES = new Set(["ADMIN", "FOUNDER", "MANAGER"]);
 
@@ -31,7 +32,25 @@ export async function connectSlack(
     throw new AppError("FORBIDDEN", "Only a team admin can connect Slack");
   }
 
+  const startedAt = Date.now();
   const apiKey = await connectSlackIntegration(auth.teamId, request);
+
+  if (auth.userId) {
+    // Bible §11.1 integration_connected: "time_to_connect_ms" is meant for
+    // an OAuth redirect-to-callback duration (§18 SLK-1's not-yet-built
+    // "Add to Slack" flow — see README). Until that exists, this measures
+    // the actual connect-request latency instead of fabricating a number;
+    // an honest (if differently-scoped) value rather than a made-up one.
+    track(auth.userId, {
+      name: "integration_connected",
+      properties: {
+        provider: "slack",
+        auth_method: "manual_token",
+        time_to_connect_ms: Date.now() - startedAt,
+      },
+    });
+  }
+
   return { teamId: auth.teamId, apiKey };
 }
 

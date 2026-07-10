@@ -74,6 +74,12 @@ The Slack Bot serves every connected team from one process (Bible §18 Epic 3), 
 
 `POST /api/v1/decisions` caches the Claude agent-debate output (not the final API response) in Redis, keyed `decision:{prospectId}:{teamId}:{icpVersion}` with a 24h TTL, exactly matching the Bible §9.2 Redis schema. A cache hit skips the ~$0.04-0.06, multi-second Claude call entirely, but still creates its own `Decision` row — each request is its own auditable event even when the underlying AI analysis is reused. Invalidation: logging an outcome invalidates the cache for that prospect (new ground truth the cached debate didn't have); an ICP edit doesn't need active invalidation since a new `icpVersion` is simply a cache miss by construction, so stale-version entries just expire via the TTL instead of being purged.
 
+### Observability (Bible §18 INF-2, §11)
+
+`apps/api` wires Sentry error tracking (`lib/sentry.ts`, capturing every 5xx in `middleware/error-handler.ts`) and PostHog event tracking (`lib/analytics.ts`) using the exact event names and properties from Bible §11.1 — the full catalog is typed as a discriminated union in `packages/shared/src/schemas/analytics.ts` so every call site is checked against the Bible's spec at compile time, not just by convention. Both are env-var-gated (`SENTRY_DSN`, `POSTHOG_API_KEY`) and no-op safely without real credentials, same pattern as `CLERK_WEBHOOK_SECRET`/`INTERNAL_SERVICE_TOKEN`. Currently wired at the points that occur server-side: `verdict_generated` and `verdict_overridden` (decision service), `outcome_logged` (outcome service), `integration_connected` (Slack connect). Client-only events (`sidebar_opened`, `message_copied`, `message_edited`, `queue_viewed`, etc.) aren't wired yet — a Chrome extension needs posthog-js configured carefully around Manifest V3's Content Security Policy (no remote/eval'd code), which deserves its own pass rather than a rushed one; see Known gaps.
+
+**A dependency-pinning note**: `posthog-node` is pinned to the exact version `5.21.0` (not `^5.21.0`) because every version from `5.22.0` onward declares `engines.node: "^20.20.0 || >=22.22.0"` — this machine runs `20.19.4`, one patch version below that floor. A caret range would let `npm install` silently resolve to an incompatible version.
+
 ### Known gaps (flagged, not hidden)
 
 - No self-serve "Add to Slack" OAuth flow — connecting a workspace requires the manual API call above (§18 SLK-1's "OAuth installation flow" is the natural next task).
@@ -85,6 +91,8 @@ The Slack Bot serves every connected team from one process (Bible §18 Epic 3), 
 - The dashboard's Today Queue page has no filter/sort controls yet (Bible §18 DSH-2's "Filter and sort controls" is an explicit P1 item) and no Analytics/Company Memory/Settings pages (DSH-3/4/5, mostly P1/P2).
 - Queue item cards link out to the prospect's real LinkedIn profile instead of wiring up the wireframe's View/Message/Snooze buttons — those need the same ActionTaken write path noted above, which doesn't exist yet.
 - A transitive `postcss` vulnerability (GHSA-qx2v-qp2m-jg93) ships inside Next.js's own vendored dependency (`next/node_modules/postcss`) with no fix currently available upstream — not introduced by this codebase and not safely fixable without downgrading Next.js.
+- Client-side PostHog events (`sidebar_opened`, `message_copied`, `message_edited` in the extension; `queue_viewed`, `queue_item_clicked` in the dashboard) aren't wired yet — only the server-side events in apps/api are. The Chrome extension in particular needs its posthog-js setup checked carefully against Manifest V3's CSP (no remote or eval'd code) before shipping it.
+- No Datadog/Railway infra metrics (Bible §18 INF-2's "Datadog / Railway metrics", an explicit P1 item) — Sentry and PostHog cover errors and product events, not infrastructure metrics.
 
 ## Testing
 

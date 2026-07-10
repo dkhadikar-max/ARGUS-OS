@@ -41,6 +41,12 @@ const envSchema = z.object({
   RATE_LIMIT_PAID_PER_HOUR: z.coerce.number().int().positive().default(500),
 
   SENTRY_DSN: z.string().optional(),
+
+  // Bible §18 INF-2 "PostHog event tracking" — see lib/analytics.ts. Both
+  // optional: analytics no-ops safely when unset, same pattern as every
+  // other external-service credential in this schema.
+  POSTHOG_API_KEY: z.string().optional(),
+  POSTHOG_HOST: z.string().default("https://app.posthog.com"),
 });
 
 export type Env = z.infer<typeof envSchema>;

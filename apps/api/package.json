@@ -15,6 +15,7 @@
     "@anthropic-ai/sdk": "^0.27.3",
     "@argus/database": "*",
     "@argus/shared": "*",
+    "@sentry/node": "^10.65.0",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "express": "^4.21.0",
@@ -22,6 +23,7 @@
     "jose": "^5.9.3",
     "pino": "^9.4.0",
     "pino-http": "^10.3.0",
+    "posthog-node": "5.21.0",
     "svix": "^1.96.1",
     "zod": "^3.23.8"
   },

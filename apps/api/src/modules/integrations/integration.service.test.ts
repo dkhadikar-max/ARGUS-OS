@@ -12,6 +12,9 @@ const repo = {
 };
 vi.mock("./integration.repository.js", () => repo);
 
+const track = vi.fn();
+vi.mock("../../lib/analytics.js", () => ({ track }));
+
 const { connectSlack, resolveSlackTeam, linkSlackUser, resolveSlackUser } = await import(
   "./integration.service.js"
 );
@@ -42,6 +45,13 @@ describe("connectSlack", () => {
 
     expect(result).toEqual({ teamId: "team_1", apiKey: "argus_slack_rawkey123" });
     expect(repo.connectSlackIntegration).toHaveBeenCalledWith("team_1", connectRequest);
+    expect(track).toHaveBeenCalledWith(
+      "u1",
+      expect.objectContaining({
+        name: "integration_connected",
+        properties: expect.objectContaining({ provider: "slack", auth_method: "manual_token" }),
+      }),
+    );
   });
 });
 

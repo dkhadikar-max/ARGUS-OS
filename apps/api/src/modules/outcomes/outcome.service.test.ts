@@ -20,6 +20,9 @@ vi.mock("../../lib/pubsub.js", () => ({ publishTeamEvent }));
 const invalidateDecisionCache = vi.fn();
 vi.mock("../../lib/decision-cache.js", () => ({ invalidateDecisionCache }));
 
+const track = vi.fn();
+vi.mock("../../lib/analytics.js", () => ({ track }));
+
 const { createOutcome, listOutcomesForTeam } = await import("./outcome.service.js");
 
 const auth: AuthContext = { type: "user", userId: "user_1", teamId: "team_1", planTier: "FREE" };
@@ -87,6 +90,13 @@ describe("createOutcome", () => {
       expect.objectContaining({ type: "outcome.logged" }),
     );
     expect(invalidateDecisionCache).toHaveBeenCalledWith("prospect_1", "team_1");
+    expect(track).toHaveBeenCalledWith(
+      "user_1",
+      expect.objectContaining({
+        name: "outcome_logged",
+        properties: expect.objectContaining({ decision_id: "dec_1", outcome_type: "MEETING_BOOKED", feedback_provided: true }),
+      }),
+    );
   });
 });
 

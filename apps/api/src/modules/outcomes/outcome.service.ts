@@ -11,6 +11,7 @@ import {
 } from "./outcome.repository.js";
 import { publishTeamEvent } from "../../lib/pubsub.js";
 import { invalidateDecisionCache } from "../../lib/decision-cache.js";
+import { track } from "../../lib/analytics.js";
 
 const MEETING_OUTCOME_TYPES = new Set(["MEETING_BOOKED", "OPPORTUNITY_CREATED", "CLOSED_WON"]);
 
@@ -90,6 +91,16 @@ export async function createOutcome(
       teamId: auth.teamId,
       userId: auth.userId,
       outcomeType: outcome.type,
+    },
+  });
+
+  track(auth.userId, {
+    name: "outcome_logged",
+    properties: {
+      decision_id: outcome.decisionId,
+      outcome_type: outcome.type,
+      time_to_outcome_days: outcome.timeToOutcomeDays,
+      feedback_provided: Boolean(outcome.feedback),
     },
   });
 

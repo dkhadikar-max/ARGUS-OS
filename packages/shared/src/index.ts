@@ -6,3 +6,4 @@ export * from "./schemas/queue.js";
 export * from "./schemas/errors.js";
 export * from "./schemas/icp.js";
 export * from "./schemas/integration.js";
+export * from "./schemas/analytics.js";

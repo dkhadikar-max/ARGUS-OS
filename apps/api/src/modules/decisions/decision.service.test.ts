@@ -26,6 +26,9 @@ const getCachedDebateOutput = vi.fn();
 const setCachedDebateOutput = vi.fn();
 vi.mock("../../lib/decision-cache.js", () => ({ getCachedDebateOutput, setCachedDebateOutput }));
 
+const track = vi.fn();
+vi.mock("../../lib/analytics.js", () => ({ track }));
+
 const { createDecision, getDecision, overrideDecision } = await import("./decision.service.js");
 
 const auth: AuthContext = { type: "user", userId: "user_1", teamId: "team_1", planTier: "FREE" };
@@ -145,6 +148,13 @@ describe("createDecision", () => {
       "none",
       agentDebateOutput,
     );
+    expect(track).toHaveBeenCalledWith(
+      "user_1",
+      expect.objectContaining({
+        name: "verdict_generated",
+        properties: expect.objectContaining({ decision_id: "dec_1", verdict: "STRONG_YES" }),
+      }),
+    );
   });
 
   it("skips the Claude call entirely on a cache hit (Bible §18 AI-5)", async () => {
@@ -239,6 +249,13 @@ describe("overrideDecision", () => {
     expect(result.newVerdict).toBe("PASS");
     expect(repo.createOverride).toHaveBeenCalledWith(
       expect.objectContaining({ originalVerdict: "YES", newVerdict: "PASS" }),
+    );
+    expect(track).toHaveBeenCalledWith(
+      "user_1",
+      expect.objectContaining({
+        name: "verdict_overridden",
+        properties: { decision_id: "dec_1", original_verdict: "YES", new_verdict: "PASS", reason: "Already a customer" },
+      }),
     );
   });
 });

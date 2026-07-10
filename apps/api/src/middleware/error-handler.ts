@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError, ERROR_CODE_HTTP_STATUS, type ApiError } from "@argus/shared";
 import { logger } from "../lib/logger.js";
+import { captureException } from "../lib/sentry.js";
 
 /** Bible §10.7 — every non-2xx response uses this envelope and code table. */
 export function errorHandler(
@@ -22,6 +23,7 @@ export function errorHandler(
     };
     if (status >= 500) {
       logger.error({ err, path: req.path }, "Request failed with server error");
+      captureException(err, { path: req.path, code: err.code });
     }
     res.status(status).json(body);
     return;
@@ -33,6 +35,7 @@ export function errorHandler(
   // of the documented codes (e.g. AI_UNAVAILABLE would be misleading if the
   // failure had nothing to do with Claude).
   logger.error({ err, path: req.path }, "Unhandled error");
+  captureException(err, { path: req.path });
   res.status(500).json({
     error: {
       code: "INTERNAL_ERROR",

@@ -1,7 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { Request, Response } from "express";
 import { AppError } from "@argus/shared";
-import { errorHandler } from "./error-handler.js";
+
+const captureException = vi.fn();
+vi.mock("../lib/sentry.js", () => ({ captureException }));
+
+const { errorHandler } = await import("./error-handler.js");
 
 function mockResponse() {
   const res = {
@@ -22,6 +26,10 @@ function mockResponse() {
 const req = { path: "/api/v1/decisions" } as Request;
 const next = vi.fn();
 
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
 describe("errorHandler", () => {
   it("maps AppError to its Bible §10.7 status code and envelope", () => {
     const res = mockResponse();
@@ -40,6 +48,8 @@ describe("errorHandler", () => {
         retryAfter: 42,
       },
     });
+    // 4xx are expected client errors, not incidents -- shouldn't page anyone.
+    expect(captureException).not.toHaveBeenCalled();
   });
 
   it("includes validation details when present", () => {
@@ -63,11 +73,23 @@ describe("errorHandler", () => {
     });
   });
 
+  it("reports 5xx AppErrors to Sentry (Bible §18 INF-2)", () => {
+    const res = mockResponse();
+    errorHandler(new AppError("AI_UNAVAILABLE", "Claude is down"), req, res, next);
+
+    expect(res.statusCode).toBe(503);
+    expect(captureException).toHaveBeenCalledWith(
+      expect.any(AppError),
+      expect.objectContaining({ code: "AI_UNAVAILABLE" }),
+    );
+  });
+
   it("never mislabels an unexpected exception as a documented error code", () => {
     const res = mockResponse();
     errorHandler(new Error("db connection lost"), req, res, next);
 
     expect(res.statusCode).toBe(500);
     expect((res.body as { error: { code: string } }).error.code).toBe("INTERNAL_ERROR");
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ path: "/api/v1/decisions" }));
   });
 });

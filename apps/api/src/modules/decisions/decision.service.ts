@@ -15,6 +15,7 @@ import {
 import type { EvidenceType } from "@argus/database";
 import { publishTeamEvent } from "../../lib/pubsub.js";
 import { getCachedDebateOutput, setCachedDebateOutput } from "../../lib/decision-cache.js";
+import { track } from "../../lib/analytics.js";
 
 // Bible §8.3 classifies research data points as one of five lowercase
 // strings ("firmographic, demographic, technographic, intent, or risk"),
@@ -179,6 +180,21 @@ export async function createDecision(
     data: { decisionId: full.id, teamId: request.context.teamId, userId: request.context.userId },
   });
 
+  // Bible §11.1 verdict_generated: "AI returns verdict" — fires whenever a
+  // verdict reaches the requesting surface, whether freshly computed or
+  // served from the AI-5 cache; the funnels in §11.2 measure the rep
+  // reaching a verdict, not whether Claude happened to be called this time.
+  track(request.context.userId, {
+    name: "verdict_generated",
+    properties: {
+      decision_id: full.id,
+      verdict: full.verdict,
+      confidence: full.confidence,
+      processing_time_ms: processingTimeMs,
+      agent_consensus: full.agentConsensus ?? "unknown",
+    },
+  });
+
   return toDecisionResponse(full);
 }
 
@@ -216,6 +232,16 @@ export async function overrideDecision(
     originalVerdict: decision.verdict,
     newVerdict: request.newVerdict,
     reason: request.reason,
+  });
+
+  track(auth.userId, {
+    name: "verdict_overridden",
+    properties: {
+      decision_id: decision.id,
+      original_verdict: override.originalVerdict,
+      new_verdict: override.newVerdict,
+      reason: override.reason,
+    },
   });
 
   return {
