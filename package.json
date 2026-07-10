@@ -1,0 +1,25 @@
+{
+  "name": "argus-ai",
+  "version": "3.0.0",
+  "private": true,
+  "description": "ARGUS AI — The Decision Operating System for B2B Revenue Teams",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "npm run build --workspace=@argus/database --workspace=@argus/shared && npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "dev:api": "npm run dev --workspace=@argus/api",
+    "db:generate": "npm run generate --workspace=@argus/database",
+    "db:migrate": "npm run migrate --workspace=@argus/database"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}

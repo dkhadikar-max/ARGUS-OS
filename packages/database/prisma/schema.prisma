@@ -1,0 +1,481 @@
+// ARGUS AI — Prisma Schema
+// Source: Product Bible v3.0 §9.1 (Database Schema)
+// NOTE: EvidenceType.FIRMOGRAPHIC corrects a typo in the Bible source text
+// ("FIRMORGRAPHIC"), which would otherwise never match the correctly-spelled
+// "firmographic" literal produced by the Research Agent (Bible §8.3) and thus
+// silently fail Zod validation on every decision. This is the only deviation
+// from the literal Bible text in this file.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────────────────────────
+// CORE IDENTITY
+// ───────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  avatarUrl    String?
+  role         UserRole @default(SDR)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  lastActiveAt DateTime @default(now())
+
+  // Relations
+  team          Team?            @relation(fields: [teamId], references: [id])
+  teamId        String?
+  decisions     Decision[]
+  outcomes      Outcome[]
+  messageDrafts MessageDraft[]
+  preferences   UserPreferences?
+  overrides     Override[]
+  sessions      Session[]
+
+  @@index([teamId])
+  @@index([email])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  @@index([userId])
+  @@index([token])
+}
+
+enum UserRole {
+  SDR
+  AE
+  MANAGER
+  FOUNDER
+  ADMIN
+}
+
+// ───────────────────────────────────────────
+// TEAM & BILLING
+// ───────────────────────────────────────────
+
+model Team {
+  id            String        @id @default(cuid())
+  name          String
+  slug          String        @unique
+  plan          PlanTier      @default(FREE)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  billingStatus BillingStatus @default(TRIAL)
+  trialEndsAt   DateTime?
+  maxSeats      Int           @default(1)
+
+  // Relations
+  users         User[]
+  icp           ICPDefinition?
+  companyMemory CompanyMemory?
+  decisions     Decision[]
+  apiKeys       ApiKey[]
+  webhooks      Webhook[]
+  integrations  Integration[]
+
+  @@index([slug])
+}
+
+enum PlanTier {
+  FREE
+  STARTER
+  PRO
+  ENTERPRISE
+}
+
+enum BillingStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+}
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  keyHash    String    @unique
+  name       String
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+  revokedAt  DateTime?
+
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  teamId String
+
+  @@index([teamId])
+}
+
+// ───────────────────────────────────────────
+// ICP & COMPANY MEMORY
+// ───────────────────────────────────────────
+
+model ICPDefinition {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Criteria stored as JSON for flexibility
+  criteria Json // { criteria: [{ field, operator, value, weight }] }
+  version  Int  @default(1)
+  isActive Boolean @default(true)
+
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  teamId String @unique
+
+  @@index([teamId])
+}
+
+model CompanyMemory {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Patterns, rules, and insights extracted from outcomes
+  patterns  Json // { patterns: [{ description, evidence, confidence, type }] }
+  riskFlags Json // { flags: [{ condition, severity, recommendation }] }
+  icpHistory Json // { versions: [{ criteria, accuracy, date }] }
+
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  teamId String @unique
+
+  @@index([teamId])
+}
+
+// ───────────────────────────────────────────
+// PROSPECT & EVIDENCE
+// ───────────────────────────────────────────
+
+model Prospect {
+  id              String    @id @default(cuid())
+  linkedInUrl     String    @unique
+  email           String?
+  name            String
+  title           String?
+  companyName     String?
+  companyDomain   String?
+  companySize     String?
+  companyIndustry String?
+  companyFunding  String?
+  location        String?
+  rawProfile      Json? // Full scraped data
+  enrichedData    Json? // Apollo/Clearbit enrichment
+  vectorEmbedding String? // Pinecone reference ID
+  lastEnrichedAt  DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  decisions     Decision[]
+  evidence      Evidence[]
+  intentSignals IntentSignal[]
+
+  @@index([companyDomain])
+  @@index([companyIndustry])
+  @@index([vectorEmbedding])
+}
+
+model Evidence {
+  id          String         @id @default(cuid())
+  type        EvidenceType
+  source      EvidenceSource
+  data        Json // Structured evidence data
+  confidence  Int            @default(50) // 0-100
+  extractedAt DateTime       @default(now())
+  isStale     Boolean        @default(false)
+
+  prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  prospectId String
+  decision   Decision? @relation(fields: [decisionId], references: [id])
+  decisionId String?
+
+  @@index([prospectId])
+  @@index([decisionId])
+  @@index([type])
+}
+
+enum EvidenceType {
+  FIRMOGRAPHIC
+  DEMOGRAPHIC
+  TECHNOGRAPHIC
+  INTENT
+  MARKET
+  HISTORICAL
+  DERIVED
+}
+
+enum EvidenceSource {
+  LINKEDIN
+  APOLLO
+  CLEARBIT
+  CRM
+  MANUAL
+  INFERRED
+  USER_INPUT
+}
+
+model IntentSignal {
+  id          String    @id @default(cuid())
+  signalType  String // "job_posting", "funding", "social_post", etc.
+  description String
+  url         String?
+  rawData     Json?
+  score       Int       @default(0) // 0-10
+  detectedAt  DateTime  @default(now())
+  expiresAt   DateTime?
+
+  prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  prospectId String
+
+  @@index([prospectId])
+  @@index([signalType])
+  @@index([detectedAt])
+}
+
+// ───────────────────────────────────────────
+// DECISION GRAPH
+// ───────────────────────────────────────────
+
+model Decision {
+  id                String   @id @default(cuid())
+  verdict           Verdict
+  confidence        Int // 0-100
+  weightedScore     Float? // 0-100
+  reasoning         String // Judge's reasoning
+  recommendedAction String? // "message_now", "wait", etc.
+  agentConsensus    String? // "high", "medium", "low"
+  agentOutputs      Json? // Full agent outputs for audit
+  processingTimeMs  Int? // Performance tracking
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+  team       Team     @relation(fields: [teamId], references: [id])
+  teamId     String
+  prospect   Prospect @relation(fields: [prospectId], references: [id])
+  prospectId String
+
+  evidence      Evidence[]
+  messageDrafts MessageDraft[]
+  outcome       Outcome?
+  override      Override?
+  actionTaken   ActionTaken?
+
+  @@index([userId])
+  @@index([teamId])
+  @@index([prospectId])
+  @@index([verdict])
+  @@index([createdAt])
+  @@index([userId, createdAt])
+}
+
+enum Verdict {
+  STRONG_YES
+  YES
+  WAIT
+  PASS
+  HARD_PASS
+}
+
+model Override {
+  id              String   @id @default(cuid())
+  originalVerdict Verdict
+  newVerdict      Verdict
+  reason          String?
+  createdAt       DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+  decision   Decision @relation(fields: [decisionId], references: [id])
+  decisionId String   @unique
+
+  @@index([userId])
+  @@index([decisionId])
+}
+
+// ───────────────────────────────────────────
+// ACTION GRAPH
+// ───────────────────────────────────────────
+
+model MessageDraft {
+  id                   String   @id @default(cuid())
+  channel              Channel
+  body                 String   @db.Text
+  tone                 String // "professional", "casual", "bold"
+  personalizationHooks Json? // Signals used
+  wasAccepted          Boolean  @default(false)
+  wasEdited            Boolean  @default(false)
+  editDiff             String? // If edited, store diff
+  createdAt            DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+  decision   Decision @relation(fields: [decisionId], references: [id])
+  decisionId String
+
+  @@index([userId])
+  @@index([decisionId])
+}
+
+enum Channel {
+  LINKEDIN
+  EMAIL
+  SLACK
+  OTHER
+}
+
+model ActionTaken {
+  id         String     @id @default(cuid())
+  actionType ActionType
+  details    Json?
+  timestamp  DateTime   @default(now())
+
+  decision   Decision @relation(fields: [decisionId], references: [id])
+  decisionId String   @unique
+
+  @@index([decisionId])
+}
+
+enum ActionType {
+  MESSAGE_SENT
+  MESSAGE_COPIED
+  CRM_UPDATED
+  MEETING_BOOKED
+  PASSED
+  SNOOZED
+  RESEARCHED_MORE
+}
+
+// ───────────────────────────────────────────
+// OUTCOME GRAPH
+// ───────────────────────────────────────────
+
+model Outcome {
+  id                String      @id @default(cuid())
+  type              OutcomeType
+  value             Float? // Revenue value if closed
+  timeToOutcomeDays Int? // Days from decision to outcome
+  feedback          String? // Free-text feedback
+  loggedAt          DateTime    @default(now())
+  loggedBy          String // User ID who logged
+
+  decision   Decision @relation(fields: [decisionId], references: [id])
+  decisionId String   @unique
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+
+  @@index([decisionId])
+  @@index([userId])
+  @@index([type])
+  @@index([loggedAt])
+}
+
+enum OutcomeType {
+  NO_RESPONSE
+  REPLIED_NO_MEETING
+  MEETING_BOOKED
+  OPPORTUNITY_CREATED
+  CLOSED_WON
+  CLOSED_LOST
+  DISQUALIFIED
+  SNOOZED
+}
+
+// ───────────────────────────────────────────
+// USER PREFERENCES & SETTINGS
+// ───────────────────────────────────────────
+
+model UserPreferences {
+  id               String   @id @default(cuid())
+  messageTone      String   @default("professional")
+  messageLength    String   @default("medium") // short, medium, long
+  autoVerdict      Boolean  @default(false) // Auto-deliver verdict without click
+  sidebarPosition  String   @default("right") // left, right
+  defaultChannel   Channel  @default(LINKEDIN)
+  digestFrequency  String   @default("daily") // never, daily, weekly
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @unique
+
+  @@index([userId])
+}
+
+// ───────────────────────────────────────────
+// INTEGRATIONS & WEBHOOKS
+// ───────────────────────────────────────────
+
+model Integration {
+  id         String            @id @default(cuid())
+  provider   String // "salesforce", "hubspot", "apollo", "slack"
+  status     IntegrationStatus @default(PENDING)
+  config     Json? // OAuth tokens, settings
+  lastSyncAt DateTime?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  teamId String
+
+  @@index([teamId])
+  @@index([provider])
+}
+
+enum IntegrationStatus {
+  PENDING
+  CONNECTED
+  ERROR
+  DISCONNECTED
+}
+
+model Webhook {
+  id         String   @id @default(cuid())
+  url        String
+  events     String[] // ["decision.created", "outcome.logged"]
+  secret     String?
+  isActive   Boolean  @default(true)
+  lastUsedAt DateTime?
+  createdAt  DateTime @default(now())
+
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  teamId String
+
+  @@index([teamId])
+}
+
+// ───────────────────────────────────────────
+// AUDIT & SYSTEM
+// ───────────────────────────────────────────
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  entityType  String // "decision", "outcome", "user", etc.
+  entityId    String
+  action      String // "created", "updated", "deleted"
+  actorId     String // User ID or "system"
+  beforeState Json?
+  afterState  Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+}

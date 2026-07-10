@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+/* Bible §7.2: Tailwind CSS inside a shadow root needs the host element
+   itself styled — Tailwind's preflight reset only applies within the
+   shadow tree since the stylesheet is injected there (see content/index.tsx). */
+:host {
+  all: initial;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
