@@ -20,6 +20,7 @@
     "db:migrate": "npm run migrate --workspace=@argus/database"
   },
   "devDependencies": {
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "vitest": "^4.1.10"
   }
 }
