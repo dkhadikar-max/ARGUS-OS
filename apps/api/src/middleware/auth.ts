@@ -32,7 +32,10 @@ function hashApiKey(key: string): string {
   return createHash("sha256").update(key).digest("hex");
 }
 
-async function authenticateWithApiKey(apiKey: string): Promise<AuthContext> {
+async function authenticateWithApiKey(
+  apiKey: string,
+  actingUserId?: string,
+): Promise<AuthContext> {
   const keyHash = hashApiKey(apiKey);
   const record = await prisma.apiKey.findUnique({
     where: { keyHash },
@@ -48,12 +51,35 @@ async function authenticateWithApiKey(apiKey: string): Promise<AuthContext> {
     data: { lastUsedAt: new Date() },
   });
 
-  return {
+  const base: AuthContext = {
     type: "api_key",
     teamId: record.teamId,
     planTier: record.team.plan,
     apiKeyId: record.id,
   };
+
+  if (!actingUserId) {
+    return base;
+  }
+
+  // Bible §10.1 only specifies team-scoped API keys, but the Slack Bot
+  // (§18 Epic 3) must attribute overrides/outcomes to the specific rep who
+  // clicked a Slack button, not just "the team". Rather than inventing a
+  // second auth scheme, a team-scoped API key may additionally assert an
+  // acting user via x-acting-user-id — honored only after confirming that
+  // user actually belongs to the same team this key is scoped to, which
+  // keeps one workspace's key from impersonating another team's user.
+  const actingUser = await prisma.user.findFirst({
+    where: { id: actingUserId, teamId: record.teamId },
+  });
+  if (!actingUser) {
+    throw new AppError(
+      "FORBIDDEN",
+      "x-acting-user-id does not belong to the team this API key is scoped to",
+    );
+  }
+
+  return { ...base, userId: actingUser.id, role: actingUser.role };
 }
 
 async function authenticateWithJwt(token: string): Promise<AuthContext> {
@@ -102,7 +128,10 @@ export async function requireAuth(
     const authHeader = req.header("authorization");
 
     if (apiKeyHeader) {
-      req.auth = await authenticateWithApiKey(apiKeyHeader);
+      req.auth = await authenticateWithApiKey(
+        apiKeyHeader,
+        req.header("x-acting-user-id") ?? undefined,
+      );
     } else if (authHeader?.startsWith("Bearer ")) {
       req.auth = await authenticateWithJwt(authHeader.slice("Bearer ".length));
     } else {

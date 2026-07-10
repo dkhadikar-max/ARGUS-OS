@@ -9,6 +9,7 @@ import {
   listOutcomes,
   upsertCompanyMemory,
 } from "./outcome.repository.js";
+import { publishTeamEvent } from "../../lib/pubsub.js";
 
 const MEETING_OUTCOME_TYPES = new Set(["MEETING_BOOKED", "OPPORTUNITY_CREATED", "CLOSED_WON"]);
 
@@ -74,6 +75,16 @@ export async function createOutcome(
   });
 
   const patternUpdated = await updateCompanyMemoryPattern(auth.teamId, decision.verdict);
+
+  await publishTeamEvent(auth.teamId, {
+    type: "outcome.logged",
+    data: {
+      decisionId: outcome.decisionId,
+      teamId: auth.teamId,
+      userId: auth.userId,
+      outcomeType: outcome.type,
+    },
+  });
 
   return {
     id: outcome.id,

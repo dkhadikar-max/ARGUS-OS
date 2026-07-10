@@ -1,0 +1,30 @@
+{
+  "name": "@argus/slack-bot",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@argus/shared": "*",
+    "@slack/bolt": "^4.7.3",
+    "@slack/types": "^2.22.0",
+    "@slack/web-api": "^7.19.0",
+    "bullmq": "^5.80.1",
+    "ioredis": "^5.4.1",
+    "pino": "^9.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.5",
+    "pino-pretty": "^11.2.2",
+    "tsx": "^4.19.1",
+    "typescript": "^5.5.4",
+    "vitest": "^4.1.10"
+  }
+}

@@ -14,6 +14,9 @@ const repo = {
 
 vi.mock("./outcome.repository.js", () => repo);
 
+const publishTeamEvent = vi.fn();
+vi.mock("../../lib/pubsub.js", () => ({ publishTeamEvent }));
+
 const { createOutcome, listOutcomesForTeam } = await import("./outcome.service.js");
 
 const auth: AuthContext = { type: "user", userId: "user_1", teamId: "team_1", planTier: "FREE" };
@@ -70,6 +73,10 @@ describe("createOutcome", () => {
     expect(repo.upsertCompanyMemory).toHaveBeenCalledWith(
       "team_1",
       expect.arrayContaining([expect.objectContaining({ verdict: "STRONG_YES" })]),
+    );
+    expect(publishTeamEvent).toHaveBeenCalledWith(
+      "team_1",
+      expect.objectContaining({ type: "outcome.logged" }),
     );
   });
 });

@@ -7,6 +7,7 @@ import { errorHandler } from "./middleware/error-handler.js";
 import { decisionRouter } from "./modules/decisions/decision.routes.js";
 import { outcomeRouter } from "./modules/outcomes/outcome.routes.js";
 import { queueRouter } from "./modules/queue/queue.routes.js";
+import { integrationRouter } from "./modules/integrations/integration.routes.js";
 
 export function createApp() {
   const app = express();
@@ -37,6 +38,7 @@ export function createApp() {
   app.use("/api/v1/decisions", decisionRouter);
   app.use("/api/v1/outcomes", outcomeRouter);
   app.use("/api/v1/queue", queueRouter);
+  app.use("/api/v1/integrations", integrationRouter);
 
   app.use(errorHandler);
 

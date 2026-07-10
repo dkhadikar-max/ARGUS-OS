@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 
 const prisma = {
   apiKey: { findUnique: vi.fn(), update: vi.fn() },
-  user: { findUnique: vi.fn() },
+  user: { findUnique: vi.fn(), findFirst: vi.fn() },
 };
 vi.mock("@argus/database", () => ({ prisma }));
 
@@ -75,6 +75,45 @@ describe("requireAuth — x-api-key", () => {
     await requireAuth(req, {} as Response, next);
 
     expect(next.mock.calls[0]?.[0]).toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
+  it("attributes the request to the acting user when x-acting-user-id belongs to the same team (Slack Bot)", async () => {
+    prisma.apiKey.findUnique.mockResolvedValue({
+      id: "key_1",
+      teamId: "team_1",
+      revokedAt: null,
+      team: { plan: "PRO" },
+    });
+    prisma.user.findFirst.mockResolvedValue({ id: "user_1", role: "SDR", teamId: "team_1" });
+
+    const req = mockReq({ "x-api-key": "argus_live_abc123", "x-acting-user-id": "user_1" });
+    const next = vi.fn();
+    await requireAuth(req, {} as Response, next);
+
+    expect(req.auth).toEqual({
+      type: "api_key",
+      teamId: "team_1",
+      planTier: "PRO",
+      apiKeyId: "key_1",
+      userId: "user_1",
+      role: "SDR",
+    });
+  });
+
+  it("rejects x-acting-user-id for a user outside the key's team as FORBIDDEN", async () => {
+    prisma.apiKey.findUnique.mockResolvedValue({
+      id: "key_1",
+      teamId: "team_1",
+      revokedAt: null,
+      team: { plan: "PRO" },
+    });
+    prisma.user.findFirst.mockResolvedValue(null); // not found scoped to team_1
+
+    const req = mockReq({ "x-api-key": "argus_live_abc123", "x-acting-user-id": "user_from_other_team" });
+    const next = vi.fn();
+    await requireAuth(req, {} as Response, next);
+
+    expect(next.mock.calls[0]?.[0]).toMatchObject({ code: "FORBIDDEN" });
   });
 });
 

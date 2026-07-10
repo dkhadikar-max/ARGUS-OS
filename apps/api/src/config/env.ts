@@ -18,6 +18,12 @@ const envSchema = z.object({
   CLERK_JWT_ISSUER: z.string().optional(),
   CLERK_JWKS_URL: z.string().optional(),
 
+  // Shared secret between apps/api and apps/slack-bot for the
+  // server-to-server Slack integration-resolution endpoint (Bible §18
+  // Epic 3) — never sent by end users, so it doesn't fit the Bearer/
+  // x-api-key schemes in §10.1, which are both end-user-facing.
+  INTERNAL_SERVICE_TOKEN: z.string().min(16, "INTERNAL_SERVICE_TOKEN must be set (>=16 chars) for the Slack Bot integration endpoints").optional(),
+
   CORS_ALLOWED_ORIGINS: z.string().default(""),
 
   RATE_LIMIT_FREE_PER_HOUR: z.coerce.number().int().positive().default(100),

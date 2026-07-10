@@ -1,10 +1,19 @@
 // ARGUS AI — Prisma Schema
 // Source: Product Bible v3.0 §9.1 (Database Schema)
-// NOTE: EvidenceType.FIRMOGRAPHIC corrects a typo in the Bible source text
-// ("FIRMORGRAPHIC"), which would otherwise never match the correctly-spelled
-// "firmographic" literal produced by the Research Agent (Bible §8.3) and thus
-// silently fail Zod validation on every decision. This is the only deviation
-// from the literal Bible text in this file.
+// Deviations from the literal Bible §9.1 text, both required for correctness
+// rather than convenience:
+// 1. EvidenceType.FIRMOGRAPHIC corrects a typo in the Bible source text
+//    ("FIRMORGRAPHIC"), which would otherwise never match the correctly-
+//    spelled "firmographic" literal produced by the Research Agent (§8.3)
+//    and thus silently fail Zod validation on every decision.
+// 2. User.slackUserId is new. Bible §18 Epic 3 (Slack Bot) is an explicit
+//    P0 requirement whose entire UX (§6.4) depends on resolving "which
+//    ARGUS user just clicked this Slack button" and "which Slack member to
+//    alert for this team" — but §9.1's User model has no such field, and
+//    nothing else in the schema carries a per-user Slack identity (Team's
+//    Integration.config only holds workspace-level OAuth data). Without
+//    this field the Slack Bot literally cannot route an alert to a person
+//    or attribute an interactive action back to a Decision's owner.
 
 generator client {
   provider = "prisma-client-js"
@@ -25,6 +34,7 @@ model User {
   name         String?
   avatarUrl    String?
   role         UserRole @default(SDR)
+  slackUserId  String?  @unique
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   lastActiveAt DateTime @default(now())

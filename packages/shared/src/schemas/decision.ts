@@ -42,10 +42,23 @@ const messagePayloadSchema = z.object({
   personalizationHooks: z.array(z.string()),
 });
 
+// Bible §10.2's worked example omits prospect identity from the response
+// body (the LinkedIn sidebar already has it from the page it's injected
+// into), but surfaces with no page context — Slack alerts (§6.4), the web
+// dashboard — need it to render anything at all. Extending the contract
+// with the same prospect summary shape §10.4's queue response already uses.
+const prospectSummarySchema = z.object({
+  name: z.string(),
+  title: z.string().nullable(),
+  companyName: z.string().nullable(),
+  linkedInUrl: z.string(),
+});
+
 // Bible §10.2 — 200 OK synchronous response
 export const decisionResponseSchema = z.object({
   id: z.string(),
   status: z.enum(["completed", "processing", "failed"]),
+  prospect: prospectSummarySchema,
   verdict: verdictSchema,
   confidence: z.number().min(0).max(100),
   reasoning: z.string(),

@@ -13,6 +13,7 @@ import {
   upsertProspect,
 } from "./decision.repository.js";
 import type { EvidenceType } from "@argus/database";
+import { publishTeamEvent } from "../../lib/pubsub.js";
 
 // Bible §8.3 classifies research data points as one of five lowercase
 // strings ("firmographic, demographic, technographic, intent, or risk"),
@@ -38,6 +39,12 @@ function toDecisionResponse(
   return {
     id: decision.id,
     status: "completed",
+    prospect: {
+      name: decision.prospect.name,
+      title: decision.prospect.title,
+      companyName: decision.prospect.companyName,
+      linkedInUrl: decision.prospect.linkedInUrl,
+    },
     verdict: decision.verdict,
     confidence: decision.confidence,
     reasoning: decision.reasoning,
@@ -149,6 +156,12 @@ export async function createDecision(
   if (!full) {
     throw new AppError("NOT_FOUND", "Decision could not be retrieved after creation");
   }
+
+  await publishTeamEvent(request.context.teamId, {
+    type: "decision.created",
+    data: { decisionId: full.id, teamId: request.context.teamId, userId: request.context.userId },
+  });
+
   return toDecisionResponse(full);
 }
 

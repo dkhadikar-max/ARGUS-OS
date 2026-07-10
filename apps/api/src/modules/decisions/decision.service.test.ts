@@ -19,6 +19,9 @@ vi.mock("./decision.repository.js", () => repo);
 const runAgentDebate = vi.fn();
 vi.mock("../../agents/orchestrator.js", () => ({ runAgentDebate }));
 
+const publishTeamEvent = vi.fn();
+vi.mock("../../lib/pubsub.js", () => ({ publishTeamEvent }));
+
 const { createDecision, getDecision, overrideDecision } = await import("./decision.service.js");
 
 const auth: AuthContext = { type: "user", userId: "user_1", teamId: "team_1", planTier: "FREE" };
@@ -106,7 +109,13 @@ describe("createDecision", () => {
       messageDrafts: [{ channel: "LINKEDIN", body: "Hi Sarah", tone: "professional", personalizationHooks: ["Series B"] }],
       outcome: null,
       override: null,
-      prospect: { id: "prospect_1" },
+      prospect: {
+        id: "prospect_1",
+        name: "Sarah Chen",
+        title: "VP Engineering",
+        companyName: "DataFlow Inc.",
+        linkedInUrl: "https://linkedin.com/in/sarahchen",
+      },
     });
 
     const result = await createDecision(request, auth);
@@ -121,6 +130,10 @@ describe("createDecision", () => {
     );
     expect(result.verdict).toBe("STRONG_YES");
     expect(result.evidence).toHaveLength(2);
+    expect(publishTeamEvent).toHaveBeenCalledWith(
+      "team_1",
+      expect.objectContaining({ type: "decision.created" }),
+    );
   });
 });
 
