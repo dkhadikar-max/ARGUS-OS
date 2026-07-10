@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build-typecheck-test:
+    name: Build, Typecheck, Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Must run before typecheck: packages/database and packages/shared
+      # publish their types from dist/ (see their package.json "types"
+      # fields), which only exists after this step. `npm run build` itself
+      # bootstraps those two first, in the correct order, before building
+      # everything else — verified locally by removing every dist/ and
+      # confirming `npm run typecheck` fails until `npm run build` has run.
+      - name: Build
+        run: npm run build
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # No live Postgres/Redis/Anthropic key needed — every test suite
+      # mocks Prisma/Redis/the Anthropic SDK at the module boundary (see
+      # README "Testing").
+      - name: Test
+        run: npm run test

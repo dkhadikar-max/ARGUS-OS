@@ -95,3 +95,11 @@ Tests mock Prisma/Redis/the Anthropic SDK at the module boundary, so the full su
 ```
 npm run typecheck       # strict tsc --noEmit across every workspace
 ```
+
+**Order matters on a fresh checkout**: `packages/database` and `packages/shared` publish their types from `dist/` (see their `package.json` "types" fields), which doesn't exist until they're built. Run `npm run build` before `npm run typecheck` — confirmed by deleting every `dist/` and reproducing the failure before fixing the CI step order below.
+
+## Continuous Integration
+
+`.github/workflows/ci.yml` runs on every push/PR to `main`/`master`: `npm ci` → `npm run build` (in that order, for the reason above) → `npm run typecheck` → `npm run test`. No secrets or external services required — the whole pipeline runs green with zero configuration, the same way it does on this machine with no live Postgres/Redis/Clerk/Slack credentials.
+
+Bible §18 INF-3 also calls for a staging environment; that's blocked on the same thing as INF-1 (Railway/Vercel deploy config) and INF-2 (Sentry/PostHog wiring) — real hosting/observability accounts this environment doesn't have. The workflow itself has no such dependency and is fully built.
