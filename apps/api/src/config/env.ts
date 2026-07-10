@@ -23,6 +23,11 @@ const envSchema = z.object({
 
   CLERK_JWT_ISSUER: z.string().optional(),
   CLERK_JWKS_URL: z.string().optional(),
+  // Verifies POST /api/v1/webhooks/clerk (Svix signatures) — this is how
+  // User rows actually get created with id = Clerk's user id, which
+  // authenticateWithJwt's `prisma.user.findUnique({ where: { id: userId } })`
+  // depends on already existing (see middleware/auth.ts).
+  CLERK_WEBHOOK_SECRET: z.string().optional(),
 
   // Shared secret between apps/api and apps/slack-bot for the
   // server-to-server Slack integration-resolution endpoint (Bible §18

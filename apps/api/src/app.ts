@@ -8,6 +8,7 @@ import { decisionRouter } from "./modules/decisions/decision.routes.js";
 import { outcomeRouter } from "./modules/outcomes/outcome.routes.js";
 import { queueRouter } from "./modules/queue/queue.routes.js";
 import { integrationRouter } from "./modules/integrations/integration.routes.js";
+import { webhookRouter } from "./modules/webhooks/webhook.routes.js";
 
 export function createApp() {
   const app = express();
@@ -28,6 +29,12 @@ export function createApp() {
       credentials: true,
     }),
   );
+
+  // Mounted before express.json(): Svix signature verification needs the
+  // exact raw bytes Clerk sent, which a JSON body parser would have
+  // already consumed and re-serialized by the time this route saw it.
+  app.use("/api/v1/webhooks", webhookRouter);
+
   app.use(express.json({ limit: "1mb" }));
   app.use(pinoHttp({ logger }));
 
