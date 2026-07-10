@@ -22,6 +22,10 @@ vi.mock("../../agents/orchestrator.js", () => ({ runAgentDebate }));
 const publishTeamEvent = vi.fn();
 vi.mock("../../lib/pubsub.js", () => ({ publishTeamEvent }));
 
+const getCachedDebateOutput = vi.fn();
+const setCachedDebateOutput = vi.fn();
+vi.mock("../../lib/decision-cache.js", () => ({ getCachedDebateOutput, setCachedDebateOutput }));
+
 const { createDecision, getDecision, overrideDecision } = await import("./decision.service.js");
 
 const auth: AuthContext = { type: "user", userId: "user_1", teamId: "team_1", planTier: "FREE" };
@@ -69,6 +73,7 @@ const agentDebateOutput = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  getCachedDebateOutput.mockResolvedValue(null); // default: cache miss
 });
 
 describe("createDecision", () => {
@@ -134,6 +139,65 @@ describe("createDecision", () => {
       "team_1",
       expect.objectContaining({ type: "decision.created" }),
     );
+    expect(setCachedDebateOutput).toHaveBeenCalledWith(
+      "prospect_1",
+      "team_1",
+      "none",
+      agentDebateOutput,
+    );
+  });
+
+  it("skips the Claude call entirely on a cache hit (Bible §18 AI-5)", async () => {
+    repo.upsertProspect.mockResolvedValue({
+      id: "prospect_1",
+      name: "Sarah Chen",
+      title: "VP Engineering",
+      companyName: "DataFlow Inc.",
+      companyDomain: "dataflow.io",
+      linkedInUrl: request.prospect.linkedInUrl,
+      companySize: null,
+      companyIndustry: null,
+      companyFunding: null,
+      rawProfile: null,
+      enrichedData: null,
+    });
+    repo.getActiveIcp.mockResolvedValue({ version: 3, criteria: {} });
+    repo.getCompanyMemory.mockResolvedValue(null);
+    repo.getUserPreferences.mockResolvedValue(null);
+    repo.getProspectDecisionHistory.mockResolvedValue([]);
+    repo.getTeamOutcomeHistory.mockResolvedValue([]);
+    getCachedDebateOutput.mockResolvedValue(agentDebateOutput);
+    repo.createDecisionRecord.mockResolvedValue({ id: "dec_1" });
+    repo.findDecisionById.mockResolvedValue({
+      id: "dec_1",
+      verdict: "STRONG_YES",
+      confidence: 94,
+      reasoning: "Strong across the board.",
+      recommendedAction: "message_now",
+      processingTimeMs: 3200,
+      createdAt: new Date("2026-07-10T14:32:00Z"),
+      updatedAt: new Date("2026-07-10T14:32:00Z"),
+      evidence: [],
+      messageDrafts: [],
+      outcome: null,
+      override: null,
+      prospect: {
+        id: "prospect_1",
+        name: "Sarah Chen",
+        title: "VP Engineering",
+        companyName: "DataFlow Inc.",
+        linkedInUrl: "https://linkedin.com/in/sarahchen",
+      },
+    });
+
+    await createDecision(request, auth);
+
+    expect(getCachedDebateOutput).toHaveBeenCalledWith("prospect_1", "team_1", 3);
+    expect(runAgentDebate).not.toHaveBeenCalled();
+    expect(setCachedDebateOutput).not.toHaveBeenCalled();
+    // A cache hit still creates its own Decision row -- each request is
+    // its own auditable event even when the AI analysis is reused.
+    expect(repo.createDecisionRecord).toHaveBeenCalled();
   });
 });
 

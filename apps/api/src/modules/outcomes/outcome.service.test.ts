@@ -17,6 +17,9 @@ vi.mock("./outcome.repository.js", () => repo);
 const publishTeamEvent = vi.fn();
 vi.mock("../../lib/pubsub.js", () => ({ publishTeamEvent }));
 
+const invalidateDecisionCache = vi.fn();
+vi.mock("../../lib/decision-cache.js", () => ({ invalidateDecisionCache }));
+
 const { createOutcome, listOutcomesForTeam } = await import("./outcome.service.js");
 
 const auth: AuthContext = { type: "user", userId: "user_1", teamId: "team_1", planTier: "FREE" };
@@ -49,7 +52,12 @@ describe("createOutcome", () => {
   });
 
   it("logs the outcome and recomputes the Company Memory pattern (Bible §10.3)", async () => {
-    repo.findDecisionForOutcome.mockResolvedValue({ id: "dec_1", verdict: "STRONG_YES", outcome: null });
+    repo.findDecisionForOutcome.mockResolvedValue({
+      id: "dec_1",
+      verdict: "STRONG_YES",
+      outcome: null,
+      prospectId: "prospect_1",
+    });
     repo.createOutcomeRecord.mockResolvedValue({
       id: "out_1",
       decisionId: "dec_1",
@@ -78,6 +86,7 @@ describe("createOutcome", () => {
       "team_1",
       expect.objectContaining({ type: "outcome.logged" }),
     );
+    expect(invalidateDecisionCache).toHaveBeenCalledWith("prospect_1", "team_1");
   });
 });
 

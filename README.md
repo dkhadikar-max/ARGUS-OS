@@ -70,6 +70,10 @@ The Slack Bot serves every connected team from one process (Bible §18 Epic 3), 
 2. As a team admin (JWT-authenticated, `ADMIN`/`FOUNDER`/`MANAGER` role), `POST /api/v1/integrations/slack` with `{ slackTeamId, botToken, botUserId, alertChannelId }` — the response's `apiKey` is shown once, but the Slack Bot doesn't need it manually; it's stored server-side and resolved automatically per event.
 3. Each rep runs `/argus link` in Slack once, so button clicks and outcome logging attribute correctly to their ARGUS user.
 
+### Decision caching (Bible §18 AI-5)
+
+`POST /api/v1/decisions` caches the Claude agent-debate output (not the final API response) in Redis, keyed `decision:{prospectId}:{teamId}:{icpVersion}` with a 24h TTL, exactly matching the Bible §9.2 Redis schema. A cache hit skips the ~$0.04-0.06, multi-second Claude call entirely, but still creates its own `Decision` row — each request is its own auditable event even when the underlying AI analysis is reused. Invalidation: logging an outcome invalidates the cache for that prospect (new ground truth the cached debate didn't have); an ICP edit doesn't need active invalidation since a new `icpVersion` is simply a cache miss by construction, so stale-version entries just expire via the TTL instead of being purged.
+
 ### Known gaps (flagged, not hidden)
 
 - No self-serve "Add to Slack" OAuth flow — connecting a workspace requires the manual API call above (§18 SLK-1's "OAuth installation flow" is the natural next task).

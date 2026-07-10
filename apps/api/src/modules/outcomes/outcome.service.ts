@@ -10,6 +10,7 @@ import {
   upsertCompanyMemory,
 } from "./outcome.repository.js";
 import { publishTeamEvent } from "../../lib/pubsub.js";
+import { invalidateDecisionCache } from "../../lib/decision-cache.js";
 
 const MEETING_OUTCOME_TYPES = new Set(["MEETING_BOOKED", "OPPORTUNITY_CREATED", "CLOSED_WON"]);
 
@@ -75,6 +76,12 @@ export async function createOutcome(
   });
 
   const patternUpdated = await updateCompanyMemoryPattern(auth.teamId, decision.verdict);
+
+  // Bible §18 AI-5 "Cache invalidation rules": this outcome is new ground
+  // truth for `historicalEngagement` on this prospect (§8.5's Intent Agent
+  // input) — any cached debate output for them is now stale regardless of
+  // its 24h TTL.
+  await invalidateDecisionCache(decision.prospectId, auth.teamId);
 
   await publishTeamEvent(auth.teamId, {
     type: "outcome.logged",

@@ -14,6 +14,7 @@ import {
 } from "./decision.repository.js";
 import type { EvidenceType } from "@argus/database";
 import { publishTeamEvent } from "../../lib/pubsub.js";
+import { getCachedDebateOutput, setCachedDebateOutput } from "../../lib/decision-cache.js";
 
 // Bible §8.3 classifies research data points as one of five lowercase
 // strings ("firmographic, demographic, technographic, intent, or risk"),
@@ -93,33 +94,49 @@ export async function createDecision(
       getTeamOutcomeHistory(request.context.teamId),
     ]);
 
-  const { output, processingTimeMs } = await runAgentDebate({
-    prospectData: {
-      profile: { name: prospect.name, title: prospect.title, linkedInUrl: prospect.linkedInUrl },
-      company: {
-        name: prospect.companyName,
-        domain: prospect.companyDomain,
-        size: prospect.companySize,
-        industry: prospect.companyIndustry,
-        funding: prospect.companyFunding,
+  // Bible §18 AI-5 / §9.2: skip the expensive Claude call (§13.1: ~$0.04-
+  // 0.06 and several seconds) if nothing has changed for this prospect
+  // since the last identical request. Keyed on the *current* ICP version,
+  // so an ICP edit is a cache miss rather than serving a stale verdict.
+  const icpVersion = icp?.version ?? "none";
+  const cacheStartedAt = Date.now();
+  let output = await getCachedDebateOutput(prospect.id, request.context.teamId, icpVersion);
+  let processingTimeMs: number;
+
+  if (output) {
+    processingTimeMs = Date.now() - cacheStartedAt;
+  } else {
+    const debate = await runAgentDebate({
+      prospectData: {
+        profile: { name: prospect.name, title: prospect.title, linkedInUrl: prospect.linkedInUrl },
+        company: {
+          name: prospect.companyName,
+          domain: prospect.companyDomain,
+          size: prospect.companySize,
+          industry: prospect.companyIndustry,
+          funding: prospect.companyFunding,
+        },
+        rawProfile: prospect.rawProfile,
+        enrichedData: prospect.enrichedData,
       },
-      rawProfile: prospect.rawProfile,
-      enrichedData: prospect.enrichedData,
-    },
-    teamIcp: icp?.criteria ?? null,
-    companyMemory: companyMemory
-      ? { patterns: companyMemory.patterns, riskFlags: companyMemory.riskFlags }
-      : null,
-    intentSignals: prospect.rawProfile,
-    historicalEngagement: prospectHistory.map((d) => ({
-      verdict: d.verdict,
-      outcome: d.outcome?.type ?? null,
-      createdAt: d.createdAt,
-    })),
-    teamHistory: teamHistory.map((d) => ({ verdict: d.verdict, outcome: d.outcome?.type })),
-    userPreferences: userPreferences ?? null,
-    teamPatterns: companyMemory?.patterns ?? null,
-  });
+      teamIcp: icp?.criteria ?? null,
+      companyMemory: companyMemory
+        ? { patterns: companyMemory.patterns, riskFlags: companyMemory.riskFlags }
+        : null,
+      intentSignals: prospect.rawProfile,
+      historicalEngagement: prospectHistory.map((d) => ({
+        verdict: d.verdict,
+        outcome: d.outcome?.type ?? null,
+        createdAt: d.createdAt,
+      })),
+      teamHistory: teamHistory.map((d) => ({ verdict: d.verdict, outcome: d.outcome?.type })),
+      userPreferences: userPreferences ?? null,
+      teamPatterns: companyMemory?.patterns ?? null,
+    });
+    output = debate.output;
+    processingTimeMs = debate.processingTimeMs;
+    await setCachedDebateOutput(prospect.id, request.context.teamId, icpVersion, output);
+  }
 
   const decision = await createDecisionRecord({
     userId: request.context.userId,
