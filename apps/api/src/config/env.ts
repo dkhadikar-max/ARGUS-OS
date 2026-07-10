@@ -1,4 +1,10 @@
+import "dotenv/config";
 import { z } from "zod";
+
+// Loads apps/api/.env (dotenv resolves relative to process.cwd(), which is
+// this workspace's directory whether run via `npm run dev --workspace=
+// @argus/api` or directly). No-ops silently if the file doesn't exist —
+// e.g. in production, where real env vars are injected by the platform.
 
 // Bible §7.2 tech stack + §19.1 security checklist: fail fast at boot rather
 // than surfacing a cryptic runtime error the first time a route needs a key.

@@ -1,4 +1,7 @@
+import "dotenv/config";
 import { z } from "zod";
+
+// Loads apps/slack-bot/.env — see apps/api/src/config/env.ts for why.
 
 // Bible §18 Epic 3, §7.2 "Socket Mode avoids public URL requirements".
 // No per-workspace bot token lives here — those are resolved per-event via

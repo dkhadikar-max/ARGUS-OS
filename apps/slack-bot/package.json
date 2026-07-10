@@ -17,6 +17,7 @@
     "@slack/types": "^2.22.0",
     "@slack/web-api": "^7.19.0",
     "bullmq": "^5.80.1",
+    "dotenv": "^17.4.2",
     "ioredis": "^5.4.1",
     "pino": "^9.4.0"
   },
