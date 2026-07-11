@@ -1,6 +1,9 @@
 import { auth } from "@clerk/nextjs/server";
 import type {
   CompanyMemoryResponse,
+  CreateActionRequest,
+  CreateActionResponse,
+  DecisionResponse,
   IcpResponse,
   ListOutcomesResponse,
   QueueResponse,
@@ -73,4 +76,10 @@ export const api = {
   // teamId is omitted -- outcome.routes.ts defaults it from the caller's
   // own JWT-resolved team when absent from the query string.
   getOutcomes: () => apiFetch<ListOutcomesResponse>("/api/v1/outcomes?limit=20&offset=0"),
+  getDecision: (decisionId: string) => apiFetch<DecisionResponse>(`/api/v1/decisions/${decisionId}`),
+  recordAction: (decisionId: string, payload: CreateActionRequest) =>
+    apiFetch<CreateActionResponse>(`/api/v1/decisions/${decisionId}/action`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 };
