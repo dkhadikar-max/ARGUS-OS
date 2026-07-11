@@ -16,6 +16,7 @@ import type { EvidenceType } from "@argus/database";
 import { publishTeamEvent } from "../../lib/pubsub.js";
 import { getCachedDebateOutput, setCachedDebateOutput } from "../../lib/decision-cache.js";
 import { track } from "../../lib/analytics.js";
+import { enrichProspect, type EnrichmentResult } from "../../lib/enrichment/enrichment.service.js";
 
 // Bible §8.3 classifies research data points as one of five lowercase
 // strings ("firmographic, demographic, technographic, intent, or risk"),
@@ -32,6 +33,62 @@ const RESEARCH_TYPE_TO_EVIDENCE_TYPE: Record<string, EvidenceType> = {
   intent: "INTENT",
   risk: "DERIVED",
 };
+
+// Real firmographic data from a paid provider is materially more trustworthy
+// than an LLM's inference from a scraped LinkedIn page — 90 vs the
+// Research Agent's own self-reported confidence (frequently lower when data
+// is sparse). Bible §9.1's EvidenceSource enum has APOLLO/CLEARBIT members
+// specifically for this (§18 AI-2).
+const ENRICHMENT_EVIDENCE_CONFIDENCE = 90;
+
+function buildEnrichmentEvidence(
+  enrichment: EnrichmentResult,
+): Array<{
+  type: EvidenceType;
+  source: "APOLLO" | "CLEARBIT";
+  data: { signal: string; relevance: string };
+  confidence: number;
+}> {
+  const evidence: ReturnType<typeof buildEnrichmentEvidence> = [];
+
+  if (enrichment.apollo) {
+    const { industry, estimatedNumEmployees, totalFunding } = enrichment.apollo;
+    const parts = [
+      industry ? `Industry: ${industry}` : null,
+      estimatedNumEmployees != null ? `${estimatedNumEmployees} employees` : null,
+      totalFunding != null ? `$${totalFunding.toLocaleString("en-US")} total funding` : null,
+    ].filter((part): part is string => Boolean(part));
+
+    if (parts.length > 0) {
+      evidence.push({
+        type: "FIRMOGRAPHIC",
+        source: "APOLLO",
+        data: { signal: parts.join(" · "), relevance: "Company firmographics from Apollo.io" },
+        confidence: ENRICHMENT_EVIDENCE_CONFIDENCE,
+      });
+    }
+  }
+
+  if (enrichment.clearbit) {
+    const { industry, employees, raised } = enrichment.clearbit;
+    const parts = [
+      industry ? `Industry: ${industry}` : null,
+      employees != null ? `${employees} employees` : null,
+      raised != null ? `$${raised.toLocaleString("en-US")} raised` : null,
+    ].filter((part): part is string => Boolean(part));
+
+    if (parts.length > 0) {
+      evidence.push({
+        type: "FIRMOGRAPHIC",
+        source: "CLEARBIT",
+        data: { signal: parts.join(" · "), relevance: "Company firmographics from Clearbit" },
+        confidence: ENRICHMENT_EVIDENCE_CONFIDENCE,
+      });
+    }
+  }
+
+  return evidence;
+}
 
 function toDecisionResponse(
   decision: NonNullable<Awaited<ReturnType<typeof findDecisionById>>>,
@@ -84,16 +141,22 @@ export async function createDecision(
   request: CreateDecisionRequest,
   auth: AuthContext,
 ): Promise<DecisionResponse> {
-  const prospect = await upsertProspect(request.prospect);
+  const upsertedProspect = await upsertProspect(request.prospect);
 
-  const [icp, companyMemory, userPreferences, prospectHistory, teamHistory] =
+  // Bible §18 AI-2: Apollo/Clearbit enrichment runs before the agent debate
+  // so the Research Agent gets real firmographics, not just whatever the
+  // LinkedIn content script scraped. No-ops (and stays cheap) once a
+  // prospect was enriched within the last 30 days — see enrichment.service.ts.
+  const [enrichment, icp, companyMemory, userPreferences, prospectHistory, teamHistory] =
     await Promise.all([
+      enrichProspect(upsertedProspect),
       getActiveIcp(request.context.teamId),
       getCompanyMemory(request.context.teamId),
       getUserPreferences(request.context.userId),
-      getProspectDecisionHistory(prospect.id, request.context.teamId),
+      getProspectDecisionHistory(upsertedProspect.id, request.context.teamId),
       getTeamOutcomeHistory(request.context.teamId),
     ]);
+  const prospect = enrichment.prospect;
 
   // Bible §18 AI-5 / §9.2: skip the expensive Claude call (§13.1: ~$0.04-
   // 0.06 and several seconds) if nothing has changed for this prospect
@@ -151,12 +214,15 @@ export async function createDecision(
     agentConsensus: output.judge.agent_consensus,
     agentOutputs: output,
     processingTimeMs,
-    evidence: output.research.data_points.map((dp) => ({
-      type: RESEARCH_TYPE_TO_EVIDENCE_TYPE[dp.type] ?? "DERIVED",
-      source: "INFERRED",
-      data: { signal: dp.signal, relevance: dp.relevance },
-      confidence: output.research.confidence,
-    })),
+    evidence: [
+      ...output.research.data_points.map((dp) => ({
+        type: RESEARCH_TYPE_TO_EVIDENCE_TYPE[dp.type] ?? "DERIVED",
+        source: "INFERRED" as const,
+        data: { signal: dp.signal, relevance: dp.relevance },
+        confidence: output.research.confidence,
+      })),
+      ...buildEnrichmentEvidence(enrichment),
+    ],
     message: request.options.generateMessage
       ? {
           channel: request.options.messageChannel,

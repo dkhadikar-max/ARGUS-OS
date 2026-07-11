@@ -29,6 +29,9 @@ vi.mock("../../lib/decision-cache.js", () => ({ getCachedDebateOutput, setCached
 const track = vi.fn();
 vi.mock("../../lib/analytics.js", () => ({ track }));
 
+const enrichProspect = vi.fn();
+vi.mock("../../lib/enrichment/enrichment.service.js", () => ({ enrichProspect }));
+
 const { createDecision, getDecision, overrideDecision } = await import("./decision.service.js");
 
 const auth: AuthContext = { type: "user", userId: "user_1", teamId: "team_1", planTier: "FREE" };
@@ -77,6 +80,11 @@ const agentDebateOutput = {
 beforeEach(() => {
   vi.clearAllMocks();
   getCachedDebateOutput.mockResolvedValue(null); // default: cache miss
+  // Default: enrichment ran but changed nothing (e.g. no companyDomain, or
+  // already fresh) — tests that care about enrichment override this.
+  enrichProspect.mockImplementation((prospect) =>
+    Promise.resolve({ prospect, apollo: null, clearbit: null }),
+  );
 });
 
 describe("createDecision", () => {
@@ -153,6 +161,65 @@ describe("createDecision", () => {
       expect.objectContaining({
         name: "verdict_generated",
         properties: expect.objectContaining({ decision_id: "dec_1", verdict: "STRONG_YES" }),
+      }),
+    );
+  });
+
+  it("adds Apollo/Clearbit-sourced evidence when enrichment finds data (Bible §18 AI-2)", async () => {
+    const enrichedProspect = {
+      id: "prospect_1",
+      name: "Sarah Chen",
+      title: "VP Engineering",
+      companyName: "DataFlow Inc.",
+      companyDomain: "dataflow.io",
+      linkedInUrl: request.prospect.linkedInUrl,
+      companySize: "87",
+      companyIndustry: "information technology & services",
+      companyFunding: "$24,000,000",
+      rawProfile: null,
+      enrichedData: { apollo: {}, clearbit: null },
+    };
+    repo.upsertProspect.mockResolvedValue({ ...enrichedProspect, companySize: null, companyIndustry: null, companyFunding: null });
+    enrichProspect.mockResolvedValue({
+      prospect: enrichedProspect,
+      apollo: { industry: "information technology & services", estimatedNumEmployees: 87, totalFunding: 24_000_000, latestFundingRoundDate: null },
+      clearbit: null,
+    });
+    repo.getActiveIcp.mockResolvedValue(null);
+    repo.getCompanyMemory.mockResolvedValue(null);
+    repo.getUserPreferences.mockResolvedValue(null);
+    repo.getProspectDecisionHistory.mockResolvedValue([]);
+    repo.getTeamOutcomeHistory.mockResolvedValue([]);
+    runAgentDebate.mockResolvedValue({ output: agentDebateOutput, processingTimeMs: 3200 });
+    repo.createDecisionRecord.mockResolvedValue({ id: "dec_1" });
+    repo.findDecisionById.mockResolvedValue({
+      id: "dec_1",
+      verdict: "STRONG_YES",
+      confidence: 94,
+      reasoning: "Strong across the board.",
+      recommendedAction: "message_now",
+      processingTimeMs: 3200,
+      createdAt: new Date("2026-07-10T14:32:00Z"),
+      updatedAt: new Date("2026-07-10T14:32:00Z"),
+      evidence: [],
+      messageDrafts: [],
+      outcome: null,
+      override: null,
+      prospect: enrichedProspect,
+    });
+
+    await createDecision(request, auth);
+
+    expect(enrichProspect).toHaveBeenCalledWith(expect.objectContaining({ id: "prospect_1" }));
+    expect(repo.createDecisionRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        evidence: expect.arrayContaining([
+          expect.objectContaining({
+            type: "FIRMOGRAPHIC",
+            source: "APOLLO",
+            data: expect.objectContaining({ relevance: "Company firmographics from Apollo.io" }),
+          }),
+        ]),
       }),
     );
   });
