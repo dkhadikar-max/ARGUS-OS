@@ -30,6 +30,7 @@ describe("buildQueueBlocks", () => {
           lastActivity: "New since yesterday",
           suggestedAction: "Send LinkedIn message",
           messagePreview: "Hi Sarah",
+          createdAt: "2026-07-10T08:00:00Z",
         },
       ],
       stats: { total: 1, strongYes: 1, yes: 0, wait: 0, pass: 0, newSinceYesterday: 1, reEngagements: 0 },
@@ -56,6 +57,7 @@ describe("buildQueueBlocks", () => {
       lastActivity: "New this week",
       suggestedAction: "Send LinkedIn message",
       messagePreview: null,
+      createdAt: "2026-07-10T08:00:00Z",
     }));
 
     const blocks = buildQueueBlocks({ ...emptyQueue, items });

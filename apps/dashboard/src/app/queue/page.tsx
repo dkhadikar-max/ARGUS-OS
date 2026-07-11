@@ -1,10 +1,9 @@
 import { api } from "../../lib/api-client";
-import { QueueItemCard } from "../../components/QueueItemCard";
-import { EmptyQueueState } from "../../components/EmptyQueueState";
+import { QueueList } from "../../components/QueueList";
 import { LiveQueueBanner } from "../../components/LiveQueueBanner";
 
-// Bible §18 DSH-2 "Queue page layout" + "Prospect cards with verdicts" (P0).
-// Filter/sort controls are an explicit P1 item — not built here.
+// Bible §18 DSH-2 "Queue page layout" + "Prospect cards with verdicts" (P0)
+// + "Filter and sort controls" (P1, components/QueueList.tsx).
 export default async function QueuePage({
   searchParams,
 }: {
@@ -46,15 +45,7 @@ export default async function QueuePage({
 
       <LiveQueueBanner />
 
-      {queue.items.length === 0 ? (
-        <EmptyQueueState />
-      ) : (
-        <ul className="space-y-3">
-          {queue.items.map((item) => (
-            <QueueItemCard key={item.decisionId} item={item} />
-          ))}
-        </ul>
-      )}
+      <QueueList items={queue.items} />
     </main>
   );
 }

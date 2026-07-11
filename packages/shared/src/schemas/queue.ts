@@ -18,6 +18,12 @@ export const queueItemSchema = z.object({
   lastActivity: z.string(),
   suggestedAction: z.string(),
   messagePreview: z.string().nullable(),
+  // Not part of §10.4's documented response (verified against the Bible's
+  // own worked example) -- additive, for §18 DSH-2's "Filter and sort
+  // controls": `lastActivity` is a formatted display label ("New since
+  // yesterday", "3 days ago"), not a raw timestamp a client can actually
+  // sort by.
+  createdAt: z.string().datetime(),
 });
 export type QueueItem = z.infer<typeof queueItemSchema>;
 

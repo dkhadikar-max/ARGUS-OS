@@ -149,6 +149,10 @@ Two P1 backlog items, both with the same underlying gap as ActionTaken and Compa
 
 Out of scope (P2, explicitly not attempted): "Integration connections" (Slack connect already has its own UI on the Queue page) and "Billing page (Stripe)" (real payment processing, needing live Stripe credentials and business decisions this pass has no basis to make).
 
+### Today Queue filter and sort controls (Bible §18 DSH-2)
+
+The last unbuilt piece of DSH-2 — `components/QueueList.tsx` filters (by verdict, toggle chips) and sorts (priority/confidence/most-recent) entirely client-side against the already-fetched queue, since a rep's daily queue is a small, bounded list that doesn't need a new API round-trip or server-side query params for this. `GET /api/v1/queue`'s response gained one additive field beyond §10.4's literal documented example: `createdAt` (the decision's raw timestamp) — `lastActivity` is a formatted display label ("New since yesterday", "3 days ago"), not something a "most recent" sort could actually sort by.
+
 ### Chrome Web Store submission prep (Bible §19.2 T-7 launch runbook item)
 
 See **[CHROME_STORE_SUBMISSION.md](./CHROME_STORE_SUBMISSION.md)** for the full checklist, store listing copy, and a privacy policy draft. Two concrete things fixed in the codebase itself, not just documentation:
@@ -185,7 +189,7 @@ Six parallel agents audited the whole build (every workspace, plus a dedicated p
 - Slack message edits (`Edit First`) aren't persisted server-side, matching the extension's own client-local edit behavior.
 - The Full Debate View (§6.5) is an explicit P1 roadmap item — Slack's "View More" shows expanded evidence, not the full 5-agent debate.
 - Clerk's `user.deleted` webhook is logged, not acted on — hard-deleting would violate the Decision/Outcome/MessageDraft foreign keys against that user, and a real implementation needs a GDPR-safe anonymization strategy (Bible §16.1 Risk #7, itself an explicit not-yet-built item).
-- The dashboard's Today Queue page has no filter/sort controls yet (Bible §18 DSH-2's "Filter and sort controls" is an explicit P1 item). All four DSH-3/4/5 dashboard pages the backlog specifies are now built.
+- All of Bible §18 DSH-2/3/4/5's dashboard backlog items are now built (see "Today Queue filter and sort controls" above for the last of them).
 - Analytics has no per-rep accuracy breakdown (§4.4 Manager Morgan persona wants this specifically, for 1:1 coaching) — only a team-wide number (see "Analytics" section above).
 - The ICP editor's criteria `value` field is a single text input — `icpCriterionSchema` also allows a `string[]` (e.g. an "in" operator listing multiple industries), which this simplified editor can't produce distinctly from a plain string. A real multi-value input is future polish, not a data-model gap.
 - Company Memory's risk-flags clustering, ICP accuracy tracking, and top-performing-message correlation aren't built (see "Company Memory" section above for exactly why each is separate, larger scope than a data-mapping task).

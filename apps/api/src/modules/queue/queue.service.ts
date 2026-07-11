@@ -83,6 +83,7 @@ export async function getQueueForUser(userId: string, teamId: string): Promise<Q
     lastActivity: lastActivityLabel(decision.createdAt, isReEngagement),
     suggestedAction: suggestedActionLabel(decision.recommendedAction),
     messagePreview: decision.messageDrafts[0]?.body.slice(0, 120) ?? null,
+    createdAt: decision.createdAt.toISOString(),
   }));
 
   const stats = {

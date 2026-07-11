@@ -54,6 +54,15 @@ describe("getQueueForUser", () => {
     expect(queue.stats.reEngagements).toBe(1);
   });
 
+  it("includes the decision's raw createdAt timestamp for client-side recency sorting (Bible §18 DSH-2 filter/sort)", async () => {
+    const createdAt = new Date("2026-07-10T08:00:00Z");
+    repo.getActiveDecisionsForUser.mockResolvedValue([decisionFixture({ createdAt })]);
+
+    const queue = await getQueueForUser("user_1", "team_1");
+
+    expect(queue.items[0]?.createdAt).toBe(createdAt.toISOString());
+  });
+
   it("maps recommendedAction to a human-readable suggestedAction", async () => {
     repo.getActiveDecisionsForUser.mockResolvedValue([
       decisionFixture({ recommendedAction: "wait_for_signal" }),
