@@ -17,6 +17,24 @@ export const icpDefinitionSchema = z.object({
 });
 export type IcpDefinitionData = z.infer<typeof icpDefinitionSchema>;
 
+// §10 never contracts a REST endpoint for ICPDefinition either (same gap as
+// ActionTaken/UserPreferences) -- inferred from the model + §18 DSH-5 "Team
+// ICP editor" backlog item. PUT bumps `version`, since decision.service.ts's
+// AI-5 cache key already treats icpVersion as the cache-invalidation signal
+// for "the ICP changed since this cached debate output was computed."
+export const updateIcpRequestSchema = z.object({
+  criteria: z.array(icpCriterionSchema),
+});
+export type UpdateIcpRequest = z.infer<typeof updateIcpRequestSchema>;
+
+export const icpResponseSchema = z.object({
+  teamId: z.string(),
+  criteria: z.array(icpCriterionSchema),
+  version: z.number().int().nonnegative(),
+  updatedAt: z.string().datetime().nullable(),
+});
+export type IcpResponse = z.infer<typeof icpResponseSchema>;
+
 // Bible Appendix F — cold-start heuristic ICP shape (idealStage/minSize/etc.)
 export const coldStartIcpSchema = z.object({
   idealStage: z.string(),

@@ -10,6 +10,8 @@ import { queueRouter } from "./modules/queue/queue.routes.js";
 import { integrationRouter } from "./modules/integrations/integration.routes.js";
 import { webhookRouter } from "./modules/webhooks/webhook.routes.js";
 import { memoryRouter } from "./modules/memory/memory.routes.js";
+import { preferencesRouter } from "./modules/preferences/preferences.routes.js";
+import { icpRouter } from "./modules/icp/icp.routes.js";
 
 export function createApp() {
   const app = express();
@@ -48,6 +50,8 @@ export function createApp() {
   app.use("/api/v1/queue", queueRouter);
   app.use("/api/v1/integrations", integrationRouter);
   app.use("/api/v1/memory", memoryRouter);
+  app.use("/api/v1/preferences", preferencesRouter);
+  app.use("/api/v1/icp", icpRouter);
 
   app.use(errorHandler);
 

@@ -15,6 +15,10 @@ export interface AuthContext {
   apiKeyId?: string;
 }
 
+/** Roles allowed to change team-wide state (Slack connect, ICP editing,
+ *  etc.) — everything narrower than an individual rep's own account. */
+export const ADMIN_ROLES = new Set<UserRole>(["ADMIN", "FOUNDER", "MANAGER"]);
+
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {

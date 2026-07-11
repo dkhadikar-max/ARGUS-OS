@@ -1,5 +1,5 @@
 import { AppError, type ConnectSlackRequest, type ConnectSlackResponse, type LinkSlackUserRequest, type LinkSlackUserResponse, type SlackTeamResolution, type SlackUserResolution } from "@argus/shared";
-import type { AuthContext } from "../../middleware/auth.js";
+import { ADMIN_ROLES, type AuthContext } from "../../middleware/auth.js";
 import {
   connectSlackIntegration,
   findSlackIntegrationByTeamId,
@@ -16,8 +16,6 @@ import { consumeOAuthState, createOAuthState } from "./oauth-state.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../lib/logger.js";
 import { recordAudit, type RequestMeta } from "../../lib/audit.js";
-
-const ADMIN_ROLES = new Set(["ADMIN", "FOUNDER", "MANAGER"]);
 
 function toResolution(integration: { teamId: string; config: unknown }): SlackTeamResolution {
   const config = integration.config as SlackIntegrationConfig;

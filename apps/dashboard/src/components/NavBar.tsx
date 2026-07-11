@@ -18,6 +18,9 @@ export async function NavBar() {
         <Link href="/company-memory" className="text-sm font-medium text-gray-600 hover:text-gray-900">
           Company Memory
         </Link>
+        <Link href="/settings" className="text-sm font-medium text-gray-600 hover:text-gray-900">
+          Settings
+        </Link>
       </div>
     </nav>
   );
