@@ -13,6 +13,7 @@ import {
 } from "@tremor/react";
 import { api } from "../../lib/api-client";
 import { VerdictBadge } from "../../components/VerdictBadge";
+import { RepFilterSelect } from "../../components/RepFilterSelect";
 
 const MODE_LABEL: Record<string, string> = {
   learning: "Learning mode",
@@ -23,11 +24,19 @@ const MODE_LABEL: Record<string, string> = {
 // Bible §18 DSH-3 "Analytics": decision history table (real, from GET
 // /api/v1/outcomes' existing `data`), outcome charts (Tremor, real, from
 // that same endpoint's `aggregations.byVerdict`), an accuracy score display,
-// and a per-rep accuracy breakdown (§4.4 Manager Morgan persona) — all real,
-// computed server-side (see README "Analytics" section for exactly what
-// "accuracy" means here and why it can be null).
-export default async function AnalyticsPage() {
-  const outcomes = await api.getOutcomes();
+// a per-rep accuracy breakdown, and now a rep filter on the decision-history
+// table (§4.4 Manager Morgan persona's "Filter by rep, see decision
+// history") — all real, computed server-side (see README "Analytics"
+// section for exactly what "accuracy" means here and why it can be null,
+// and exactly what the rep filter does and doesn't scope).
+export default async function AnalyticsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ rep?: string }>;
+}) {
+  const { rep } = await searchParams;
+  const outcomes = await api.getOutcomes({ userId: rep });
+  const selectedRep = rep ? outcomes.accuracy.byRep.find((r) => r.userId === rep) : undefined;
 
   const chartData = Object.entries(outcomes.aggregations.byVerdict).map(([verdict, stats]) => ({
     verdict,
@@ -124,12 +133,17 @@ export default async function AnalyticsPage() {
       </section>
 
       <section>
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-          Decision history
-        </h2>
+        <div className="mb-3 flex items-center justify-between gap-4">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Decision history{selectedRep ? ` — ${selectedRep.name}` : ""}
+          </h2>
+          <RepFilterSelect reps={outcomes.accuracy.byRep} />
+        </div>
         {outcomes.data.length === 0 ? (
           <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">
-            <p className="text-sm font-medium text-gray-900">No decision history yet</p>
+            <p className="text-sm font-medium text-gray-900">
+              {rep ? "No decision history for this rep yet" : "No decision history yet"}
+            </p>
             <p className="mt-1 text-sm text-gray-500">
               Decisions appear here once an outcome has been logged for them.
             </p>

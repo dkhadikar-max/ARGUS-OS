@@ -72,3 +72,23 @@ describe("apiFetch (via api.getQueue)", () => {
     await expect(api.getQueue()).rejects.toThrow("Response was not valid JSON");
   });
 });
+
+describe("api.getOutcomes", () => {
+  it("omits userId from the query string when not provided", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, {}));
+    await api.getOutcomes();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:4000/api/v1/outcomes?limit=20&offset=0",
+      expect.anything(),
+    );
+  });
+
+  it("includes userId in the query string when provided (Bible §4.4 rep filter)", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, {}));
+    await api.getOutcomes({ userId: "user_1" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:4000/api/v1/outcomes?limit=20&offset=0&userId=user_1",
+      expect.anything(),
+    );
+  });
+});

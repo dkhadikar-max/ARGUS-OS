@@ -74,8 +74,16 @@ export const api = {
   updateIcp: (payload: UpdateIcpRequest) =>
     apiFetch<IcpResponse>("/api/v1/icp", { method: "PUT", body: JSON.stringify(payload) }),
   // teamId is omitted -- outcome.routes.ts defaults it from the caller's
-  // own JWT-resolved team when absent from the query string.
-  getOutcomes: () => apiFetch<ListOutcomesResponse>("/api/v1/outcomes?limit=20&offset=0"),
+  // own JWT-resolved team when absent from the query string. userId scopes
+  // just the `data` decision-history array server-side (Bible §4.4 Manager
+  // Morgan "Filter by rep, see decision history") -- aggregations/accuracy
+  // stay team-wide regardless, since outcome.service.ts's byVerdict/byRep
+  // computations never read query.userId (see README "Analytics").
+  getOutcomes: (params?: { userId?: string }) => {
+    const query = new URLSearchParams({ limit: "20", offset: "0" });
+    if (params?.userId) query.set("userId", params.userId);
+    return apiFetch<ListOutcomesResponse>(`/api/v1/outcomes?${query.toString()}`);
+  },
   getDecision: (decisionId: string) => apiFetch<DecisionResponse>(`/api/v1/decisions/${decisionId}`),
   recordAction: (decisionId: string, payload: CreateActionRequest) =>
     apiFetch<CreateActionResponse>(`/api/v1/decisions/${decisionId}/action`, {
