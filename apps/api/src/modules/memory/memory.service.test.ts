@@ -1,6 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-const repo = { getCompanyMemory: vi.fn(), getMessageDraftsForTeam: vi.fn() };
+const repo = {
+  getCompanyMemory: vi.fn(),
+  getMessageDraftsForTeam: vi.fn(),
+  getDecisionsForRiskFlags: vi.fn(),
+};
 vi.mock("./memory.repository.js", () => repo);
 
 const { getCompanyMemoryForTeam } = await import("./memory.service.js");
@@ -8,7 +12,38 @@ const { getCompanyMemoryForTeam } = await import("./memory.service.js");
 beforeEach(() => {
   vi.clearAllMocks();
   repo.getMessageDraftsForTeam.mockResolvedValue([]);
+  repo.getDecisionsForRiskFlags.mockResolvedValue([]);
 });
+
+// A minimal but schema-valid agentDebateOutput -- only `risk.risks` varies
+// per test below.
+function agentOutputsWithRisks(risks: Array<{ category: string; severity: string; mitigation: string }>) {
+  return {
+    research: { summary: "s", data_points: [], unfair_advantages: [], hidden_risks: [], confidence: 80, data_gaps: [] },
+    icp: { score: 80, criteria_evaluated: [], overall_assessment: "a", edge_cases: [], confidence: 80 },
+    intent: { score: 80, signals: [], trajectory: "stable", false_intent_flags: [], confidence: 80 },
+    risk: {
+      score: 30,
+      risks: risks.map((r) => ({ ...r, description: "d", evidence: "e" })),
+      red_flags: [],
+      time_waste_probability: 30,
+      mitigation_strategies: [],
+      confidence: 80,
+    },
+    judge: {
+      verdict: "YES",
+      confidence: 80,
+      weighted_score: 80,
+      agent_consensus: "high",
+      conflicts: [],
+      reasoning: "r",
+      key_evidence: [],
+      message: { linkedin: "m", email: null, tone: "professional", personalization_hooks: [] },
+      recommended_action: "message_now",
+      confidence_explanation: "c",
+    },
+  };
+}
 
 describe("getCompanyMemoryForTeam", () => {
   it("returns an empty-but-valid shape for a brand-new team with no CompanyMemory row (Bible §5.3 cold-start)", async () => {
@@ -68,12 +103,11 @@ describe("getCompanyMemoryForTeam", () => {
     expect(result.patterns[0]?.confidence).toBe(60); // 50 + 2*5
   });
 
-  it("always returns riskFlags/icpAccuracy honestly empty (not yet computed anywhere)", async () => {
+  it("always returns icpAccuracy honestly null (not yet computed anywhere)", async () => {
     repo.getCompanyMemory.mockResolvedValue({ patterns: [], riskFlags: [{ fake: "flag" }], icpHistory: [] });
 
     const result = await getCompanyMemoryForTeam("team_1");
 
-    expect(result.riskFlags).toEqual([]);
     expect(result.icpAccuracy).toBeNull();
   });
 });
@@ -156,5 +190,106 @@ describe("getCompanyMemoryForTeam — topPerformingMessages", () => {
         result.topPerformingMessages[i]!.replyRate,
       );
     }
+  });
+});
+
+describe("getCompanyMemoryForTeam — riskFlags", () => {
+  it("returns an empty array when no decisions have a parseable risk assessment yet", async () => {
+    repo.getCompanyMemory.mockResolvedValue(null);
+    repo.getDecisionsForRiskFlags.mockResolvedValue([
+      { agentOutputs: null, outcome: null },
+      { agentOutputs: { not: "valid" }, outcome: null },
+    ]);
+
+    const result = await getCompanyMemoryForTeam("team_1");
+
+    expect(result.riskFlags).toEqual([]);
+  });
+
+  it("normalizes a risk category into one of the Risk Agent's own 6 themes, keyed off its keywords", async () => {
+    repo.getCompanyMemory.mockResolvedValue(null);
+    repo.getDecisionsForRiskFlags.mockResolvedValue([
+      { agentOutputs: agentOutputsWithRisks([{ category: "No budget confirmed", severity: "moderate", mitigation: "Ask about budget in first call" }]), outcome: null },
+      { agentOutputs: agentOutputsWithRisks([{ category: "Budget constraints unclear", severity: "minor", mitigation: "Confirm budget range" }]), outcome: null },
+      { agentOutputs: agentOutputsWithRisks([{ category: "Tight budget cycle", severity: "moderate", mitigation: "Time outreach to fiscal year" }]), outcome: null },
+    ]);
+
+    const result = await getCompanyMemoryForTeam("team_1");
+
+    expect(result.riskFlags).toHaveLength(1);
+    expect(result.riskFlags[0]?.condition).toBe("Budget");
+    expect(result.riskFlags[0]?.occurrenceRate).toBe(1); // all 3 assessed decisions had a Budget-themed risk
+  });
+
+  it("falls back to the raw category text when no known theme keyword matches", async () => {
+    repo.getCompanyMemory.mockResolvedValue(null);
+    repo.getDecisionsForRiskFlags.mockResolvedValue([
+      { agentOutputs: agentOutputsWithRisks([{ category: "Unusual procurement process", severity: "moderate", mitigation: "m" }]), outcome: null },
+      { agentOutputs: agentOutputsWithRisks([{ category: "Unusual procurement process", severity: "moderate", mitigation: "m" }]), outcome: null },
+      { agentOutputs: agentOutputsWithRisks([{ category: "Unusual procurement process", severity: "moderate", mitigation: "m" }]), outcome: null },
+    ]);
+
+    const result = await getCompanyMemoryForTeam("team_1");
+
+    expect(result.riskFlags[0]?.condition).toBe("Unusual procurement process");
+  });
+
+  it("excludes categories below the minimum sample size", async () => {
+    repo.getCompanyMemory.mockResolvedValue(null);
+    repo.getDecisionsForRiskFlags.mockResolvedValue([
+      { agentOutputs: agentOutputsWithRisks([{ category: "Budget", severity: "moderate", mitigation: "m" }]), outcome: null },
+      { agentOutputs: agentOutputsWithRisks([{ category: "Budget", severity: "moderate", mitigation: "m" }]), outcome: null },
+    ]);
+
+    const result = await getCompanyMemoryForTeam("team_1");
+
+    expect(result.riskFlags).toEqual([]);
+  });
+
+  it("computes falsePositiveRate from decisions where the flagged category still led to a reply", async () => {
+    repo.getCompanyMemory.mockResolvedValue(null);
+    repo.getDecisionsForRiskFlags.mockResolvedValue([
+      { agentOutputs: agentOutputsWithRisks([{ category: "Authority", severity: "moderate", mitigation: "m" }]), outcome: { type: "MEETING_BOOKED" } },
+      { agentOutputs: agentOutputsWithRisks([{ category: "Authority", severity: "moderate", mitigation: "m" }]), outcome: { type: "NO_RESPONSE" } },
+      { agentOutputs: agentOutputsWithRisks([{ category: "Authority", severity: "moderate", mitigation: "m" }]), outcome: null },
+    ]);
+
+    const result = await getCompanyMemoryForTeam("team_1");
+
+    // 2 of 3 occurrences have a logged outcome; 1 of those 2 still replied.
+    expect(result.riskFlags[0]?.falsePositiveRate).toBe(0.5);
+  });
+
+  it("takes the highest severity seen across occurrences of the same category", async () => {
+    repo.getCompanyMemory.mockResolvedValue(null);
+    repo.getDecisionsForRiskFlags.mockResolvedValue([
+      { agentOutputs: agentOutputsWithRisks([{ category: "Timing", severity: "minor", mitigation: "m" }]), outcome: null },
+      { agentOutputs: agentOutputsWithRisks([{ category: "Timing", severity: "dealbreaker", mitigation: "m" }]), outcome: null },
+      { agentOutputs: agentOutputsWithRisks([{ category: "Timing", severity: "moderate", mitigation: "m" }]), outcome: null },
+    ]);
+
+    const result = await getCompanyMemoryForTeam("team_1");
+
+    expect(result.riskFlags[0]?.severity).toBe("dealbreaker");
+  });
+
+  it("counts a category once per decision even if it appears twice in the same decision's risk list", async () => {
+    repo.getCompanyMemory.mockResolvedValue(null);
+    repo.getDecisionsForRiskFlags.mockResolvedValue([
+      {
+        agentOutputs: agentOutputsWithRisks([
+          { category: "Competition", severity: "moderate", mitigation: "m" },
+          { category: "Competitive displacement", severity: "moderate", mitigation: "m" },
+        ]),
+        outcome: null,
+      },
+      { agentOutputs: agentOutputsWithRisks([{ category: "Competition", severity: "moderate", mitigation: "m" }]), outcome: null },
+      { agentOutputs: agentOutputsWithRisks([{ category: "Competition", severity: "moderate", mitigation: "m" }]), outcome: null },
+    ]);
+
+    const result = await getCompanyMemoryForTeam("team_1");
+
+    expect(result.riskFlags).toHaveLength(1);
+    expect(result.riskFlags[0]?.occurrenceRate).toBe(1); // 3 decisions, not 4 risk-item occurrences
   });
 });

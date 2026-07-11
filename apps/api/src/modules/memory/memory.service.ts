@@ -1,6 +1,6 @@
 import type { OutcomeType } from "@argus/database";
-import type { CompanyMemoryResponse } from "@argus/shared";
-import { getCompanyMemory, getMessageDraftsForTeam } from "./memory.repository.js";
+import { agentDebateOutputSchema, type CompanyMemoryResponse } from "@argus/shared";
+import { getCompanyMemory, getDecisionsForRiskFlags, getMessageDraftsForTeam } from "./memory.repository.js";
 
 // Shape actually written by outcome.service.ts's updateCompanyMemoryPattern
 // -- an internal representation, distinct from (and mapped below to) Bible
@@ -44,8 +44,7 @@ function toPublicPattern(pattern: InternalPattern): CompanyMemoryResponse["patte
 // already generates these as natural-language phrases (§8.7's
 // `personalization_hooks`, e.g. "K8s scaling post"), so grouping by the
 // exact hook string across every message draft IS this field, not a
-// stand-in for real NLP clustering (unlike riskFlags, which genuinely needs
-// that -- see README "Company Memory").
+// stand-in for real NLP clustering.
 //
 // "Replied" is deliberately narrower than "has any logged outcome": a
 // CLOSED_LOST/DISQUALIFIED/SNOOZED outcome doesn't necessarily mean the
@@ -101,30 +100,146 @@ function computeTopPerformingMessages(
     .slice(0, MAX_RESULTS);
 }
 
+type RiskSeverity = "dealbreaker" | "moderate" | "minor";
+
+// Bible §10.5's own worked example ("Director title + >1000 employees")
+// implies clustering free-text risk descriptions into named recurring
+// conditions -- real text-clustering/NLP work this codebase has no
+// infrastructure for (no embeddings, no Pinecone -- see README "Known
+// gaps"). This is a disclosed, narrower heuristic instead of that, and
+// deliberately won't reproduce the Bible's own illustrative example
+// verbatim: the Risk Agent's own prompt (agents/prompts.ts) already
+// suggests 6 recurring themes ("Common risk categories: Authority, Budget,
+// Timing, Competition, Fit, Engagement") for the freeform `category` field
+// it asks Claude to fill in per risk. Keyword-matching each decision's own
+// `category` text against those same 6 themes -- the taxonomy the system
+// itself already uses, not one invented for this -- groups real recurring
+// conditions across decisions without inventing prospect-attribute
+// bucketing rules (e.g. what counts as ">1000 employees") the Bible never
+// specifies a threshold for.
+const RISK_CATEGORY_THEMES: Array<{ theme: string; keywords: string[] }> = [
+  { theme: "Authority", keywords: ["authority", "decision maker", "decision-maker"] },
+  { theme: "Budget", keywords: ["budget"] },
+  { theme: "Timing", keywords: ["timing", "urgency", "exploratory"] },
+  { theme: "Competition", keywords: ["competitor", "competition", "competitive"] },
+  { theme: "Fit", keywords: ["fit"] },
+  { theme: "Engagement", keywords: ["engagement", "respond", "outreach"] },
+];
+
+function normalizeRiskCategory(rawCategory: string): string {
+  const lower = rawCategory.toLowerCase();
+  for (const { theme, keywords } of RISK_CATEGORY_THEMES) {
+    if (keywords.some((keyword) => lower.includes(keyword))) return theme;
+  }
+  return rawCategory.trim();
+}
+
+const SEVERITY_RANK: Record<RiskSeverity, number> = { minor: 0, moderate: 1, dealbreaker: 2 };
+
+// Same reasoning as MIN_SAMPLE_SIZE above -- a condition seen in one or two
+// decisions isn't a recurring "flag" yet, it's noise.
+const MIN_RISK_SAMPLE_SIZE = 3;
+const MAX_RISK_RESULTS = 10;
+
+interface DecisionForRiskFlags {
+  agentOutputs: unknown;
+  outcome: { type: OutcomeType } | null;
+}
+
+interface RiskCategoryBucket {
+  decisionsWithCategory: number;
+  outcomeLoggedCount: number;
+  positiveDespiteFlag: number;
+  maxSeverity: RiskSeverity;
+  recommendation: string;
+}
+
+function computeRiskFlags(decisions: DecisionForRiskFlags[]): CompanyMemoryResponse["riskFlags"] {
+  let totalAssessed = 0;
+  const byCategory = new Map<string, RiskCategoryBucket>();
+
+  for (const decision of decisions) {
+    const parsed = agentDebateOutputSchema.safeParse(decision.agentOutputs);
+    if (!parsed.success) continue; // no risk assessment to read (predates this field, or malformed)
+    totalAssessed += 1;
+
+    // A category seen twice in the same decision's risk list still only
+    // counts as one occurrence for that decision -- occurrenceRate below is
+    // "fraction of decisions with this condition," not "fraction of risk
+    // items."
+    const seenInThisDecision = new Set<string>();
+    for (const risk of parsed.data.risk.risks) {
+      const category = normalizeRiskCategory(risk.category);
+      if (seenInThisDecision.has(category)) continue;
+      seenInThisDecision.add(category);
+
+      const bucket = byCategory.get(category) ?? {
+        decisionsWithCategory: 0,
+        outcomeLoggedCount: 0,
+        positiveDespiteFlag: 0,
+        maxSeverity: risk.severity,
+        recommendation: risk.mitigation,
+      };
+      bucket.decisionsWithCategory += 1;
+      if (SEVERITY_RANK[risk.severity] > SEVERITY_RANK[bucket.maxSeverity]) {
+        bucket.maxSeverity = risk.severity;
+      }
+      if (decision.outcome) {
+        bucket.outcomeLoggedCount += 1;
+        if (REPLIED_OUTCOME_TYPES.has(decision.outcome.type)) {
+          // The risk was flagged, but the prospect replied anyway -- the
+          // flag would have been a false alarm for this specific decision.
+          bucket.positiveDespiteFlag += 1;
+        }
+      }
+      byCategory.set(category, bucket);
+    }
+  }
+
+  if (totalAssessed === 0) return [];
+
+  return Array.from(byCategory.entries())
+    .filter(([, bucket]) => bucket.decisionsWithCategory >= MIN_RISK_SAMPLE_SIZE)
+    .map(([category, bucket]) => ({
+      id: `risk-${category.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+      condition: category,
+      severity: bucket.maxSeverity,
+      recommendation: bucket.recommendation,
+      occurrenceRate: bucket.decisionsWithCategory / totalAssessed,
+      // 0 (not null -- the schema requires a number) when no instance of
+      // this category has a logged outcome yet. Distinct from a real 0%
+      // false-positive rate, but the same MIN_RISK_SAMPLE_SIZE filter above
+      // makes an all-unlogged category increasingly unlikely as data grows.
+      falsePositiveRate: bucket.outcomeLoggedCount > 0 ? bucket.positiveDespiteFlag / bucket.outcomeLoggedCount : 0,
+    }))
+    .sort((a, b) => b.occurrenceRate - a.occurrenceRate)
+    .slice(0, MAX_RISK_RESULTS);
+}
+
 /** Bible §10.5 GET /api/v1/memory. A brand-new team with no outcomes logged
  *  yet has no CompanyMemory row at all (§5.3's "empty on Day 1" cold-start
  *  problem) -- that's a valid, expected state, not a 404: this returns the
  *  same empty shape either way. */
 export async function getCompanyMemoryForTeam(teamId: string): Promise<CompanyMemoryResponse> {
-  const [memory, messageDrafts] = await Promise.all([
+  const [memory, messageDrafts, riskDecisions] = await Promise.all([
     getCompanyMemory(teamId),
     getMessageDraftsForTeam(teamId),
+    getDecisionsForRiskFlags(teamId),
   ]);
 
   const patterns = Array.isArray(memory?.patterns)
     ? (memory.patterns as unknown as InternalPattern[]).map(toPublicPattern)
     : [];
 
-  // riskFlags and icpAccuracy have no producer anywhere in this codebase
-  // yet (see README "Company Memory" section for exactly why each is a
-  // separate, larger piece of not-yet-built work) -- returned honestly
-  // empty/null rather than fabricated. topPerformingMessages is now real,
-  // see computeTopPerformingMessages above.
+  // icpAccuracy has no producer anywhere in this codebase yet (see README
+  // "Company Memory" section for exactly why it's separate, larger scope)
+  // -- returned honestly null rather than fabricated. patterns,
+  // topPerformingMessages, and riskFlags are all real now.
   return {
     teamId,
     generatedAt: new Date().toISOString(),
     patterns,
-    riskFlags: [],
+    riskFlags: computeRiskFlags(riskDecisions),
     icpAccuracy: null,
     topPerformingMessages: computeTopPerformingMessages(messageDrafts),
   };

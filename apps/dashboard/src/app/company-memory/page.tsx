@@ -1,11 +1,12 @@
 import { api } from "../../lib/api-client";
 import { PatternCard } from "../../components/PatternCard";
 
-// Bible §18 DSH-4 "Company Memory". Patterns, and now top-performing
-// messages, are real, computed server-side (see README "Company Memory").
-// Risk flags and ICP accuracy still have no producer anywhere in this
-// codebase yet -- shown as honest empty states rather than fabricated
-// data, and flagged in README rather than silently hidden.
+// Bible §18 DSH-4 "Company Memory". Patterns, top-performing messages, and
+// now risk flags are all real, computed server-side (see README "Company
+// Memory" for exactly what each one does and doesn't mean). ICP accuracy
+// still has no producer anywhere in this codebase yet -- shown as an
+// honest empty state rather than fabricated data, and flagged in README
+// rather than silently hidden.
 export default async function CompanyMemoryPage() {
   const memory = await api.getCompanyMemory();
 
@@ -42,7 +43,7 @@ export default async function CompanyMemoryPage() {
           <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">
             <p className="text-sm font-medium text-gray-900">No risk flags yet</p>
             <p className="mt-1 text-sm text-gray-500">
-              Risk-pattern detection across decisions isn&apos;t built yet — see the project README.
+              This fills in once a recurring risk condition has appeared across enough decisions.
             </p>
           </div>
         ) : (

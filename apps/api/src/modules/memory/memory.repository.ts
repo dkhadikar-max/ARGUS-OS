@@ -16,3 +16,16 @@ export function getMessageDraftsForTeam(teamId: string) {
     },
   });
 }
+
+/** Bible §10.5 `riskFlags` -- every decision this team has generated, with
+ *  its full agent debate output (to read the Risk Agent's own risk list)
+ *  and whether it has a logged outcome. */
+export function getDecisionsForRiskFlags(teamId: string) {
+  return prisma.decision.findMany({
+    where: { teamId },
+    select: {
+      agentOutputs: true,
+      outcome: { select: { type: true } },
+    },
+  });
+}
