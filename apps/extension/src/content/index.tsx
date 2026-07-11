@@ -12,6 +12,8 @@ let hostEl: HTMLElement | null = null;
 function mountSidebar() {
   if (hostEl) return; // already mounted
 
+  const mountStartedAt = performance.now();
+
   hostEl = document.createElement("div");
   hostEl.id = HOST_ID;
   // Bible §18 EXT-1 "Position and styling (right sidebar, responsive)".
@@ -30,7 +32,7 @@ function mountSidebar() {
   shadowRoot.appendChild(appContainer);
 
   root = createRoot(appContainer);
-  root.render(<App onClose={unmountSidebar} />);
+  root.render(<App onClose={unmountSidebar} mountStartedAt={mountStartedAt} />);
 }
 
 function unmountSidebar() {

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { DecisionResponse, Verdict } from "@argus/shared";
 import { api, auth } from "../lib/api-client.js";
-import { extractProfileFromDom } from "../lib/linkedin-selectors.js";
+import { extractProfileFromDom, detectProfilePageType } from "../lib/linkedin-selectors.js";
+import { identify, track } from "../lib/analytics.js";
 import { LoadingSkeleton } from "./components/LoadingSkeleton.js";
 import { VerdictCard } from "./components/VerdictCard.js";
 import { EvidenceAccordion } from "./components/EvidenceAccordion.js";
@@ -18,9 +19,12 @@ type Status = "checking_auth" | "unauthenticated" | "loading" | "success" | "err
 
 interface Props {
   onClose: () => void;
+  /** performance.now() at the moment content/index.tsx decided to mount
+   *  the sidebar — used to compute sidebar_opened's load_time_ms. */
+  mountStartedAt: number;
 }
 
-export function App({ onClose }: Props) {
+export function App({ onClose, mountStartedAt }: Props) {
   const [status, setStatus] = useState<Status>("checking_auth");
   const [decision, setDecision] = useState<DecisionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -74,9 +78,28 @@ export function App({ onClose }: Props) {
         setStatus("unauthenticated");
         return;
       }
+
+      identify(stored.userId);
+
+      // Bible §11.1 sidebar_opened: "Chrome extension sidebar renders".
+      // No Prospect row (and thus no DB id) exists yet at this point — the
+      // upsert happens server-side inside createDecision — so linkedInUrl
+      // stands in for prospect_id, since Prospect is itself uniquely keyed
+      // on that field (Bible §9.1 @unique).
+      const profile = extractProfileFromDom();
+      const pageType = detectProfilePageType(window.location.href);
+      track({
+        name: "sidebar_opened",
+        properties: {
+          prospect_id: profile.linkedInUrl,
+          source: pageType === "company" ? "company" : "profile",
+          load_time_ms: Math.round(performance.now() - mountStartedAt),
+        },
+      });
+
       void requestDecision(stored.userId, stored.teamId);
     });
-  }, [requestDecision]);
+  }, [requestDecision, mountStartedAt]);
 
   async function handleOverride(newVerdict: Verdict, reason?: string) {
     if (!decision) return;
@@ -145,6 +168,7 @@ export function App({ onClose }: Props) {
             <VerdictCard decision={decision} />
             <EvidenceAccordion evidence={decision.evidence} />
             <MessageComposer
+              decisionId={decision.id}
               message={decision.message}
               onRegenerate={handleRegenerate}
               regenerating={regenerating}

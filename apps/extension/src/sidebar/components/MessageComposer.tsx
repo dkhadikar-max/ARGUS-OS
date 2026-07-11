@@ -1,7 +1,9 @@
 import { useState } from "react";
-import type { DecisionResponse } from "@argus/shared";
+import type { Channel, DecisionResponse } from "@argus/shared";
+import { track } from "../../lib/analytics.js";
 
 interface Props {
+  decisionId: string;
   message: DecisionResponse["message"];
   onRegenerate: () => void;
   regenerating: boolean;
@@ -9,10 +11,22 @@ interface Props {
 
 type ActiveChannel = "linkedin" | "email";
 
+const CHANNEL_TO_SCHEMA: Record<ActiveChannel, Channel> = {
+  linkedin: "LINKEDIN",
+  email: "EMAIL",
+};
+
+// A length swing bigger than this fraction of the original counts as a
+// "major" edit rather than a "minor" one (Bible §11.1 message_edited's
+// edit_type has only these two values and no defined threshold between
+// them — 20% is a disclosed, not arbitrary, choice: enough to rule out
+// typo-level fixes without requiring a full rewrite to count as "major").
+const MAJOR_EDIT_THRESHOLD = 0.2;
+
 // Bible §6.1 wireframe "MESSAGE (LinkedIn)" panel with
 // [Copy] [Edit] [Regenerate] [Switch to Email] actions; §11.1 events
 // message_copied / message_edited track each of these.
-export function MessageComposer({ message, onRegenerate, regenerating }: Props) {
+export function MessageComposer({ decisionId, message, onRegenerate, regenerating }: Props) {
   const [channel, setChannel] = useState<ActiveChannel>(
     message.linkedin ? "linkedin" : "email",
   );
@@ -20,7 +34,9 @@ export function MessageComposer({ message, onRegenerate, regenerating }: Props) 
   const [draft, setDraft] = useState(message[channel] ?? "");
   const [copied, setCopied] = useState(false);
 
-  const body = editing ? draft : message[channel] ?? "";
+  const original = message[channel] ?? "";
+  const body = editing ? draft : original;
+  const wasEdited = draft !== original;
   const otherChannel: ActiveChannel = channel === "linkedin" ? "email" : "linkedin";
   const hasOtherChannel = Boolean(message[otherChannel]);
 
@@ -28,6 +44,36 @@ export function MessageComposer({ message, onRegenerate, regenerating }: Props) 
     await navigator.clipboard.writeText(body);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
+
+    track({
+      name: "message_copied",
+      properties: {
+        decision_id: decisionId,
+        channel: CHANNEL_TO_SCHEMA[channel],
+        tone: message.tone,
+        was_edited: wasEdited,
+      },
+    });
+  }
+
+  function handleToggleEdit() {
+    if (editing) {
+      // Toggling off = "Save". Only a real length change counts as an edit.
+      if (draft !== original) {
+        const originalLength = original.length;
+        const newLength = draft.length;
+        const delta = Math.abs(newLength - originalLength);
+        const editType = originalLength > 0 && delta / originalLength > MAJOR_EDIT_THRESHOLD ? "major" : "minor";
+
+        track({
+          name: "message_edited",
+          properties: { decision_id: decisionId, edit_type: editType, original_length: originalLength, new_length: newLength },
+        });
+      }
+      setEditing(false);
+    } else {
+      setEditing(true);
+    }
   }
 
   function handleSwitchChannel() {
@@ -64,7 +110,7 @@ export function MessageComposer({ message, onRegenerate, regenerating }: Props) 
           </button>
           <button
             type="button"
-            onClick={() => setEditing((prev) => !prev)}
+            onClick={handleToggleEdit}
             className="rounded border border-gray-300 px-3 py-1.5 text-gray-700 hover:bg-gray-50"
           >
             {editing ? "Save" : "Edit"}
