@@ -15,6 +15,9 @@ export async function NavBar() {
         <Link href="/queue" className="text-sm font-medium text-gray-600 hover:text-gray-900">
           Today&apos;s Queue
         </Link>
+        <Link href="/analytics" className="text-sm font-medium text-gray-600 hover:text-gray-900">
+          Analytics
+        </Link>
         <Link href="/company-memory" className="text-sm font-medium text-gray-600 hover:text-gray-900">
           Company Memory
         </Link>

@@ -67,5 +67,18 @@ export const listOutcomesResponseSchema = z.object({
   aggregations: z.object({
     byVerdict: z.record(verdictSchema, verdictAggregationSchema.optional()),
   }),
+  // Not itself part of §10.3's documented response (verified against the
+  // Bible's own worked example) -- an additive field for §18 DSH-3's
+  // "Accuracy score display". `mode` reuses Appendix F's own "learning/
+  // calibrating/mature" tiers by team decision count; `score` is the
+  // weighted meeting-rate across STRONG_YES/YES outcomes (a "the AI said
+  // yes, did it convert" proxy), null when there isn't at least one such
+  // outcome logged yet -- an honest "not enough data" rather than a
+  // fabricated number.
+  accuracy: z.object({
+    totalDecisions: z.number().int().nonnegative(),
+    mode: z.enum(["learning", "calibrating", "mature"]),
+    score: z.number().min(0).max(1).nullable(),
+  }),
 });
 export type ListOutcomesResponse = z.infer<typeof listOutcomesResponseSchema>;

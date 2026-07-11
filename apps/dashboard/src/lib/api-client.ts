@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import type {
   CompanyMemoryResponse,
   IcpResponse,
+  ListOutcomesResponse,
   QueueResponse,
   UpdateIcpRequest,
   UpdateUserPreferencesRequest,
@@ -54,4 +55,7 @@ export const api = {
   getIcp: () => apiFetch<IcpResponse>("/api/v1/icp"),
   updateIcp: (payload: UpdateIcpRequest) =>
     apiFetch<IcpResponse>("/api/v1/icp", { method: "PUT", body: JSON.stringify(payload) }),
+  // teamId is omitted -- outcome.routes.ts defaults it from the caller's
+  // own JWT-resolved team when absent from the query string.
+  getOutcomes: () => apiFetch<ListOutcomesResponse>("/api/v1/outcomes?limit=20&offset=0"),
 };

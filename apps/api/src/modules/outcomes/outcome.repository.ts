@@ -87,3 +87,10 @@ export function getVerdictAggregations(teamId: string) {
     select: { type: true, timeToOutcomeDays: true, decision: { select: { verdict: true } } },
   });
 }
+
+/** Bible Appendix F's calibration tiers ("learning"/"calibrating"/"mature")
+ *  are keyed on total team decisions, not just outcome-logged ones -- a
+ *  team can generate many verdicts while logging few ground-truth outcomes. */
+export function countDecisionsForTeam(teamId: string) {
+  return prisma.decision.count({ where: { teamId } });
+}

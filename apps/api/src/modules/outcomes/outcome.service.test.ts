@@ -10,6 +10,7 @@ const repo = {
   upsertCompanyMemory: vi.fn(),
   listOutcomes: vi.fn(),
   getVerdictAggregations: vi.fn(),
+  countDecisionsForTeam: vi.fn(),
 };
 
 vi.mock("./outcome.repository.js", () => repo);
@@ -130,6 +131,7 @@ describe("listOutcomesForTeam", () => {
       { type: "MEETING_BOOKED", timeToOutcomeDays: 2, decision: { verdict: "STRONG_YES" } },
       { type: "NO_RESPONSE", timeToOutcomeDays: null, decision: { verdict: "STRONG_YES" } },
     ]);
+    repo.countDecisionsForTeam.mockResolvedValue(75);
 
     const result = await listOutcomesForTeam({ teamId: "team_1", limit: 20, offset: 0 });
 
@@ -139,5 +141,35 @@ describe("listOutcomesForTeam", () => {
       avgTimeToMeeting: 2,
     });
     expect(result.pagination).toEqual({ total: 1, limit: 20, offset: 0, hasMore: false });
+    expect(result.accuracy).toEqual({ totalDecisions: 75, mode: "calibrating", score: 0.5 });
+  });
+
+  it("returns a null accuracy score when there's no STRONG_YES/YES outcome yet, without fabricating a number", async () => {
+    repo.listOutcomes.mockResolvedValue({ rows: [], total: 0 });
+    repo.getVerdictAggregations.mockResolvedValue([
+      { type: "NO_RESPONSE", timeToOutcomeDays: null, decision: { verdict: "PASS" } },
+    ]);
+    repo.countDecisionsForTeam.mockResolvedValue(10);
+
+    const result = await listOutcomesForTeam({ teamId: "team_1", limit: 20, offset: 0 });
+
+    expect(result.accuracy).toEqual({ totalDecisions: 10, mode: "learning", score: null });
+  });
+
+  it("weights STRONG_YES/YES accuracy by each bucket's own sample size", async () => {
+    repo.listOutcomes.mockResolvedValue({ rows: [], total: 0 });
+    repo.getVerdictAggregations.mockResolvedValue([
+      // STRONG_YES: 1/1 meeting (100%); YES: 1/9 meetings (~11%) -- a naive
+      // unweighted average of the two rates would be ~56%, not correct here.
+      { type: "MEETING_BOOKED", timeToOutcomeDays: 1, decision: { verdict: "STRONG_YES" } },
+      { type: "MEETING_BOOKED", timeToOutcomeDays: 1, decision: { verdict: "YES" } },
+      ...Array.from({ length: 8 }, () => ({ type: "NO_RESPONSE" as const, timeToOutcomeDays: null, decision: { verdict: "YES" as const } })),
+    ]);
+    repo.countDecisionsForTeam.mockResolvedValue(200);
+
+    const result = await listOutcomesForTeam({ teamId: "team_1", limit: 20, offset: 0 });
+
+    expect(result.accuracy.score).toBeCloseTo(0.2); // (1 + 1) meetings / (1 + 9) total
+    expect(result.accuracy.mode).toBe("calibrating"); // Bible's own "50-200" is inclusive of 200
   });
 });

@@ -1,6 +1,7 @@
 import { AppError, type CreateOutcomeRequest, type CreateOutcomeResponse, type ListOutcomesQuery, type ListOutcomesResponse, type Verdict } from "@argus/shared";
 import type { AuthContext } from "../../middleware/auth.js";
 import {
+  countDecisionsForTeam,
   createOutcomeRecord,
   findDecisionForOutcome,
   getCompanyMemory,
@@ -15,6 +16,19 @@ import { track } from "../../lib/analytics.js";
 import { recordAudit, type RequestMeta } from "../../lib/audit.js";
 
 const MEETING_OUTCOME_TYPES = new Set(["MEETING_BOOKED", "OPPORTUNITY_CREATED", "CLOSED_WON"]);
+
+// Bible Appendix F's own tiers for "how much has this team taught ARGUS
+// yet" -- reused here for §18 DSH-3's "Accuracy score display" verbatim,
+// even though the confidence-multiplier mechanism they originally describe
+// (rawConfidence * 0.7/0.85/1.0) isn't itself implemented.
+const CALIBRATING_THRESHOLD = 50;
+const MATURE_THRESHOLD = 200;
+
+function calibrationMode(totalDecisions: number): "learning" | "calibrating" | "mature" {
+  if (totalDecisions < CALIBRATING_THRESHOLD) return "learning";
+  if (totalDecisions <= MATURE_THRESHOLD) return "calibrating";
+  return "mature";
+}
 
 /**
  * Lightweight synchronous learning update (Bible §5.3 Learning Layer,
@@ -137,9 +151,10 @@ export async function createOutcome(
 export async function listOutcomesForTeam(
   query: ListOutcomesQuery,
 ): Promise<ListOutcomesResponse> {
-  const [{ rows, total }, aggregationRows] = await Promise.all([
+  const [{ rows, total }, aggregationRows, totalDecisions] = await Promise.all([
     listOutcomes(query),
     getVerdictAggregations(query.teamId),
+    countDecisionsForTeam(query.teamId),
   ]);
 
   const byVerdict: ListOutcomesResponse["aggregations"]["byVerdict"] = {};
@@ -165,6 +180,17 @@ export async function listOutcomesForTeam(
     };
   }
 
+  // "Accuracy" proxy: the AI's positive predictions (STRONG_YES/YES) should
+  // convert to a meeting — weighted by each bucket's own sample size so a
+  // handful of STRONG_YES outcomes doesn't get the same say as a hundred
+  // YES ones. Null (not 0) when neither bucket has a logged outcome yet:
+  // an honest "not enough data", not a fabricated zero.
+  const strongYes = byVerdict.STRONG_YES;
+  const yes = byVerdict.YES;
+  const positivePredictionCount = (strongYes?.count ?? 0) + (yes?.count ?? 0);
+  const positivePredictionMeetings =
+    (strongYes ? strongYes.meetingRate * strongYes.count : 0) + (yes ? yes.meetingRate * yes.count : 0);
+
   return {
     data: rows.map((row) => ({
       id: row.id,
@@ -185,5 +211,10 @@ export async function listOutcomesForTeam(
       hasMore: query.offset + rows.length < total,
     },
     aggregations: { byVerdict },
+    accuracy: {
+      totalDecisions,
+      mode: calibrationMode(totalDecisions),
+      score: positivePredictionCount > 0 ? positivePredictionMeetings / positivePredictionCount : null,
+    },
   };
 }
