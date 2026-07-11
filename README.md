@@ -155,6 +155,16 @@ Out of scope (P2, explicitly not attempted): "Integration connections" (Slack co
 
 The last unbuilt piece of DSH-2 — `components/QueueList.tsx` filters (by verdict, toggle chips) and sorts (priority/confidence/most-recent) entirely client-side against the already-fetched queue, since a rep's daily queue is a small, bounded list that doesn't need a new API round-trip or server-side query params for this. `GET /api/v1/queue`'s response gained one additive field beyond §10.4's literal documented example: `createdAt` (the decision's raw timestamp) — `lastActivity` is a formatted display label ("New since yesterday", "3 days ago"), not something a "most recent" sort could actually sort by.
 
+### Full Debate View (Bible §6.5, §10.2 `includeDebate`)
+
+`options.includeDebate` has existed in `createDecisionRequestSchema` since §10.2 was first built, but nothing ever read it and `decisionResponseSchema` had no field for its output to land in — the option was entirely dead. `DecisionResponse` now has an optional `debate` field (the same `agentDebateOutputSchema` — research/icp/intent/risk/judge — the orchestrator already produces and `Decision.agentOutputs` already persists, see `packages/shared/src/schemas/agents.ts`), populated two ways: `POST /api/v1/decisions` includes it only when `options.includeDebate` is `true` (`false` by default, matching every one of §10.2's own worked examples, so the common-case sidebar response stays as lean as it always was); `GET /api/v1/decisions/{id}` always includes it, since that's specifically the endpoint "View More" / deep inspection calls. A malformed or pre-existing `agentOutputs` row degrades to `debate: null` (`decision.service.ts`'s `parseDebate`) rather than a 500.
+
+Two surfaces now render it:
+- **Slack** — `decision_view_more`'s "View More" button (`apps/slack-bot/src/blocks/full-debate.ts`) now renders all 5 agents' actual reasoning instead of the flattened evidence list it showed before, including the Judge's weighted-aggregation formula (ICP 40% + Intent 35% + Risk 15% + Research 10%, from the Judge agent's own prompt in `agents/prompts.ts`) and final score.
+- **Extension sidebar** — a new "View full debate →" link (`sidebar/App.tsx`) fetches the GET endpoint on demand and renders `FullDebateView.tsx`, a "Back to Sidebar"-toggled view with one card per agent, matching the §6.5 wireframe's sections. Fires `full_debate_viewed` (Bible §11.1) on leaving the view (not entering), so `time_spent_ms` — a required, not optional, schema field here — is a real measured duration rather than a fabricated 0; `agent_viewed: "all"` is honest, not a placeholder, since this pass renders every agent at once rather than a tabbed one-at-a-time view.
+
+Not built: the wireframe's own `[Override]`/`[Share with Team]` buttons aren't duplicated inside this view — Override is one click away via "Back to Sidebar", where the existing override controls already live, and "Share with Team" has no backing endpoint anywhere in §10 (same category of gap as Company Memory/ActionTaken before it needed one added).
+
 ### Chrome Web Store submission prep (Bible §19.2 T-7 launch runbook item)
 
 See **[CHROME_STORE_SUBMISSION.md](./CHROME_STORE_SUBMISSION.md)** for the full checklist, store listing copy, and a privacy policy draft. Two concrete things fixed in the codebase itself, not just documentation:
@@ -189,7 +199,7 @@ Six parallel agents audited the whole build (every workspace, plus a dedicated p
 ### Known gaps (flagged, not hidden)
 
 - Slack message edits (`Edit First`) aren't persisted server-side, matching the extension's own client-local edit behavior.
-- The Full Debate View (§6.5) is an explicit P1 roadmap item — Slack's "View More" shows expanded evidence, not the full 5-agent debate.
+- The Full Debate View (§6.5) is now built — see "Full Debate View" above — except its wireframe's `Share with Team` button, which has no backing endpoint (also noted there).
 - Clerk's `user.deleted` webhook is logged, not acted on — hard-deleting would violate the Decision/Outcome/MessageDraft foreign keys against that user, and a real implementation needs a GDPR-safe anonymization strategy (Bible §16.1 Risk #7, itself an explicit not-yet-built item).
 - All of Bible §18 DSH-2/3/4/5's dashboard backlog items are now built (see "Today Queue filter and sort controls" above for the last of them).
 - Analytics has no per-rep accuracy breakdown (§4.4 Manager Morgan persona wants this specifically, for 1:1 coaching) — only a team-wide number (see "Analytics" section above).

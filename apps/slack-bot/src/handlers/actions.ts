@@ -162,11 +162,12 @@ export function registerActionHandlers(app: App): void {
 
     await withErrorFeedback(respond, "decision_view_more", async () => {
       const decision = await argusApi.getDecision({ apiKey: auth.apiKey, actingUserId: auth.argusUserId }, decisionId);
-      const lines = decision.evidence.map((e) => `• *${e.type}* (${e.confidence}%): ${e.signal} — ${e.relevance}`);
+      const { buildFullDebateBlocks } = await import("../blocks/full-debate.js");
 
       await respond({
         response_type: "ephemeral",
-        text: [`*Full evidence for ${decision.prospect.name}:*`, ...lines].join("\n"),
+        blocks: buildFullDebateBlocks(decision),
+        text: `Full debate for ${decision.prospect.name}`, // Slack notification/fallback text
       });
     });
   });

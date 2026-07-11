@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { actionTypeSchema, channelSchema, messageToneSchema, verdictSchema } from "./enums.js";
+import { agentDebateOutputSchema } from "./agents.js";
 
 // Bible §10.2 — POST /api/v1/decisions request body
 export const createDecisionRequestSchema = z.object({
@@ -63,6 +64,15 @@ export const decisionResponseSchema = z.object({
   confidence: z.number().min(0).max(100),
   reasoning: z.string(),
   evidence: z.array(evidenceCardSchema),
+  // Bible §6.5 "Full Debate View — Deep Inspection": the per-agent
+  // (research/icp/intent/risk/judge) breakdown, distinct from `reasoning`
+  // (the Judge's own summary) and `evidence` (flattened Evidence rows).
+  // `options.includeDebate` above gates this on POST (undefined/omitted
+  // when false, matching every one of §10.2's own worked examples, all of
+  // which use `includeDebate: false`); GET /api/v1/decisions/{id} -- the
+  // endpoint "View More" actually calls -- always includes it, since that
+  // request exists specifically for deep inspection.
+  debate: agentDebateOutputSchema.nullable().optional(),
   message: messagePayloadSchema,
   recommendedAction: z.enum([
     "message_now",

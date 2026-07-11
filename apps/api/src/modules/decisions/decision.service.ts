@@ -1,4 +1,4 @@
-import { AppError, type CreateActionRequest, type CreateActionResponse, type CreateDecisionRequest, type DecisionResponse, type OverrideDecisionRequest, type OverrideDecisionResponse } from "@argus/shared";
+import { agentDebateOutputSchema, AppError, type CreateActionRequest, type CreateActionResponse, type CreateDecisionRequest, type DecisionResponse, type OverrideDecisionRequest, type OverrideDecisionResponse } from "@argus/shared";
 import type { AuthContext } from "../../middleware/auth.js";
 import { runAgentDebate } from "../../agents/orchestrator.js";
 import {
@@ -92,8 +92,19 @@ function buildEnrichmentEvidence(
   return evidence;
 }
 
+// `agentOutputs` is a `Json?` column (schema.prisma: "Full agent outputs for
+// audit") -- always written by createDecision below, but still untyped at
+// the DB layer, so this parses defensively rather than trusting the cast
+// the write side uses. A decision predating this field (or any malformed
+// row) degrades to no debate section rather than a 500 on GET.
+function parseDebate(agentOutputs: unknown): DecisionResponse["debate"] {
+  const parsed = agentDebateOutputSchema.safeParse(agentOutputs);
+  return parsed.success ? parsed.data : null;
+}
+
 function toDecisionResponse(
   decision: NonNullable<Awaited<ReturnType<typeof findDecisionById>>>,
+  includeDebate: boolean,
 ): DecisionResponse {
   const primaryMessage = decision.messageDrafts[0];
 
@@ -119,6 +130,7 @@ function toDecisionResponse(
         confidence: e.confidence,
       };
     }),
+    debate: includeDebate ? parseDebate(decision.agentOutputs) : undefined,
     message: {
       linkedin: primaryMessage?.channel === "LINKEDIN" ? primaryMessage.body : null,
       email: primaryMessage?.channel === "EMAIL" ? primaryMessage.body : null,
@@ -296,7 +308,7 @@ export async function createDecision(
     },
   });
 
-  return toDecisionResponse(full);
+  return toDecisionResponse(full, request.options.includeDebate);
 }
 
 export async function getDecision(
@@ -307,7 +319,10 @@ export async function getDecision(
   if (!decision) {
     throw new AppError("NOT_FOUND", "Decision not found");
   }
-  return toDecisionResponse(decision);
+  // Always include the debate here: this GET is specifically what "View
+  // More" / deep inspection calls (Bible §6.5), unlike POST's initial,
+  // deliberately leaner response.
+  return toDecisionResponse(decision, true);
 }
 
 export async function overrideDecision(

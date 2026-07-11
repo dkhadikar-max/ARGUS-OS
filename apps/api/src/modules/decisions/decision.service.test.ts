@@ -288,12 +288,171 @@ describe("createDecision", () => {
     // its own auditable event even when the AI analysis is reused.
     expect(repo.createDecisionRecord).toHaveBeenCalled();
   });
+
+  it("includes the full agent debate breakdown when options.includeDebate is true (Bible §6.5)", async () => {
+    repo.upsertProspect.mockResolvedValue({
+      id: "prospect_1",
+      name: "Sarah Chen",
+      title: "VP Engineering",
+      companyName: "DataFlow Inc.",
+      companyDomain: "dataflow.io",
+      linkedInUrl: request.prospect.linkedInUrl,
+      companySize: null,
+      companyIndustry: null,
+      companyFunding: null,
+      rawProfile: null,
+      enrichedData: null,
+    });
+    repo.getActiveIcp.mockResolvedValue(null);
+    repo.getCompanyMemory.mockResolvedValue(null);
+    repo.getUserPreferences.mockResolvedValue(null);
+    repo.getProspectDecisionHistory.mockResolvedValue([]);
+    repo.getTeamOutcomeHistory.mockResolvedValue([]);
+    runAgentDebate.mockResolvedValue({ output: agentDebateOutput, processingTimeMs: 3200 });
+    repo.createDecisionRecord.mockResolvedValue({ id: "dec_1" });
+    repo.findDecisionById.mockResolvedValue({
+      id: "dec_1",
+      verdict: "STRONG_YES",
+      confidence: 94,
+      reasoning: "Strong across the board.",
+      recommendedAction: "message_now",
+      processingTimeMs: 3200,
+      createdAt: new Date("2026-07-10T14:32:00Z"),
+      updatedAt: new Date("2026-07-10T14:32:00Z"),
+      evidence: [],
+      messageDrafts: [],
+      outcome: null,
+      override: null,
+      agentOutputs: agentDebateOutput,
+      prospect: {
+        id: "prospect_1",
+        name: "Sarah Chen",
+        title: "VP Engineering",
+        companyName: "DataFlow Inc.",
+        linkedInUrl: "https://linkedin.com/in/sarahchen",
+      },
+    });
+
+    const result = await createDecision(
+      { ...request, options: { ...request.options, includeDebate: true } },
+      auth,
+    );
+
+    expect(result.debate).toEqual(agentDebateOutput);
+  });
+
+  it("omits the debate field when options.includeDebate is false (default)", async () => {
+    repo.upsertProspect.mockResolvedValue({
+      id: "prospect_1",
+      name: "Sarah Chen",
+      title: "VP Engineering",
+      companyName: "DataFlow Inc.",
+      companyDomain: "dataflow.io",
+      linkedInUrl: request.prospect.linkedInUrl,
+      companySize: null,
+      companyIndustry: null,
+      companyFunding: null,
+      rawProfile: null,
+      enrichedData: null,
+    });
+    repo.getActiveIcp.mockResolvedValue(null);
+    repo.getCompanyMemory.mockResolvedValue(null);
+    repo.getUserPreferences.mockResolvedValue(null);
+    repo.getProspectDecisionHistory.mockResolvedValue([]);
+    repo.getTeamOutcomeHistory.mockResolvedValue([]);
+    runAgentDebate.mockResolvedValue({ output: agentDebateOutput, processingTimeMs: 3200 });
+    repo.createDecisionRecord.mockResolvedValue({ id: "dec_1" });
+    repo.findDecisionById.mockResolvedValue({
+      id: "dec_1",
+      verdict: "STRONG_YES",
+      confidence: 94,
+      reasoning: "Strong across the board.",
+      recommendedAction: "message_now",
+      processingTimeMs: 3200,
+      createdAt: new Date("2026-07-10T14:32:00Z"),
+      updatedAt: new Date("2026-07-10T14:32:00Z"),
+      evidence: [],
+      messageDrafts: [],
+      outcome: null,
+      override: null,
+      agentOutputs: agentDebateOutput,
+      prospect: {
+        id: "prospect_1",
+        name: "Sarah Chen",
+        title: "VP Engineering",
+        companyName: "DataFlow Inc.",
+        linkedInUrl: "https://linkedin.com/in/sarahchen",
+      },
+    });
+
+    const result = await createDecision(request, auth);
+
+    expect(result.debate).toBeUndefined();
+  });
 });
 
 describe("getDecision", () => {
   it("throws NOT_FOUND when the decision doesn't exist for this team", async () => {
     repo.findDecisionById.mockResolvedValue(null);
     await expect(getDecision("dec_missing", auth)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("always includes the full debate breakdown, since GET backs 'View More' / deep inspection (Bible §6.5)", async () => {
+    repo.findDecisionById.mockResolvedValue({
+      id: "dec_1",
+      verdict: "STRONG_YES",
+      confidence: 94,
+      reasoning: "Strong across the board.",
+      recommendedAction: "message_now",
+      processingTimeMs: 3200,
+      createdAt: new Date("2026-07-10T14:32:00Z"),
+      updatedAt: new Date("2026-07-10T14:32:00Z"),
+      evidence: [],
+      messageDrafts: [],
+      outcome: null,
+      override: null,
+      agentOutputs: agentDebateOutput,
+      prospect: {
+        id: "prospect_1",
+        name: "Sarah Chen",
+        title: "VP Engineering",
+        companyName: "DataFlow Inc.",
+        linkedInUrl: "https://linkedin.com/in/sarahchen",
+      },
+    });
+
+    const result = await getDecision("dec_1", auth);
+
+    expect(result.debate).toEqual(agentDebateOutput);
+  });
+
+  it("degrades to debate: null instead of throwing when agentOutputs is malformed", async () => {
+    repo.findDecisionById.mockResolvedValue({
+      id: "dec_1",
+      verdict: "STRONG_YES",
+      confidence: 94,
+      reasoning: "Strong across the board.",
+      recommendedAction: "message_now",
+      processingTimeMs: 3200,
+      createdAt: new Date("2026-07-10T14:32:00Z"),
+      updatedAt: new Date("2026-07-10T14:32:00Z"),
+      evidence: [],
+      messageDrafts: [],
+      outcome: null,
+      override: null,
+      agentOutputs: null, // e.g. a pre-existing row from before this field existed
+      prospect: {
+        id: "prospect_1",
+        name: "Sarah Chen",
+        title: "VP Engineering",
+        companyName: "DataFlow Inc.",
+        linkedInUrl: "https://linkedin.com/in/sarahchen",
+      },
+    });
+
+    const result = await getDecision("dec_1", auth);
+
+    expect(result.debate).toBeNull();
   });
 });
 

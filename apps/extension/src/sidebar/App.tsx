@@ -8,6 +8,7 @@ import { VerdictCard } from "./components/VerdictCard.js";
 import { EvidenceAccordion } from "./components/EvidenceAccordion.js";
 import { MessageComposer } from "./components/MessageComposer.js";
 import { VerdictActions } from "./components/VerdictActions.js";
+import { FullDebateView } from "./components/FullDebateView.js";
 
 // Bible §7.2 EXT-5: full Clerk OAuth handshake lives in the web dashboard
 // (Epic 5, not yet built in this pass) — the sidebar only consumes a token
@@ -30,11 +31,14 @@ export function App({ onClose, mountStartedAt }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [selectedVerdict, setSelectedVerdict] = useState<Verdict | null>(null);
   const [regenerating, setRegenerating] = useState(false);
+  const [fullDebate, setFullDebate] = useState<DecisionResponse | null>(null);
+  const [loadingDebate, setLoadingDebate] = useState(false);
 
   const requestDecision = useCallback(async (userId: string, teamId: string) => {
     setStatus("loading");
     setError(null);
     setSelectedVerdict(null);
+    setFullDebate(null);
 
     const profile = extractProfileFromDom();
     if (!profile.name) {
@@ -127,6 +131,24 @@ export function App({ onClose, mountStartedAt }: Props) {
     setRegenerating(false);
   }
 
+  // Bible §6.5 Full Debate View: the initial createDecision call passes
+  // `includeDebate: false` to keep that response lean (Bible §10.2's own
+  // worked examples all do), so the per-agent breakdown is fetched here, on
+  // demand, via the same GET /api/v1/decisions/{id} Slack's "View More"
+  // uses -- that endpoint always includes `debate` (decision.service.ts).
+  async function handleViewFullDebate() {
+    if (!decision) return;
+    setLoadingDebate(true);
+    try {
+      const full = await api.getDecision(decision.id);
+      setFullDebate(full);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load full debate.");
+    } finally {
+      setLoadingDebate(false);
+    }
+  }
+
   return (
     <div className="flex h-full w-full flex-col bg-white text-gray-900">
       <header className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
@@ -163,10 +185,22 @@ export function App({ onClose, mountStartedAt }: Props) {
           <div className="p-4 text-sm text-red-600">{error}</div>
         )}
 
-        {status === "success" && decision && (
+        {status === "success" && decision && fullDebate && (
+          <FullDebateView decision={fullDebate} onBack={() => setFullDebate(null)} />
+        )}
+
+        {status === "success" && decision && !fullDebate && (
           <div className="space-y-4 p-4">
             <VerdictCard decision={decision} />
             <EvidenceAccordion evidence={decision.evidence} />
+            <button
+              type="button"
+              onClick={handleViewFullDebate}
+              disabled={loadingDebate}
+              className="text-xs font-medium text-blue-700 hover:underline disabled:opacity-50"
+            >
+              {loadingDebate ? "Loading full debate…" : "View full debate →"}
+            </button>
             <MessageComposer
               decisionId={decision.id}
               message={decision.message}
