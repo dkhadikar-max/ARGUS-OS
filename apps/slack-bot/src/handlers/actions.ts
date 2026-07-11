@@ -5,6 +5,7 @@ import { resolveUser } from "../lib/user-resolver.js";
 import { argusApi } from "../lib/api-client.js";
 import { buildOutcomeOptionsBlocks } from "../blocks/outcome-options.js";
 import { cancelOutcomeNudges } from "../jobs/nudges.js";
+import { withErrorFeedback } from "../lib/error-feedback.js";
 
 function decisionIdFrom(body: BlockAction): string {
   const action = body.actions[0] as ButtonAction;
@@ -40,39 +41,41 @@ export function registerActionHandlers(app: App): void {
     const auth = await requireLinkedUser(respond, b.team?.id ?? "", b.user.id);
     if (!auth) return;
 
-    const decision = await argusApi.getDecision({ apiKey: auth.apiKey, actingUserId: auth.argusUserId }, decisionId);
+    await withErrorFeedback(respond, "decision_accept", async () => {
+      const decision = await argusApi.getDecision({ apiKey: auth.apiKey, actingUserId: auth.argusUserId }, decisionId);
 
-    const dm = await client.conversations.open({ users: b.user.id });
-    if (dm.channel?.id) {
-      const message = decision.message.linkedin ?? decision.message.email ?? "(no message generated)";
-      await client.chat.postMessage({
-        channel: dm.channel.id,
-        text: `Message for ${decision.prospect.name}:\n${message}`,
+      const dm = await client.conversations.open({ users: b.user.id });
+      if (dm.channel?.id) {
+        const message = decision.message.linkedin ?? decision.message.email ?? "(no message generated)";
+        await client.chat.postMessage({
+          channel: dm.channel.id,
+          text: `Message for ${decision.prospect.name}:\n${message}`,
+        });
+      }
+
+      await respond({
+        response_type: "ephemeral",
+        text: "Tracked: decision accepted. Message sent to your DMs — don't forget to log the outcome when they reply!",
       });
-    }
 
-    await respond({
-      response_type: "ephemeral",
-      text: "Tracked: decision accepted. Message sent to your DMs — don't forget to log the outcome when they reply!",
-    });
+      // Bible §5.1/§5.2 Action Graph, §9.1 ActionTaken. Best-effort: a decision
+      // can only have one ActionTaken (@unique decisionId), and the message
+      // was already sent to the rep's DMs above regardless of whether this
+      // secondary record succeeds -- a duplicate/stale write here shouldn't
+      // surface as an error for an action that already happened.
+      await argusApi
+        .recordAction({ apiKey: auth.apiKey, actingUserId: auth.argusUserId }, decisionId, {
+          actionType: "MESSAGE_SENT",
+        })
+        .catch(() => undefined);
 
-    // Bible §5.1/§5.2 Action Graph, §9.1 ActionTaken. Best-effort: a decision
-    // can only have one ActionTaken (@unique decisionId), and the message
-    // was already sent to the rep's DMs above regardless of whether this
-    // secondary record succeeds -- a duplicate/stale write here shouldn't
-    // surface as an error for an action that already happened.
-    await argusApi
-      .recordAction({ apiKey: auth.apiKey, actingUserId: auth.argusUserId }, decisionId, {
-        actionType: "MESSAGE_SENT",
-      })
-      .catch(() => undefined);
-
-    const { scheduleOutcomeNudges } = await import("../jobs/nudges.js");
-    await scheduleOutcomeNudges({
-      decisionId,
-      slackTeamId: b.team?.id ?? "",
-      slackUserId: b.user.id,
-      prospectName: decision.prospect.name,
+      const { scheduleOutcomeNudges } = await import("../jobs/nudges.js");
+      await scheduleOutcomeNudges({
+        decisionId,
+        slackTeamId: b.team?.id ?? "",
+        slackUserId: b.user.id,
+        prospectName: decision.prospect.name,
+      });
     });
   });
 
@@ -83,55 +86,58 @@ export function registerActionHandlers(app: App): void {
     const auth = await requireLinkedUser(respond, b.team?.id ?? "", b.user.id);
     if (!auth) return;
 
-    await argusApi.overrideDecision(
-      { apiKey: auth.apiKey, actingUserId: auth.argusUserId },
-      decisionId,
-      { newVerdict: "PASS" },
-    );
-    await argusApi
-      .recordAction({ apiKey: auth.apiKey, actingUserId: auth.argusUserId }, decisionId, {
-        actionType: "PASSED",
-      })
-      .catch(() => undefined);
-    await respond({ response_type: "ephemeral", text: "Passed. This won't show up in your queue again." });
+    await withErrorFeedback(respond, "decision_pass", async () => {
+      await argusApi.overrideDecision(
+        { apiKey: auth.apiKey, actingUserId: auth.argusUserId },
+        decisionId,
+        { newVerdict: "PASS" },
+      );
+      await argusApi
+        .recordAction({ apiKey: auth.apiKey, actingUserId: auth.argusUserId }, decisionId, {
+          actionType: "PASSED",
+        })
+        .catch(() => undefined);
+      await respond({ response_type: "ephemeral", text: "Passed. This won't show up in your queue again." });
+    });
   });
 
-  app.action("decision_edit", async ({ ack, body, client }) => {
+  app.action("decision_edit", async ({ ack, body, respond, client }) => {
     await ack();
     const decisionId = decisionIdFrom(body as BlockAction);
     const b = body as BlockAction;
-    const auth = await requireLinkedUser(
-      async () => undefined,
-      b.team?.id ?? "",
-      b.user.id,
-    );
+    // Previously passed a silent no-op callback here instead of the real
+    // `respond`, so a rep who hadn't run `/argus link` yet got no feedback
+    // at all -- every other handler already tells them to.
+    const auth = await requireLinkedUser(respond, b.team?.id ?? "", b.user.id);
     if (!auth) return;
 
-    const decision = await argusApi.getDecision({ apiKey: auth.apiKey, actingUserId: auth.argusUserId }, decisionId);
+    await withErrorFeedback(respond, "decision_edit", async () => {
+      const decision = await argusApi.getDecision({ apiKey: auth.apiKey, actingUserId: auth.argusUserId }, decisionId);
 
-    await client.views.open({
-      trigger_id: b.trigger_id,
-      view: {
-        type: "modal",
-        callback_id: "decision_edit_submit",
-        private_metadata: decisionId,
-        title: { type: "plain_text", text: "Edit message" },
-        submit: { type: "plain_text", text: "Copy" },
-        close: { type: "plain_text", text: "Cancel" },
-        blocks: [
-          {
-            type: "input",
-            block_id: "message_block",
-            label: { type: "plain_text", text: "Message" },
-            element: {
-              type: "plain_text_input",
-              action_id: "message_input",
-              multiline: true,
-              initial_value: decision.message.linkedin ?? decision.message.email ?? "",
+      await client.views.open({
+        trigger_id: b.trigger_id,
+        view: {
+          type: "modal",
+          callback_id: "decision_edit_submit",
+          private_metadata: decisionId,
+          title: { type: "plain_text", text: "Edit message" },
+          submit: { type: "plain_text", text: "Copy" },
+          close: { type: "plain_text", text: "Cancel" },
+          blocks: [
+            {
+              type: "input",
+              block_id: "message_block",
+              label: { type: "plain_text", text: "Message" },
+              element: {
+                type: "plain_text_input",
+                action_id: "message_input",
+                multiline: true,
+                initial_value: decision.message.linkedin ?? decision.message.email ?? "",
+              },
             },
-          },
-        ],
-      },
+          ],
+        },
+      });
     });
   });
 
@@ -154,12 +160,14 @@ export function registerActionHandlers(app: App): void {
     const auth = await requireLinkedUser(respond, b.team?.id ?? "", b.user.id);
     if (!auth) return;
 
-    const decision = await argusApi.getDecision({ apiKey: auth.apiKey, actingUserId: auth.argusUserId }, decisionId);
-    const lines = decision.evidence.map((e) => `• *${e.type}* (${e.confidence}%): ${e.signal} — ${e.relevance}`);
+    await withErrorFeedback(respond, "decision_view_more", async () => {
+      const decision = await argusApi.getDecision({ apiKey: auth.apiKey, actingUserId: auth.argusUserId }, decisionId);
+      const lines = decision.evidence.map((e) => `• *${e.type}* (${e.confidence}%): ${e.signal} — ${e.relevance}`);
 
-    await respond({
-      response_type: "ephemeral",
-      text: [`*Full evidence for ${decision.prospect.name}:*`, ...lines].join("\n"),
+      await respond({
+        response_type: "ephemeral",
+        text: [`*Full evidence for ${decision.prospect.name}:*`, ...lines].join("\n"),
+      });
     });
   });
 
@@ -170,9 +178,11 @@ export function registerActionHandlers(app: App): void {
     const auth = await requireLinkedUser(respond, b.team?.id ?? "", b.user.id);
     if (!auth) return;
 
-    const decision = await argusApi.getDecision({ apiKey: auth.apiKey, actingUserId: auth.argusUserId }, decisionId);
-    const { buildDecisionAlertBlocks } = await import("../blocks/decision-alert.js");
-    await respond({ response_type: "ephemeral", blocks: buildDecisionAlertBlocks(decision) });
+    await withErrorFeedback(respond, "queue_view_decision", async () => {
+      const decision = await argusApi.getDecision({ apiKey: auth.apiKey, actingUserId: auth.argusUserId }, decisionId);
+      const { buildDecisionAlertBlocks } = await import("../blocks/decision-alert.js");
+      await respond({ response_type: "ephemeral", blocks: buildDecisionAlertBlocks(decision) });
+    });
   });
 
   app.action("nudge_log_outcome", async ({ ack, body, respond }) => {
@@ -181,10 +191,12 @@ export function registerActionHandlers(app: App): void {
     await respond({ response_type: "ephemeral", blocks: buildOutcomeOptionsBlocks(decisionId) });
   });
 
-  app.action("nudge_dismiss", async ({ ack, body }) => {
+  app.action("nudge_dismiss", async ({ ack, body, respond }) => {
     await ack();
     const decisionId = decisionIdFrom(body as BlockAction);
-    await cancelOutcomeNudges(decisionId);
+    await withErrorFeedback(respond, "nudge_dismiss", async () => {
+      await cancelOutcomeNudges(decisionId);
+    });
   });
 
   const OUTCOME_TYPES: OutcomeType[] = [
@@ -206,15 +218,17 @@ export function registerActionHandlers(app: App): void {
       const auth = await requireLinkedUser(respond, b.team?.id ?? "", b.user.id);
       if (!auth) return;
 
-      const result = await argusApi.createOutcome(
-        { apiKey: auth.apiKey, actingUserId: auth.argusUserId },
-        { decisionId, type: outcomeType },
-      );
-      await cancelOutcomeNudges(decisionId);
+      await withErrorFeedback(respond, `outcome_log_${outcomeType}`, async () => {
+        const result = await argusApi.createOutcome(
+          { apiKey: auth.apiKey, actingUserId: auth.argusUserId },
+          { decisionId, type: outcomeType },
+        );
+        await cancelOutcomeNudges(decisionId);
 
-      await respond({
-        response_type: "ephemeral",
-        text: `Outcome logged! This decision is now training ARGUS. ${result.patternUpdated}`,
+        await respond({
+          response_type: "ephemeral",
+          text: `Outcome logged! This decision is now training ARGUS. ${result.patternUpdated}`,
+        });
       });
     });
   }

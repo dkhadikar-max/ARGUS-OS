@@ -27,7 +27,13 @@ export async function listOutcomesHandler(
     if (!req.auth) throw new AppError("UNAUTHORIZED", "Authentication required");
     const query = req.query as unknown as ListOutcomesQuery;
 
-    if (req.auth.type === "user" && query.teamId !== req.auth.teamId) {
+    // Applies regardless of auth type: a team-scoped API key must not be
+    // able to read another team's outcomes just by passing a different
+    // teamId in the query string. (Previously only checked for JWT/"user"
+    // auth, leaving api_key callers unchecked entirely — no caller in this
+    // codebase actually depends on that, since even the Slack bot's
+    // API key usage only ever queries its own team.)
+    if (query.teamId !== req.auth.teamId) {
       throw new AppError("FORBIDDEN", "Cannot list outcomes for another team");
     }
 

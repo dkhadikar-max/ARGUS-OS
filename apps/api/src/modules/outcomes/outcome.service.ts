@@ -4,11 +4,10 @@ import {
   countDecisionsForTeam,
   createOutcomeRecord,
   findDecisionForOutcome,
-  getCompanyMemory,
   getTeamOutcomesForVerdict,
   getVerdictAggregations,
   listOutcomes,
-  upsertCompanyMemory,
+  upsertCompanyMemoryPatternForVerdict,
 } from "./outcome.repository.js";
 import { publishTeamEvent } from "../../lib/pubsub.js";
 import { invalidateDecisionCache } from "../../lib/decision-cache.js";
@@ -46,22 +45,13 @@ async function updateCompanyMemoryPattern(
   const meetingRate = outcomes.length > 0 ? meetings / outcomes.length : 0;
   const patternDescription = `${verdict} decisions convert to meetings at ${Math.round(meetingRate * 100)}% (n=${outcomes.length})`;
 
-  const memory = await getCompanyMemory(teamId);
-  const existingPatterns = Array.isArray(memory?.patterns)
-    ? (memory.patterns as Array<{ verdict?: string }>)
-    : [];
-  const otherPatterns = existingPatterns.filter((p) => p.verdict !== verdict);
-
-  await upsertCompanyMemory(teamId, [
-    ...otherPatterns,
-    {
-      verdict,
-      description: patternDescription,
-      sampleSize: outcomes.length,
-      meetingRate,
-      updatedAt: new Date().toISOString(),
-    },
-  ]);
+  await upsertCompanyMemoryPatternForVerdict(teamId, verdict, {
+    verdict,
+    description: patternDescription,
+    sampleSize: outcomes.length,
+    meetingRate,
+    updatedAt: new Date().toISOString(),
+  });
 
   return patternDescription;
 }

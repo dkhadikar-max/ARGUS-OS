@@ -37,15 +37,45 @@ export function getTeamOutcomesForVerdict(teamId: string, verdict: Verdict) {
   });
 }
 
-export function getCompanyMemory(teamId: string) {
-  return prisma.companyMemory.findUnique({ where: { teamId } });
-}
+/**
+ * Reads CompanyMemory.patterns, replaces the entry for this verdict, and
+ * writes the whole array back -- all inside one transaction with an
+ * explicit row lock, so two outcomes logged for *different* verdicts at
+ * the same moment can't both read the same stale array and have one
+ * write silently clobber the other's pattern (a real, verified race the
+ * previous separate-read-then-separate-write version of this had: two
+ * concurrent calls could both read patterns=[{WAIT}], both compute their
+ * own verdict's entry, and whichever write landed second would overwrite
+ * the first's addition entirely).
+ *
+ * `FOR UPDATE` only locks a row that already exists -- a team's very
+ * first-ever outcome (no CompanyMemory row yet) has no row to lock, so an
+ * extremely narrow race remains for that specific case. Postgres's own
+ * unique constraint on `teamId` still prevents a duplicate row (the
+ * upsert's ON CONFLICT handles that atomically); the residual risk is
+ * limited to which of two *simultaneous first outcomes* one-time patterns
+ * ends up written, not data corruption or a crash.
+ */
+export async function upsertCompanyMemoryPatternForVerdict(
+  teamId: string,
+  verdict: Verdict,
+  patternEntry: Record<string, unknown>,
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "CompanyMemory" WHERE "teamId" = ${teamId} FOR UPDATE`;
 
-export function upsertCompanyMemory(teamId: string, patterns: unknown) {
-  return prisma.companyMemory.upsert({
-    where: { teamId },
-    create: { teamId, patterns: patterns as never, riskFlags: [], icpHistory: [] },
-    update: { patterns: patterns as never },
+    const memory = await tx.companyMemory.findUnique({ where: { teamId } });
+    const existingPatterns = Array.isArray(memory?.patterns)
+      ? (memory.patterns as Array<{ verdict?: string }>)
+      : [];
+    const otherPatterns = existingPatterns.filter((p) => p.verdict !== verdict);
+    const patterns = [...otherPatterns, patternEntry];
+
+    await tx.companyMemory.upsert({
+      where: { teamId },
+      create: { teamId, patterns: patterns as never, riskFlags: [], icpHistory: [] },
+      update: { patterns: patterns as never },
+    });
   });
 }
 

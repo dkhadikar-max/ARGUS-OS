@@ -3,6 +3,7 @@ import { Server as SocketIOServer, type Socket } from "socket.io";
 import { Redis } from "ioredis";
 import { env, corsAllowedOrigins } from "../config/env.js";
 import { authenticateWithJwt } from "../middleware/auth.js";
+import { isOriginAllowed } from "./cors.js";
 import { logger } from "./logger.js";
 import type { TeamEvent } from "./pubsub.js";
 
@@ -37,7 +38,7 @@ export function attachWebSocketServer(httpServer: HttpServer): SocketIOServer {
           callback(null, true);
           return;
         }
-        const allowed = corsAllowedOrigins.some((entry) => origin.startsWith(entry));
+        const allowed = isOriginAllowed(origin, corsAllowedOrigins);
         callback(allowed ? null : new Error("Origin not allowed by CORS"), allowed);
       },
       credentials: true,

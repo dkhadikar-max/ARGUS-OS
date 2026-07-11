@@ -6,18 +6,23 @@ export function getIcp(teamId: string) {
 }
 
 /** Bumps `version` on every update -- decision.service.ts's AI-5 cache key
- *  treats icpVersion as the signal that a cached debate output is stale. */
+ *  treats icpVersion as the signal that a cached debate output is stale.
+ *
+ *  A single atomic `upsert` with `version: { increment: 1 }`, not a
+ *  find-then-branch-then-write -- the earlier version of this function read
+ *  `existing.version` in JS and wrote `existing.version + 1`, a classic
+ *  read-then-write race: two concurrent saves could both read the same
+ *  version and both write the same "+1" value, silently losing one admin's
+ *  edit with no conflict indication. Postgres executes `field = field + 1`
+ *  as a single atomic statement, immune to that race regardless of what
+ *  else read the row a moment earlier. The upsert's own ON CONFLICT
+ *  handling is similarly atomic for the create-vs-update branch itself, so
+ *  two teams' very first concurrent saves can't collide on the unique
+ *  `teamId` constraint either. */
 export async function upsertIcp(teamId: string, criteria: IcpCriterion[]) {
-  const existing = await prisma.iCPDefinition.findUnique({ where: { teamId } });
-
-  if (existing) {
-    return prisma.iCPDefinition.update({
-      where: { teamId },
-      data: { criteria: criteria as never, version: existing.version + 1 },
-    });
-  }
-
-  return prisma.iCPDefinition.create({
-    data: { teamId, criteria: criteria as never, version: 1 },
+  return prisma.iCPDefinition.upsert({
+    where: { teamId },
+    create: { teamId, criteria: criteria as never, version: 1 },
+    update: { criteria: criteria as never, version: { increment: 1 } },
   });
 }

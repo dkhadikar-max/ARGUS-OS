@@ -6,8 +6,7 @@ const repo = {
   findDecisionForOutcome: vi.fn(),
   createOutcomeRecord: vi.fn(),
   getTeamOutcomesForVerdict: vi.fn(),
-  getCompanyMemory: vi.fn(),
-  upsertCompanyMemory: vi.fn(),
+  upsertCompanyMemoryPatternForVerdict: vi.fn(),
   listOutcomes: vi.fn(),
   getVerdictAggregations: vi.fn(),
   countDecisionsForTeam: vi.fn(),
@@ -78,16 +77,17 @@ describe("createOutcome", () => {
       { type: "MEETING_BOOKED" },
       { type: "NO_RESPONSE" },
     ]);
-    repo.getCompanyMemory.mockResolvedValue(null);
+    repo.upsertCompanyMemoryPatternForVerdict.mockResolvedValue(undefined);
 
     const result = await createOutcome(request, auth);
 
     expect(result.learningApplied).toBe(true);
     expect(result.patternUpdated).toContain("STRONG_YES");
     expect(result.patternUpdated).toContain("50%"); // 1 of 2 outcomes is a meeting
-    expect(repo.upsertCompanyMemory).toHaveBeenCalledWith(
+    expect(repo.upsertCompanyMemoryPatternForVerdict).toHaveBeenCalledWith(
       "team_1",
-      expect.arrayContaining([expect.objectContaining({ verdict: "STRONG_YES" })]),
+      "STRONG_YES",
+      expect.objectContaining({ verdict: "STRONG_YES" }),
     );
     expect(publishTeamEvent).toHaveBeenCalledWith(
       "team_1",

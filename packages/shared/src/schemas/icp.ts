@@ -12,6 +12,19 @@ export const icpCriterionSchema = z.object({
 });
 export type IcpCriterion = z.infer<typeof icpCriterionSchema>;
 
+// Shared between apps/api's icp.service.ts (the real, enforced check) and
+// apps/dashboard's IcpCriteriaEditor.tsx (client-side UX only, so a save
+// attempt the server will reject can be prevented before the round-trip
+// instead of only being caught after) -- one constant, not two copies that
+// could silently drift apart.
+export const ICP_WEIGHT_SUM_TOLERANCE = 0.02;
+
+export function icpWeightsAreValid(criteria: Pick<IcpCriterion, "weight">[]): boolean {
+  if (criteria.length === 0) return true;
+  const sum = criteria.reduce((total, c) => total + c.weight, 0);
+  return Math.abs(sum - 1) <= ICP_WEIGHT_SUM_TOLERANCE;
+}
+
 export const icpDefinitionSchema = z.object({
   criteria: z.array(icpCriterionSchema),
 });

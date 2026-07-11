@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import type { IcpCriterion } from "@argus/shared";
+import { icpWeightsAreValid, type IcpCriterion } from "@argus/shared";
 import { updateIcpAction } from "../app/settings/actions";
 
 const OPERATORS: IcpCriterion["operator"][] = ["equals", "in", "gte", "lte", "between", "contains"];
@@ -23,6 +23,10 @@ export function IcpCriteriaEditor({ initialCriteria }: Props) {
   const [isPending, startTransition] = useTransition();
 
   const weightSum = criteria.reduce((total, c) => total + (Number.isFinite(c.weight) ? c.weight : 0), 0);
+  // Same check icp.service.ts throws on server-side -- disables Save
+  // instead of only showing the warning text and letting the round-trip
+  // fail with a VALIDATION_ERROR the server was always going to reject.
+  const weightsValid = icpWeightsAreValid(criteria);
 
   function updateRow(index: number, patch: Partial<IcpCriterion>) {
     setCriteria((prev) => prev.map((c, i) => (i === index ? { ...c, ...patch } : c)));
@@ -115,7 +119,7 @@ export function IcpCriteriaEditor({ initialCriteria }: Props) {
         <button
           type="button"
           onClick={handleSave}
-          disabled={isPending}
+          disabled={isPending || !weightsValid}
           className="rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-40"
         >
           {isPending ? "Saving…" : "Save ICP"}

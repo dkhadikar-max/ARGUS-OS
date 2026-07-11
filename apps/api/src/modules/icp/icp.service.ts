@@ -1,4 +1,4 @@
-import { AppError, type IcpResponse, type UpdateIcpRequest } from "@argus/shared";
+import { AppError, icpWeightsAreValid, type IcpResponse, type UpdateIcpRequest } from "@argus/shared";
 import { ADMIN_ROLES, type AuthContext } from "../../middleware/auth.js";
 import { recordAudit, type RequestMeta } from "../../lib/audit.js";
 import { getIcp, upsertIcp } from "./icp.repository.js";
@@ -8,17 +8,14 @@ import { getIcp, upsertIcp } from "./icp.repository.js";
 // mid-edit of the form has a transient state with duplicate/partial weights
 // that's still valid to *hold in the UI*, just not to *save*. An empty
 // criteria array (clearing the ICP) is exempt: there's nothing to sum.
-const WEIGHT_SUM_TOLERANCE = 0.02;
-
+// icpWeightsAreValid/the tolerance itself live in packages/shared so the
+// dashboard's IcpCriteriaEditor can disable Save client-side using the
+// exact same check this throws on, instead of a second copy that could
+// silently drift out of sync with this one.
 function assertWeightsSumToOne(criteria: UpdateIcpRequest["criteria"]): void {
-  if (criteria.length === 0) return;
+  if (icpWeightsAreValid(criteria)) return;
   const sum = criteria.reduce((total, c) => total + c.weight, 0);
-  if (Math.abs(sum - 1) > WEIGHT_SUM_TOLERANCE) {
-    throw new AppError(
-      "VALIDATION_ERROR",
-      `Criteria weights must sum to 1 (currently ${sum.toFixed(2)})`,
-    );
-  }
+  throw new AppError("VALIDATION_ERROR", `Criteria weights must sum to 1 (currently ${sum.toFixed(2)})`);
 }
 
 export async function getIcpForTeam(auth: AuthContext): Promise<IcpResponse> {

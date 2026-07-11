@@ -3,6 +3,7 @@ import { resolveTeam } from "../lib/team-resolver.js";
 import { resolveUser } from "../lib/user-resolver.js";
 import { argusApi, integrationsApi } from "../lib/api-client.js";
 import { buildQueueBlocks } from "../blocks/queue-list.js";
+import { withErrorFeedback } from "../lib/error-feedback.js";
 
 // Bible §18 SLK-1 "Command handlers (/argus, /argus-queue)".
 export function registerCommandHandlers(app: App): void {
@@ -53,20 +54,22 @@ export function registerCommandHandlers(app: App): void {
     const teamId = command.team_id;
     const slackUserId = command.user_id;
 
-    const [team, argusUserId] = await Promise.all([
-      resolveTeam(teamId),
-      resolveUser(teamId, slackUserId),
-    ]);
+    await withErrorFeedback(respond, "/argus-queue", async () => {
+      const [team, argusUserId] = await Promise.all([
+        resolveTeam(teamId),
+        resolveUser(teamId, slackUserId),
+      ]);
 
-    if (!argusUserId) {
-      await respond({
-        response_type: "ephemeral",
-        text: "Run `/argus link` first so I know which ARGUS account you are.",
-      });
-      return;
-    }
+      if (!argusUserId) {
+        await respond({
+          response_type: "ephemeral",
+          text: "Run `/argus link` first so I know which ARGUS account you are.",
+        });
+        return;
+      }
 
-    const queue = await argusApi.getQueue({ apiKey: team.apiKey, actingUserId: argusUserId });
-    await respond({ response_type: "ephemeral", blocks: buildQueueBlocks(queue) });
+      const queue = await argusApi.getQueue({ apiKey: team.apiKey, actingUserId: argusUserId });
+      await respond({ response_type: "ephemeral", blocks: buildQueueBlocks(queue) });
+    });
   });
 }

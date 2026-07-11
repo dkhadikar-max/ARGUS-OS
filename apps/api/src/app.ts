@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import { pinoHttp } from "pino-http";
 import { corsAllowedOrigins } from "./config/env.js";
+import { isOriginAllowed } from "./lib/cors.js";
 import { logger } from "./lib/logger.js";
 import { errorHandler } from "./middleware/error-handler.js";
 import { decisionRouter } from "./modules/decisions/decision.routes.js";
@@ -19,14 +20,15 @@ export function createApp() {
   app.use(
     cors({
       origin: (origin, callback) => {
-        // Bible §19.1 "CORS allows only approved origins". Chrome extension
-        // origins are `chrome-extension://<id>`; we match by prefix since
-        // the extension ID is fixed per-build but configured via env.
+        // Bible §19.1 "CORS allows only approved origins" — see lib/cors.ts
+        // for exactly how chrome-extension:// vs. https:// origins are
+        // matched differently, and why an exact match matters for the
+        // latter.
         if (!origin) {
           callback(null, true);
           return;
         }
-        const allowed = corsAllowedOrigins.some((entry) => origin.startsWith(entry));
+        const allowed = isOriginAllowed(origin, corsAllowedOrigins);
         callback(allowed ? null : new Error("Origin not allowed by CORS"), allowed);
       },
       credentials: true,

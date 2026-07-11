@@ -32,7 +32,22 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     cache: "no-store",
   });
 
-  const body = await response.json();
+  // A non-JSON body (e.g. a proxy/platform returning an HTML error page for
+  // a 502/503, which happens during real infra hiccups) must not throw a
+  // raw SyntaxError out of response.json() -- that bypasses the ApiError
+  // wrapping below entirely and surfaces a generic, unhelpful crash instead
+  // of a clear message. Parsed inside its own try/catch, checked against
+  // response.ok (not assumed to have succeeded) either way.
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    if (!response.ok) {
+      throw new ApiError(`Request failed with status ${response.status}`);
+    }
+    throw new ApiError("Response was not valid JSON");
+  }
+
   if (!response.ok) {
     const message =
       typeof body === "object" && body && "error" in body
