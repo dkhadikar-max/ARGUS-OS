@@ -82,7 +82,10 @@ async function authenticateWithApiKey(
   return { ...base, userId: actingUser.id, role: actingUser.role };
 }
 
-async function authenticateWithJwt(token: string): Promise<AuthContext> {
+/** Exported for lib/websocket.ts: Bible §10.6's `wss://.../ws?token={jwt}`
+ *  handshake authenticates with the same Clerk JWT as REST's Bearer scheme,
+ *  so the verification logic itself must not be duplicated. */
+export async function authenticateWithJwt(token: string): Promise<AuthContext> {
   if (!jwks || !env.CLERK_JWT_ISSUER) {
     throw new AppError(
       "UNAUTHORIZED",

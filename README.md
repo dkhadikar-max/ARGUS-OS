@@ -105,6 +105,14 @@ Deliberately never throws: a failed audit-row insert is logged loudly (not silen
 
 Not audited (by scope, not oversight): read-only endpoints, and the Slack Bot's own local actions (button clicks acknowledged client-side, not yet a durable `ActionTaken` row — see Known gaps).
 
+### Real-time updates (Bible §10.6 WebSocket API, §18 BCK-6)
+
+`apps/api` now runs a Socket.io server alongside the REST API on the same HTTP server/port (`lib/websocket.ts`), matching §10.6's `wss://.../ws?token={jwt}` contract: the JWT is verified with the exact same Clerk JWKS logic as REST's `Authorization: Bearer` scheme (`middleware/auth.ts`'s `authenticateWithJwt`, now exported for this reuse), and a client subscribes with `{"channel": "team:{teamId}"}` to receive `decision.created`/`outcome.logged` pushes. §18 names Socket.io specifically as the library, so "subscribe" and each push are Socket.io's own native event names rather than a raw `{type, ...}` envelope on a generic listener — the same contract, expressed idiomatically for the chosen library rather than reimplementing raw `ws` framing.
+
+Two additions beyond §10.6's literal example, both necessary rather than decorative: (1) a client may only join the room for their own JWT's teamId — not spelled out in the spec, but a direct consequence of §19.1's security posture, since nothing should let one team's browser session eavesdrop on another's decision stream; (2) a `"connected"` ack carrying the resolved teamId, since the browser has no other way to learn its own ARGUS teamId before constructing the `"team:{teamId}"` channel name for step 1. The relay itself is the second consumer of the existing `channel:team:{teamId}` Redis pub/sub (apps/slack-bot's `team-alerts.ts` is the first) — `publishTeamEvent`'s payload was enriched with `prospectName`/`verdict`/`confidence`/`timestamp` (decision.created) and `timestamp` (outcome.logged) to match §10.6's documented push-event fields exactly, so the WebSocket layer relays verbatim with no extra fetch.
+
+`apps/dashboard` connects from the browser (`lib/useTeamSocket.ts`, a client hook using the signed-in rep's own Clerk session token) and shows a lightweight live feed (`components/LiveQueueBanner.tsx`) above the Today Queue — proving the feature end-to-end without rebuilding DSH-2's own server-rendered data model into a fully reactive one (auto-inserting/re-ordering queue items live is further polish, not contracted by §10.6). Needs the new `NEXT_PUBLIC_API_BASE_URL` env var (the one dashboard env var actually shipped to the browser bundle, unlike server-side `API_BASE_URL`).
+
 ### Known gaps (flagged, not hidden)
 
 - No `ActionTaken` REST endpoint (the model exists in §9.1, but §10 never contracts it) — "accept verdict" is acknowledged locally in both the extension and the Slack bot without a durable record.

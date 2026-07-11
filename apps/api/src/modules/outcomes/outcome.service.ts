@@ -93,6 +93,7 @@ export async function createOutcome(
       teamId: auth.teamId,
       userId: auth.userId,
       outcomeType: outcome.type,
+      timestamp: outcome.loggedAt.toISOString(),
     },
   });
 

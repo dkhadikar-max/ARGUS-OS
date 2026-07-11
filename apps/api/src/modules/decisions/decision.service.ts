@@ -245,7 +245,15 @@ export async function createDecision(
 
   await publishTeamEvent(request.context.teamId, {
     type: "decision.created",
-    data: { decisionId: full.id, teamId: request.context.teamId, userId: request.context.userId },
+    data: {
+      decisionId: full.id,
+      teamId: request.context.teamId,
+      userId: request.context.userId,
+      prospectName: full.prospect.name,
+      verdict: full.verdict,
+      confidence: full.confidence,
+      timestamp: full.createdAt.toISOString(),
+    },
   });
 
   // Bible §19.1 Data Integrity: "Audit logs capture all state changes".

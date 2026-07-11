@@ -1,6 +1,7 @@
 import { api } from "../../lib/api-client";
 import { QueueItemCard } from "../../components/QueueItemCard";
 import { EmptyQueueState } from "../../components/EmptyQueueState";
+import { LiveQueueBanner } from "../../components/LiveQueueBanner";
 
 // Bible §18 DSH-2 "Queue page layout" + "Prospect cards with verdicts" (P0).
 // Filter/sort controls are an explicit P1 item — not built here.
@@ -42,6 +43,8 @@ export default async function QueuePage({
           Connect Slack
         </a>
       </header>
+
+      <LiveQueueBanner />
 
       {queue.items.length === 0 ? (
         <EmptyQueueState />
