@@ -28,6 +28,9 @@ const oauthState = {
 };
 vi.mock("./oauth-state.js", () => oauthState);
 
+const recordAudit = vi.fn();
+vi.mock("../../lib/audit.js", () => ({ recordAudit }));
+
 const {
   connectSlack,
   resolveSlackTeam,
@@ -68,6 +71,14 @@ describe("connectSlack", () => {
       expect.objectContaining({
         name: "integration_connected",
         properties: expect.objectContaining({ provider: "slack", auth_method: "manual_token" }),
+      }),
+    );
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityType: "integration",
+        entityId: "team_1",
+        action: "connected",
+        actorId: "u1",
       }),
     );
   });
@@ -128,6 +139,13 @@ describe("linkSlackUser", () => {
 
     expect(result).toEqual({ userId: "user_1", teamId: "team_1" });
     expect(repo.linkSlackUser).toHaveBeenCalledWith("team_1", "U_REP", "alex@example.com");
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityType: "user",
+        entityId: "user_1",
+        action: "slack_linked",
+      }),
+    );
   });
 });
 
@@ -237,6 +255,12 @@ describe("completeSlackOAuth", () => {
         name: "integration_connected",
         properties: expect.objectContaining({ provider: "slack", auth_method: "oauth" }),
       }),
+    );
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ entityType: "integration", entityId: "team_1", action: "connected", actorId: "u1" }),
+    );
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ entityType: "user", entityId: "u1", action: "slack_linked", actorId: "u1" }),
     );
     expect(url).toContain("/queue?slack=connected");
   });

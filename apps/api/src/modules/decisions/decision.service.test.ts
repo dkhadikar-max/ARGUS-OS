@@ -32,6 +32,9 @@ vi.mock("../../lib/analytics.js", () => ({ track }));
 const enrichProspect = vi.fn();
 vi.mock("../../lib/enrichment/enrichment.service.js", () => ({ enrichProspect }));
 
+const recordAudit = vi.fn();
+vi.mock("../../lib/audit.js", () => ({ recordAudit }));
+
 const { createDecision, getDecision, overrideDecision } = await import("./decision.service.js");
 
 const auth: AuthContext = { type: "user", userId: "user_1", teamId: "team_1", planTier: "FREE" };
@@ -161,6 +164,14 @@ describe("createDecision", () => {
       expect.objectContaining({
         name: "verdict_generated",
         properties: expect.objectContaining({ decision_id: "dec_1", verdict: "STRONG_YES" }),
+      }),
+    );
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityType: "decision",
+        entityId: "dec_1",
+        action: "created",
+        actorId: "user_1",
       }),
     );
   });
@@ -322,6 +333,16 @@ describe("overrideDecision", () => {
       expect.objectContaining({
         name: "verdict_overridden",
         properties: { decision_id: "dec_1", original_verdict: "YES", new_verdict: "PASS", reason: "Already a customer" },
+      }),
+    );
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityType: "decision",
+        entityId: "dec_1",
+        action: "overridden",
+        actorId: "user_1",
+        beforeState: { verdict: "YES" },
+        afterState: { verdict: "PASS", reason: "Already a customer" },
       }),
     );
   });

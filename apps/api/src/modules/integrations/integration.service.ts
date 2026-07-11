@@ -15,6 +15,7 @@ import { buildAuthorizeUrl, exchangeCodeForToken } from "./slack-oauth.client.js
 import { consumeOAuthState, createOAuthState } from "./oauth-state.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../lib/logger.js";
+import { recordAudit, type RequestMeta } from "../../lib/audit.js";
 
 const ADMIN_ROLES = new Set(["ADMIN", "FOUNDER", "MANAGER"]);
 
@@ -32,6 +33,7 @@ function toResolution(integration: { teamId: string; config: unknown }): SlackTe
 export async function connectSlack(
   request: ConnectSlackRequest,
   auth: AuthContext,
+  meta?: RequestMeta,
 ): Promise<ConnectSlackResponse> {
   if (!auth.role || !ADMIN_ROLES.has(auth.role)) {
     throw new AppError("FORBIDDEN", "Only a team admin can connect Slack");
@@ -40,11 +42,23 @@ export async function connectSlack(
   const startedAt = Date.now();
   const apiKey = await connectSlackIntegration(auth.teamId, request);
 
+  // Bible §19.1 Data Integrity: "Audit logs capture all state changes" —
+  // connecting Slack hands a bot token + generated API key to a third
+  // party, exactly the kind of sensitive state change this is for.
+  await recordAudit({
+    entityType: "integration",
+    entityId: auth.teamId,
+    action: "connected",
+    actorId: auth.userId ?? "system",
+    afterState: { provider: "slack", authMethod: "manual_token", slackTeamId: request.slackTeamId },
+    meta,
+  });
+
   if (auth.userId) {
     // Bible §11.1 integration_connected: "time_to_connect_ms" is meant for
-    // an OAuth redirect-to-callback duration (§18 SLK-1's not-yet-built
-    // "Add to Slack" flow — see README). Until that exists, this measures
-    // the actual connect-request latency instead of fabricating a number;
+    // an OAuth redirect-to-callback duration — this is the manual-token
+    // fallback path (see completeSlackOAuth below for the real OAuth
+    // timing), so this measures the actual connect-request latency instead;
     // an honest (if differently-scoped) value rather than a made-up one.
     track(auth.userId, {
       name: "integration_connected",
@@ -80,6 +94,7 @@ export async function resolveSlackTeamByArgusTeamId(
 
 export async function linkSlackUser(
   request: LinkSlackUserRequest,
+  meta?: RequestMeta,
 ): Promise<LinkSlackUserResponse> {
   const resolution = await resolveSlackTeam(request.slackTeamId);
   const user = await findUserByEmailInTeam(resolution.argusTeamId, request.email);
@@ -91,6 +106,16 @@ export async function linkSlackUser(
   }
 
   const updated = await linkSlackUserRecord(resolution.argusTeamId, request.slackUserId, request.email);
+
+  await recordAudit({
+    entityType: "user",
+    entityId: updated.id,
+    action: "slack_linked",
+    actorId: updated.id,
+    afterState: { slackUserId: request.slackUserId },
+    meta,
+  });
+
   return { userId: updated.id, teamId: updated.teamId ?? resolution.argusTeamId };
 }
 
@@ -123,11 +148,10 @@ export async function initiateSlackOAuth(auth: AuthContext): Promise<string> {
  *  failure paths — always returns a dashboard redirect URL, since this is a
  *  browser-facing flow, not a JSON API a caller can catch. Genuinely
  *  unexpected errors (DB down, etc.) still throw and become a 500. */
-export async function completeSlackOAuth(params: {
-  code?: string;
-  state?: string;
-  error?: string;
-}): Promise<string> {
+export async function completeSlackOAuth(
+  params: { code?: string; state?: string; error?: string },
+  meta?: RequestMeta,
+): Promise<string> {
   const failureUrl = `${env.DASHBOARD_URL}/queue?slack=error`;
 
   if (params.error) {
@@ -160,9 +184,27 @@ export async function completeSlackOAuth(params: {
     alertChannelId: oauthResult.alertChannelId,
   });
 
+  await recordAudit({
+    entityType: "integration",
+    entityId: stateData.teamId,
+    action: "connected",
+    actorId: stateData.userId,
+    afterState: { provider: "slack", authMethod: "oauth", slackTeamId: oauthResult.slackTeamId },
+    meta,
+  });
+
   // The installing admin already has a Slack identity from the OAuth
   // response itself — no need to make them separately run `/argus link`.
   await linkSlackUserById(stateData.userId, oauthResult.installingSlackUserId);
+
+  await recordAudit({
+    entityType: "user",
+    entityId: stateData.userId,
+    action: "slack_linked",
+    actorId: stateData.userId,
+    afterState: { slackUserId: oauthResult.installingSlackUserId },
+    meta,
+  });
 
   track(stateData.userId, {
     name: "integration_connected",

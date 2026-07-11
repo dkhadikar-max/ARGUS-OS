@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { AppError, type CreateDecisionRequest, type OverrideDecisionRequest } from "@argus/shared";
 import * as decisionService from "./decision.service.js";
+import { requestMeta } from "../../lib/audit.js";
 
 export async function createDecisionHandler(
   req: Request,
@@ -10,7 +11,7 @@ export async function createDecisionHandler(
   try {
     if (!req.auth) throw new AppError("UNAUTHORIZED", "Authentication required");
     const body = req.body as CreateDecisionRequest;
-    const decision = await decisionService.createDecision(body, req.auth);
+    const decision = await decisionService.createDecision(body, req.auth, requestMeta(req));
     res.status(200).json(decision);
   } catch (err) {
     next(err);
@@ -43,6 +44,7 @@ export async function overrideDecisionHandler(
       req.params["id"] as string,
       body,
       req.auth,
+      requestMeta(req),
     );
     res.status(200).json(result);
   } catch (err) {

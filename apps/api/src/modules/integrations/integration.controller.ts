@@ -1,11 +1,16 @@
 import type { NextFunction, Request, Response } from "express";
 import { AppError, type ConnectSlackRequest, type LinkSlackUserRequest } from "@argus/shared";
 import * as integrationService from "./integration.service.js";
+import { requestMeta } from "../../lib/audit.js";
 
 export async function connectSlackHandler(req: Request, res: Response, next: NextFunction) {
   try {
     if (!req.auth) throw new AppError("UNAUTHORIZED", "Authentication required");
-    const result = await integrationService.connectSlack(req.body as ConnectSlackRequest, req.auth);
+    const result = await integrationService.connectSlack(
+      req.body as ConnectSlackRequest,
+      req.auth,
+      requestMeta(req),
+    );
     res.status(200).json(result);
   } catch (err) {
     next(err);
@@ -38,7 +43,10 @@ export async function resolveSlackTeamByArgusTeamHandler(
 
 export async function linkSlackUserHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const result = await integrationService.linkSlackUser(req.body as LinkSlackUserRequest);
+    const result = await integrationService.linkSlackUser(
+      req.body as LinkSlackUserRequest,
+      requestMeta(req),
+    );
     res.status(200).json(result);
   } catch (err) {
     next(err);
@@ -75,11 +83,14 @@ export async function installSlackHandler(req: Request, res: Response, next: Nex
 
 export async function slackOAuthCallbackHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const redirectUrl = await integrationService.completeSlackOAuth({
-      code: req.query["code"] as string | undefined,
-      state: req.query["state"] as string | undefined,
-      error: req.query["error"] as string | undefined,
-    });
+    const redirectUrl = await integrationService.completeSlackOAuth(
+      {
+        code: req.query["code"] as string | undefined,
+        state: req.query["state"] as string | undefined,
+        error: req.query["error"] as string | undefined,
+      },
+      requestMeta(req),
+    );
     res.redirect(302, redirectUrl);
   } catch (err) {
     next(err);

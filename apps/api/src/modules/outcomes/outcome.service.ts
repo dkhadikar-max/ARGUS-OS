@@ -12,6 +12,7 @@ import {
 import { publishTeamEvent } from "../../lib/pubsub.js";
 import { invalidateDecisionCache } from "../../lib/decision-cache.js";
 import { track } from "../../lib/analytics.js";
+import { recordAudit, type RequestMeta } from "../../lib/audit.js";
 
 const MEETING_OUTCOME_TYPES = new Set(["MEETING_BOOKED", "OPPORTUNITY_CREATED", "CLOSED_WON"]);
 
@@ -54,6 +55,7 @@ async function updateCompanyMemoryPattern(
 export async function createOutcome(
   request: CreateOutcomeRequest,
   auth: AuthContext,
+  meta?: RequestMeta,
 ): Promise<CreateOutcomeResponse> {
   if (!auth.userId) {
     throw new AppError("FORBIDDEN", "Only authenticated users can log outcomes");
@@ -102,6 +104,20 @@ export async function createOutcome(
       time_to_outcome_days: outcome.timeToOutcomeDays,
       feedback_provided: Boolean(outcome.feedback),
     },
+  });
+
+  // Bible §19.1 Data Integrity: "Audit logs capture all state changes".
+  await recordAudit({
+    entityType: "outcome",
+    entityId: outcome.id,
+    action: "created",
+    actorId: auth.userId,
+    afterState: {
+      decisionId: outcome.decisionId,
+      type: outcome.type,
+      timeToOutcomeDays: outcome.timeToOutcomeDays,
+    },
+    meta,
   });
 
   return {

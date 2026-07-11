@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { AppError, type CreateOutcomeRequest, type ListOutcomesQuery } from "@argus/shared";
 import * as outcomeService from "./outcome.service.js";
+import { requestMeta } from "../../lib/audit.js";
 
 export async function createOutcomeHandler(
   req: Request,
@@ -10,7 +11,7 @@ export async function createOutcomeHandler(
   try {
     if (!req.auth) throw new AppError("UNAUTHORIZED", "Authentication required");
     const body = req.body as CreateOutcomeRequest;
-    const outcome = await outcomeService.createOutcome(body, req.auth);
+    const outcome = await outcomeService.createOutcome(body, req.auth, requestMeta(req));
     res.status(200).json(outcome);
   } catch (err) {
     next(err);

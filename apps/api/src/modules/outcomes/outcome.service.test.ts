@@ -23,6 +23,9 @@ vi.mock("../../lib/decision-cache.js", () => ({ invalidateDecisionCache }));
 const track = vi.fn();
 vi.mock("../../lib/analytics.js", () => ({ track }));
 
+const recordAudit = vi.fn();
+vi.mock("../../lib/audit.js", () => ({ recordAudit }));
+
 const { createOutcome, listOutcomesForTeam } = await import("./outcome.service.js");
 
 const auth: AuthContext = { type: "user", userId: "user_1", teamId: "team_1", planTier: "FREE" };
@@ -95,6 +98,14 @@ describe("createOutcome", () => {
       expect.objectContaining({
         name: "outcome_logged",
         properties: expect.objectContaining({ decision_id: "dec_1", outcome_type: "MEETING_BOOKED", feedback_provided: true }),
+      }),
+    );
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityType: "outcome",
+        entityId: "out_1",
+        action: "created",
+        actorId: "user_1",
       }),
     );
   });

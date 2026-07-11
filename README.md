@@ -97,6 +97,14 @@ Both providers' exact request/response shapes were verified against real sources
 
 Not yet wired: `queue_viewed`/`queue_item_clicked` in the dashboard, and the extension's own `sidebar_opened`/etc. have no live end-to-end verification against a real LinkedIn page (this environment can't load an unpacked extension against a live page) — verified instead via typecheck, a real `vite build`, unit tests mocking posthog-js, and direct inspection of the built bundle.
 
+### Audit logging (Bible §9.1 `AuditLog` model, §19.1 "Audit logs capture all state changes", §18 INF-4)
+
+`AuditLog` was fully modeled in the Prisma schema from Phase 1 but nothing ever wrote to it — found by cross-checking every entity/mutation the §18 backlog table actually specifies against what's implemented, not from anything the Bible calls out explicitly by name. `lib/audit.ts`'s `recordAudit()` now writes a row (`entityType`, `entityId`, `action`, `actorId`, `beforeState`/`afterState`, `ipAddress`/`userAgent`) at every state-changing mutation with real security/compliance weight: Decision creation and override, Outcome creation, and both Slack-connect paths plus both Slack-user-linking paths (manual `/argus link` and the OAuth auto-link). `requestMeta()` pulls `ipAddress`/`userAgent` from the Express request at the controller layer, since services only ever see parsed DTOs + `AuthContext`, never the raw request.
+
+Deliberately never throws: a failed audit-row insert is logged loudly (not silently swallowed) but never rolls back or fails the operation it's describing — a Decision that already committed shouldn't error out because its own audit entry couldn't be written afterward.
+
+Not audited (by scope, not oversight): read-only endpoints, and the Slack Bot's own local actions (button clicks acknowledged client-side, not yet a durable `ActionTaken` row — see Known gaps).
+
 ### Known gaps (flagged, not hidden)
 
 - No `ActionTaken` REST endpoint (the model exists in §9.1, but §10 never contracts it) — "accept verdict" is acknowledged locally in both the extension and the Slack bot without a durable record.

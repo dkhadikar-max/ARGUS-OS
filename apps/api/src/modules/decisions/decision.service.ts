@@ -17,6 +17,7 @@ import { publishTeamEvent } from "../../lib/pubsub.js";
 import { getCachedDebateOutput, setCachedDebateOutput } from "../../lib/decision-cache.js";
 import { track } from "../../lib/analytics.js";
 import { enrichProspect, type EnrichmentResult } from "../../lib/enrichment/enrichment.service.js";
+import { recordAudit, type RequestMeta } from "../../lib/audit.js";
 
 // Bible §8.3 classifies research data points as one of five lowercase
 // strings ("firmographic, demographic, technographic, intent, or risk"),
@@ -140,6 +141,7 @@ function toDecisionResponse(
 export async function createDecision(
   request: CreateDecisionRequest,
   auth: AuthContext,
+  meta?: RequestMeta,
 ): Promise<DecisionResponse> {
   const upsertedProspect = await upsertProspect(request.prospect);
 
@@ -246,6 +248,23 @@ export async function createDecision(
     data: { decisionId: full.id, teamId: request.context.teamId, userId: request.context.userId },
   });
 
+  // Bible §19.1 Data Integrity: "Audit logs capture all state changes".
+  // Decisions are immutable after creation (no separate "updated" audit
+  // entry is possible for this entityType — Override/Outcome are their own
+  // audited entities below).
+  await recordAudit({
+    entityType: "decision",
+    entityId: full.id,
+    action: "created",
+    actorId: request.context.userId,
+    afterState: {
+      verdict: full.verdict,
+      confidence: full.confidence,
+      recommendedAction: full.recommendedAction,
+    },
+    meta,
+  });
+
   // Bible §11.1 verdict_generated: "AI returns verdict" — fires whenever a
   // verdict reaches the requesting surface, whether freshly computed or
   // served from the AI-5 cache; the funnels in §11.2 measure the rep
@@ -279,6 +298,7 @@ export async function overrideDecision(
   id: string,
   request: OverrideDecisionRequest,
   auth: AuthContext,
+  meta?: RequestMeta,
 ): Promise<OverrideDecisionResponse> {
   if (!auth.userId) {
     throw new AppError("FORBIDDEN", "Only authenticated users can override a decision");
@@ -308,6 +328,19 @@ export async function overrideDecision(
       new_verdict: override.newVerdict,
       reason: override.reason,
     },
+  });
+
+  // Bible §19.1: "Override records preserve original verdict" (the Override
+  // model itself does that) + "Audit logs capture all state changes" (this
+  // does, as the generic cross-entity trail Override doesn't replace).
+  await recordAudit({
+    entityType: "decision",
+    entityId: decision.id,
+    action: "overridden",
+    actorId: auth.userId,
+    beforeState: { verdict: override.originalVerdict },
+    afterState: { verdict: override.newVerdict, reason: override.reason },
+    meta,
   });
 
   return {
