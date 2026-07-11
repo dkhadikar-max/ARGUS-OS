@@ -113,6 +113,10 @@ services:
         sync: false
       - key: POSTHOG_HOST
         value: https://app.posthog.com
+      - key: DATADOG_AGENT_HOST
+        sync: false
+      - key: DATADOG_AGENT_PORT
+        value: "8125"
       - key: SLACK_CLIENT_ID
         sync: false
       - key: SLACK_CLIENT_SECRET

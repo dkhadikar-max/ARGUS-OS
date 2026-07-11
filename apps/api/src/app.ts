@@ -5,6 +5,7 @@ import { corsAllowedOrigins } from "./config/env.js";
 import { isOriginAllowed } from "./lib/cors.js";
 import { logger } from "./lib/logger.js";
 import { errorHandler } from "./middleware/error-handler.js";
+import { metrics } from "./middleware/metrics.js";
 import { decisionRouter } from "./modules/decisions/decision.routes.js";
 import { outcomeRouter } from "./modules/outcomes/outcome.routes.js";
 import { queueRouter } from "./modules/queue/queue.routes.js";
@@ -34,6 +35,12 @@ export function createApp() {
       credentials: true,
     }),
   );
+
+  // Mounted before every route (including the webhook router below, which
+  // sends its own response before express.json() even runs) so infra
+  // metrics cover every request this process handles, not just the ones
+  // reaching the JSON-bodied API routes.
+  app.use(metrics);
 
   // Mounted before express.json(): Svix signature verification needs the
   // exact raw bytes Clerk sent, which a JSON body parser would have

@@ -48,6 +48,13 @@ const envSchema = z.object({
   POSTHOG_API_KEY: z.string().optional(),
   POSTHOG_HOST: z.string().default("https://app.posthog.com"),
 
+  // Bible §18 INF-2 "Datadog / Railway metrics" (P1), §17.3's "API uptime
+  // 99.9% — Datadog" success metric — see lib/datadog.ts. Optional, same
+  // no-op-without-credentials pattern as SENTRY_DSN/POSTHOG_API_KEY above.
+  // Port 8125 is the Datadog Agent's own documented default StatsD port.
+  DATADOG_AGENT_HOST: z.string().optional(),
+  DATADOG_AGENT_PORT: z.coerce.number().int().positive().default(8125),
+
   // Bible §18 SLK-1 "Add to Slack" self-serve OAuth install (P0), replacing
   // the manual paste-a-token connectSlack flow as the primary path. Optional
   // like every other third-party credential — the /slack/install endpoint
