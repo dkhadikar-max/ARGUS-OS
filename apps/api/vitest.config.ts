@@ -11,6 +11,9 @@ export default defineConfig({
       ANTHROPIC_API_KEY: "sk-ant-test-key",
       CLERK_JWT_ISSUER: "https://test.clerk.accounts.dev",
       CLERK_JWKS_URL: "https://test.clerk.accounts.dev/.well-known/jwks.json",
+      // 32 bytes of hex, a fixed value (not randomBytes) so encrypted
+      // fixtures/snapshots stay reproducible across test runs.
+      CONFIG_ENCRYPTION_KEY: "0".repeat(64),
     },
   },
 });

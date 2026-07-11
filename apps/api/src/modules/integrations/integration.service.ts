@@ -16,13 +16,18 @@ import { consumeOAuthState, createOAuthState } from "./oauth-state.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../lib/logger.js";
 import { recordAudit, type RequestMeta } from "../../lib/audit.js";
+import { decrypt } from "../../lib/encryption.js";
 
+// Bible §18 INF-4: config.botToken/apiKey are AES-256-GCM ciphertext at
+// rest (integration.repository.ts encrypts them on write) — this is the one
+// place the raw config is reshaped into what the rest of the app consumes,
+// so it's also the one place that needs to decrypt them back.
 function toResolution(integration: { teamId: string; config: unknown }): SlackTeamResolution {
   const config = integration.config as SlackIntegrationConfig;
   return {
     argusTeamId: integration.teamId,
-    apiKey: config.apiKey,
-    botToken: config.botToken,
+    apiKey: decrypt(config.apiKey),
+    botToken: decrypt(config.botToken),
     botUserId: config.botUserId,
     alertChannelId: config.alertChannelId,
   };

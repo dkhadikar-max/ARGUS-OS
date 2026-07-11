@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { ConnectSlackRequest } from "@argus/shared";
 import type { AuthContext } from "../../middleware/auth.js";
+import { encrypt } from "../../lib/encryption.js";
 
 const repo = {
   connectSlackIntegration: vi.fn(),
@@ -90,15 +91,15 @@ describe("resolveSlackTeam", () => {
     await expect(resolveSlackTeam("T_unknown")).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
-  it("returns the resolved config", async () => {
+  it("returns the resolved config, decrypted (Bible §18 INF-4)", async () => {
     repo.findSlackIntegrationBySlackTeamId.mockResolvedValue({
       teamId: "team_1",
       config: {
         slackTeamId: "T123",
         botUserId: "U_BOT",
         alertChannelId: "C_ALERTS",
-        botToken: "xoxb-fake",
-        apiKey: "argus_slack_rawkey123",
+        botToken: encrypt("xoxb-fake"),
+        apiKey: encrypt("argus_slack_rawkey123"),
       },
     });
 
@@ -117,7 +118,7 @@ describe("linkSlackUser", () => {
   it("throws NOT_FOUND when the email doesn't match a user on the connected team", async () => {
     repo.findSlackIntegrationBySlackTeamId.mockResolvedValue({
       teamId: "team_1",
-      config: { slackTeamId: "T123", botUserId: "U_BOT", alertChannelId: "C", botToken: "x", apiKey: "k" },
+      config: { slackTeamId: "T123", botUserId: "U_BOT", alertChannelId: "C", botToken: encrypt("x"), apiKey: encrypt("k") },
     });
     repo.findUserByEmailInTeam.mockResolvedValue(null);
 
@@ -130,7 +131,7 @@ describe("linkSlackUser", () => {
   it("links the Slack user to the matching ARGUS user", async () => {
     repo.findSlackIntegrationBySlackTeamId.mockResolvedValue({
       teamId: "team_1",
-      config: { slackTeamId: "T123", botUserId: "U_BOT", alertChannelId: "C", botToken: "x", apiKey: "k" },
+      config: { slackTeamId: "T123", botUserId: "U_BOT", alertChannelId: "C", botToken: encrypt("x"), apiKey: encrypt("k") },
     });
     repo.findUserByEmailInTeam.mockResolvedValue({ id: "user_1", email: "alex@example.com" });
     repo.linkSlackUser.mockResolvedValue({ id: "user_1", teamId: "team_1" });
@@ -153,7 +154,7 @@ describe("resolveSlackUser", () => {
   it("returns null userId when no user is linked yet", async () => {
     repo.findSlackIntegrationBySlackTeamId.mockResolvedValue({
       teamId: "team_1",
-      config: { slackTeamId: "T123", botUserId: "U_BOT", alertChannelId: "C", botToken: "x", apiKey: "k" },
+      config: { slackTeamId: "T123", botUserId: "U_BOT", alertChannelId: "C", botToken: encrypt("x"), apiKey: encrypt("k") },
     });
     repo.findUserBySlackId.mockResolvedValue(null);
 
@@ -164,7 +165,7 @@ describe("resolveSlackUser", () => {
   it("returns the linked userId", async () => {
     repo.findSlackIntegrationBySlackTeamId.mockResolvedValue({
       teamId: "team_1",
-      config: { slackTeamId: "T123", botUserId: "U_BOT", alertChannelId: "C", botToken: "x", apiKey: "k" },
+      config: { slackTeamId: "T123", botUserId: "U_BOT", alertChannelId: "C", botToken: encrypt("x"), apiKey: encrypt("k") },
     });
     repo.findUserBySlackId.mockResolvedValue({ id: "user_1" });
 

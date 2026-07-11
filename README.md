@@ -158,11 +158,20 @@ See **[CHROME_STORE_SUBMISSION.md](./CHROME_STORE_SUBMISSION.md)** for the full 
 
 What's left is genuinely not something this pass can do: creating the Google Developer account, paying its $5 fee, hosting the privacy policy at a public URL, and taking real screenshots of the sidebar against a live LinkedIn page (same "can't load an unpacked extension against a live page" limitation noted elsewhere in this README) all need a human with real credentials and judgment, not more code.
 
+### Data encryption at rest (Bible §18 INF-4)
+
+`Integration.config` stores a real Slack bot OAuth token and a generated API key — previously as plaintext JSON. `lib/encryption.ts` now encrypts both with AES-256-GCM (authenticated encryption, so a tampered ciphertext fails loudly via GCM's own auth-tag check rather than decrypting to silent garbage) before `integration.repository.ts` ever writes them, and decrypts them back in `integration.service.ts`'s `toResolution()` — the one place the raw config is reshaped into what the rest of the app consumes.
+
+`slackTeamId`/`botUserId`/`alertChannelId` stay plaintext: they aren't credentials, and `slackTeamId` specifically has to stay queryable (`findSlackIntegrationBySlackTeamId` does a Prisma JSON-path match on it, which an encrypted blob can't support) — only the two actual secrets are encrypted, not the whole config object.
+
+`CONFIG_ENCRYPTION_KEY` is optional at the schema level (a checkout that never touches Slack integrations still boots), but `encrypt()`/`decrypt()` throw a clear, specific error the moment they're actually invoked without it configured — never a silent plaintext fallback. This is the same pattern `authenticateWithJwt` already uses for missing Clerk config, applied to a second feature.
+
+One deliberate non-goal: no backward-compatibility shim for pre-existing plaintext rows. This hasn't shipped to real users yet, so there's no production data to migrate — any local dev row connected before this change would need Slack reconnected (re-running the connect flow) rather than silently continuing to read as plaintext.
+
 ### Known gaps (flagged, not hidden)
 
 - Slack message edits (`Edit First`) aren't persisted server-side, matching the extension's own client-local edit behavior.
 - The Full Debate View (§6.5) is an explicit P1 roadmap item — Slack's "View More" shows expanded evidence, not the full 5-agent debate.
-- `Integration.config` stores the Slack bot token and a generated API key in plaintext JSON — Bible §18 INF-4 ("Data encryption at rest") is an explicit, not-yet-built P1 item.
 - Clerk's `user.deleted` webhook is logged, not acted on — hard-deleting would violate the Decision/Outcome/MessageDraft foreign keys against that user, and a real implementation needs a GDPR-safe anonymization strategy (Bible §16.1 Risk #7, itself an explicit not-yet-built item).
 - The dashboard's Today Queue page has no filter/sort controls yet (Bible §18 DSH-2's "Filter and sort controls" is an explicit P1 item). All four DSH-3/4/5 dashboard pages the backlog specifies are now built.
 - Analytics has no per-rep accuracy breakdown (§4.4 Manager Morgan persona wants this specifically, for 1:1 coaching) — only a team-wide number (see "Analytics" section above).

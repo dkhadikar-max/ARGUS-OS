@@ -1,15 +1,19 @@
 import { randomBytes, createHash } from "node:crypto";
 import { prisma } from "@argus/database";
+import { encrypt } from "../../lib/encryption.js";
 
 export interface SlackIntegrationConfig {
   slackTeamId: string;
   botUserId: string;
   alertChannelId: string;
-  // Plaintext bot token + API key, retrievable by the Slack Bot process at
-  // runtime. Bible §18 INF-4 ("Data encryption at rest") is an explicit,
-  // not-yet-built P1 backlog item — until it lands, this column holds these
-  // secrets unencrypted, same as any other JSON field in this schema. Flagging
-  // this here rather than silently shipping it is the honest tradeoff.
+  // AES-256-GCM ciphertext (Bible §18 INF-4 "Data encryption at rest"), not
+  // the raw values — see lib/encryption.ts. slackTeamId/botUserId/
+  // alertChannelId stay plaintext: they aren't credentials, and
+  // slackTeamId specifically must stay queryable (findSlackIntegration
+  // BySlackTeamId below does a Prisma JSON-path match on it, which an
+  // encrypted blob can't support). Decrypted back to plain strings in
+  // integration.service.ts's toResolution(), the one place the raw config
+  // is reshaped into what the rest of the app consumes.
   botToken: string;
   apiKey: string;
 }
@@ -43,8 +47,8 @@ export async function connectSlackIntegration(
     slackTeamId: input.slackTeamId,
     botUserId: input.botUserId,
     alertChannelId: input.alertChannelId,
-    botToken: input.botToken,
-    apiKey,
+    botToken: encrypt(input.botToken),
+    apiKey: encrypt(apiKey),
   };
 
   const existing = await findSlackIntegrationByTeamId(teamId);

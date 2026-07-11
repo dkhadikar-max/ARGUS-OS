@@ -59,9 +59,20 @@ const envSchema = z.object({
   // redirect URL configured in the Slack App's "OAuth & Permissions" page.
   PUBLIC_API_URL: z.string().default("http://localhost:4000"),
   // Where the OAuth callback sends the browser after connecting (success or
-  // failure) — the dashboard's existing Today Queue page, since Settings
-  // (DSH-5) doesn't exist yet to show a dedicated confirmation.
+  // failure) — the dashboard's Today Queue page.
   DASHBOARD_URL: z.string().default("http://localhost:3000"),
+
+  // Bible §18 INF-4 "Data encryption at rest" (P1). Encrypts Integration.
+  // config's secret fields (Slack bot token, generated API key) — see
+  // lib/encryption.ts. Optional at the app level (a fresh checkout that
+  // never touches Slack integrations still boots fine), but
+  // encrypt()/decrypt() throw a clear, loud error if actually invoked
+  // without it set, rather than silently falling back to plaintext.
+  // Generate with: openssl rand -hex 32
+  CONFIG_ENCRYPTION_KEY: z
+    .string()
+    .length(64, "CONFIG_ENCRYPTION_KEY must be a 64-character hex string (32 bytes) — generate with `openssl rand -hex 32`")
+    .optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
