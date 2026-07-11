@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Channel, DecisionResponse } from "@argus/shared";
 import { track } from "../../lib/analytics.js";
+import { api } from "../../lib/api-client.js";
 
 interface Props {
   decisionId: string;
@@ -54,6 +55,18 @@ export function MessageComposer({ decisionId, message, onRegenerate, regeneratin
         was_edited: wasEdited,
       },
     });
+
+    // Bible §5.1/§5.2 Action Graph, §9.1 ActionTaken. Best-effort and never
+    // awaited by the UI: a decision only ever gets one ActionTaken (@unique
+    // decisionId), so a second copy -- or a Slack "Accept" on the same
+    // decision -- is expected to fail here (DECISION_STALE) without
+    // disrupting a copy that already succeeded.
+    void api
+      .recordAction(decisionId, {
+        actionType: "MESSAGE_COPIED",
+        details: { channel: CHANNEL_TO_SCHEMA[channel] },
+      })
+      .catch(() => undefined);
   }
 
   function handleToggleEdit() {

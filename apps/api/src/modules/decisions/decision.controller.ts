@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
-import { AppError, type CreateDecisionRequest, type OverrideDecisionRequest } from "@argus/shared";
+import { AppError, type CreateActionRequest, type CreateDecisionRequest, type OverrideDecisionRequest } from "@argus/shared";
 import * as decisionService from "./decision.service.js";
 import { requestMeta } from "../../lib/audit.js";
 
@@ -41,6 +41,22 @@ export async function overrideDecisionHandler(
     if (!req.auth) throw new AppError("UNAUTHORIZED", "Authentication required");
     const body = req.body as OverrideDecisionRequest;
     const result = await decisionService.overrideDecision(
+      req.params["id"] as string,
+      body,
+      req.auth,
+      requestMeta(req),
+    );
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function recordActionHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.auth) throw new AppError("UNAUTHORIZED", "Authentication required");
+    const body = req.body as CreateActionRequest;
+    const result = await decisionService.recordAction(
       req.params["id"] as string,
       body,
       req.auth,

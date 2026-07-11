@@ -103,7 +103,7 @@ Not yet wired: `queue_viewed`/`queue_item_clicked` in the dashboard, and the ext
 
 Deliberately never throws: a failed audit-row insert is logged loudly (not silently swallowed) but never rolls back or fails the operation it's describing — a Decision that already committed shouldn't error out because its own audit entry couldn't be written afterward.
 
-Not audited (by scope, not oversight): read-only endpoints, and the Slack Bot's own local actions (button clicks acknowledged client-side, not yet a durable `ActionTaken` row — see Known gaps).
+Not audited (by scope, not oversight): read-only endpoints, and any surface (a future dashboard "Message"/"Snooze" button, for instance) that doesn't yet call the ActionTaken endpoint below in the first place.
 
 ### Real-time updates (Bible §10.6 WebSocket API, §18 BCK-6)
 
@@ -113,15 +113,22 @@ Two additions beyond §10.6's literal example, both necessary rather than decora
 
 `apps/dashboard` connects from the browser (`lib/useTeamSocket.ts`, a client hook using the signed-in rep's own Clerk session token) and shows a lightweight live feed (`components/LiveQueueBanner.tsx`) above the Today Queue — proving the feature end-to-end without rebuilding DSH-2's own server-rendered data model into a fully reactive one (auto-inserting/re-ordering queue items live is further polish, not contracted by §10.6). Needs the new `NEXT_PUBLIC_API_BASE_URL` env var (the one dashboard env var actually shipped to the browser bundle, unlike server-side `API_BASE_URL`).
 
+### Action Graph — recording what a rep did (Bible §5.1/§5.2, §9.1 `ActionTaken`)
+
+`POST /api/v1/decisions/{id}/action` persists the Action Graph's `ActionTaken` row — one per decision (`@unique decisionId`, the same 1:1 shape as Override/Outcome), recording `actionType` (`MESSAGE_SENT`/`MESSAGE_COPIED`/`CRM_UPDATED`/`MEETING_BOOKED`/`PASSED`/`SNOOZED`/`RESEARCHED_MORE`) plus optional `details`. §10 (API Contracts) never actually contracts this endpoint — on inspection this looks like a gap in §10 itself rather than deliberately deferred scope: unlike Pinecone/cold-start's explicit "Week 3+" framing in §5.3, the Action Graph is one of §5.1's five core Day-1 graphs, and §9.1 already modeled `ActionTaken` with the same shape as Override/Outcome, both of which *do* have §10 endpoints. The request/response contract here was inferred from those two siblings.
+
+Wired into the two places that already take a real, durable action on a decision: the Slack bot's "Accept" button (`MESSAGE_SENT`, since sending the drafted message to the rep's own DMs is the manual confirmation §11.1's `message_sent` event describes) and "Pass" button (`PASSED`, alongside the existing verdict override), plus the extension's message "Copy" button (`MESSAGE_COPIED`). All three calls are best-effort and never block the primary action they're describing — a second attempt correctly 409s (`DECISION_STALE`, the same code Override/Outcome duplicate-write attempts already use), which is expected and swallowed rather than surfaced as an error, since whatever the rep actually did already happened regardless of whether this secondary record succeeds.
+
+Not wired: the dashboard's Today Queue wireframe (§6.2) shows View/Message/Snooze buttons per card, but no dashboard UI calls this endpoint yet — `QueueItemCard.tsx` still links out to the prospect's real LinkedIn profile instead (see Known gaps). The endpoint exists now; the dashboard buttons that would call it are separate, not-yet-built UI work.
+
 ### Known gaps (flagged, not hidden)
 
-- No `ActionTaken` REST endpoint (the model exists in §9.1, but §10 never contracts it) — "accept verdict" is acknowledged locally in both the extension and the Slack bot without a durable record.
 - Slack message edits (`Edit First`) aren't persisted server-side, matching the extension's own client-local edit behavior.
 - The Full Debate View (§6.5) is an explicit P1 roadmap item — Slack's "View More" shows expanded evidence, not the full 5-agent debate.
 - `Integration.config` stores the Slack bot token and a generated API key in plaintext JSON — Bible §18 INF-4 ("Data encryption at rest") is an explicit, not-yet-built P1 item.
 - Clerk's `user.deleted` webhook is logged, not acted on — hard-deleting would violate the Decision/Outcome/MessageDraft foreign keys against that user, and a real implementation needs a GDPR-safe anonymization strategy (Bible §16.1 Risk #7, itself an explicit not-yet-built item).
 - The dashboard's Today Queue page has no filter/sort controls yet (Bible §18 DSH-2's "Filter and sort controls" is an explicit P1 item) and no Analytics/Company Memory/Settings pages (DSH-3/4/5, mostly P1/P2).
-- Queue item cards link out to the prospect's real LinkedIn profile instead of wiring up the wireframe's View/Message/Snooze buttons — those need the same ActionTaken write path noted above, which doesn't exist yet.
+- Queue item cards link out to the prospect's real LinkedIn profile instead of wiring up the wireframe's View/Message/Snooze buttons — the ActionTaken endpoint those would call now exists (see above), but the dashboard buttons/UI themselves don't yet.
 - A transitive `postcss` vulnerability (GHSA-qx2v-qp2m-jg93) ships inside Next.js's own vendored dependency (`next/node_modules/postcss`) with no fix currently available upstream — not introduced by this codebase and not safely fixable without downgrading Next.js.
 - Dashboard PostHog events (`queue_viewed`, `queue_item_clicked`) aren't wired yet — the extension's client-side events (`sidebar_opened`, `message_copied`, `message_edited`) are, as of this pass.
 - No Datadog/Railway infra metrics (Bible §18 INF-2's "Datadog / Railway metrics", an explicit P1 item) — Sentry and PostHog cover errors and product events, not infrastructure metrics.

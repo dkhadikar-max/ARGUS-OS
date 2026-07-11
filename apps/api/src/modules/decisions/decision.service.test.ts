@@ -12,6 +12,7 @@ const repo = {
   createDecisionRecord: vi.fn(),
   findDecisionById: vi.fn(),
   createOverride: vi.fn(),
+  createActionTaken: vi.fn(),
 };
 
 vi.mock("./decision.repository.js", () => repo);
@@ -35,7 +36,7 @@ vi.mock("../../lib/enrichment/enrichment.service.js", () => ({ enrichProspect })
 const recordAudit = vi.fn();
 vi.mock("../../lib/audit.js", () => ({ recordAudit }));
 
-const { createDecision, getDecision, overrideDecision } = await import("./decision.service.js");
+const { createDecision, getDecision, overrideDecision, recordAction } = await import("./decision.service.js");
 
 const auth: AuthContext = { type: "user", userId: "user_1", teamId: "team_1", planTier: "FREE" };
 
@@ -343,6 +344,70 @@ describe("overrideDecision", () => {
         actorId: "user_1",
         beforeState: { verdict: "YES" },
         afterState: { verdict: "PASS", reason: "Already a customer" },
+      }),
+    );
+  });
+});
+
+describe("recordAction", () => {
+  it("throws FORBIDDEN for API-key auth with no userId", async () => {
+    const apiKeyAuth: AuthContext = { type: "api_key", teamId: "team_1", planTier: "FREE", apiKeyId: "key_1" };
+    await expect(
+      recordAction("dec_1", { actionType: "MESSAGE_SENT" }, apiKeyAuth),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(repo.createActionTaken).not.toHaveBeenCalled();
+  });
+
+  it("throws NOT_FOUND when the decision doesn't exist for this team", async () => {
+    repo.findDecisionById.mockResolvedValue(null);
+    await expect(
+      recordAction("dec_missing", { actionType: "MESSAGE_SENT" }, auth),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("throws DECISION_STALE when an action was already recorded", async () => {
+    repo.findDecisionById.mockResolvedValue({ id: "dec_1", actionTaken: { id: "act_1" } });
+    await expect(
+      recordAction("dec_1", { actionType: "MESSAGE_SENT" }, auth),
+    ).rejects.toMatchObject({ code: "DECISION_STALE" });
+    expect(repo.createActionTaken).not.toHaveBeenCalled();
+  });
+
+  it("records the action and writes an audit entry", async () => {
+    repo.findDecisionById.mockResolvedValue({ id: "dec_1", actionTaken: null });
+    repo.createActionTaken.mockResolvedValue({
+      id: "act_1",
+      decisionId: "dec_1",
+      actionType: "MESSAGE_COPIED",
+      details: { channel: "LINKEDIN" },
+      timestamp: new Date("2026-07-11T09:00:00Z"),
+    });
+
+    const result = await recordAction(
+      "dec_1",
+      { actionType: "MESSAGE_COPIED", details: { channel: "LINKEDIN" } },
+      auth,
+    );
+
+    expect(repo.createActionTaken).toHaveBeenCalledWith({
+      decisionId: "dec_1",
+      actionType: "MESSAGE_COPIED",
+      details: { channel: "LINKEDIN" },
+    });
+    expect(result).toEqual({
+      id: "act_1",
+      decisionId: "dec_1",
+      actionType: "MESSAGE_COPIED",
+      details: { channel: "LINKEDIN" },
+      timestamp: "2026-07-11T09:00:00.000Z",
+    });
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityType: "decision",
+        entityId: "dec_1",
+        action: "action_recorded",
+        actorId: "user_1",
+        afterState: { actionType: "MESSAGE_COPIED" },
       }),
     );
   });

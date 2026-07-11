@@ -1,4 +1,6 @@
 import type {
+  CreateActionRequest,
+  CreateActionResponse,
   CreateDecisionRequest,
   CreateOutcomeRequest,
   CreateOutcomeResponse,
@@ -42,4 +44,7 @@ export const api = {
 
   createOutcome: (payload: CreateOutcomeRequest) =>
     send<CreateOutcomeResponse>({ type: "API_CREATE_OUTCOME", payload }),
+
+  recordAction: (decisionId: string, payload: CreateActionRequest) =>
+    send<CreateActionResponse>({ type: "API_RECORD_ACTION", decisionId, payload }),
 };

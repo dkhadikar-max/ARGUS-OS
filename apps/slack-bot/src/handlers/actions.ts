@@ -56,6 +56,17 @@ export function registerActionHandlers(app: App): void {
       text: "Tracked: decision accepted. Message sent to your DMs — don't forget to log the outcome when they reply!",
     });
 
+    // Bible §5.1/§5.2 Action Graph, §9.1 ActionTaken. Best-effort: a decision
+    // can only have one ActionTaken (@unique decisionId), and the message
+    // was already sent to the rep's DMs above regardless of whether this
+    // secondary record succeeds -- a duplicate/stale write here shouldn't
+    // surface as an error for an action that already happened.
+    await argusApi
+      .recordAction({ apiKey: auth.apiKey, actingUserId: auth.argusUserId }, decisionId, {
+        actionType: "MESSAGE_SENT",
+      })
+      .catch(() => undefined);
+
     const { scheduleOutcomeNudges } = await import("../jobs/nudges.js");
     await scheduleOutcomeNudges({
       decisionId,
@@ -77,6 +88,11 @@ export function registerActionHandlers(app: App): void {
       decisionId,
       { newVerdict: "PASS" },
     );
+    await argusApi
+      .recordAction({ apiKey: auth.apiKey, actingUserId: auth.argusUserId }, decisionId, {
+        actionType: "PASSED",
+      })
+      .catch(() => undefined);
     await respond({ response_type: "ephemeral", text: "Passed. This won't show up in your queue again." });
   });
 

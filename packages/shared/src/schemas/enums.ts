@@ -57,6 +57,20 @@ export const outcomeTypeSchema = z.enum([
 ]);
 export type OutcomeType = z.infer<typeof outcomeTypeSchema>;
 
+// Bible §9.1 ActionType — the Action Graph's record of what the rep
+// actually did in response to a verdict (§5.1/§5.2), distinct from Outcome
+// (what resulted from it) and Override (a changed verdict).
+export const actionTypeSchema = z.enum([
+  "MESSAGE_SENT",
+  "MESSAGE_COPIED",
+  "CRM_UPDATED",
+  "MEETING_BOOKED",
+  "PASSED",
+  "SNOOZED",
+  "RESEARCHED_MORE",
+]);
+export type ActionType = z.infer<typeof actionTypeSchema>;
+
 // Bible §10.7 Error Codes
 export const errorCodeSchema = z.enum([
   "UNAUTHORIZED",

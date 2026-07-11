@@ -1,4 +1,4 @@
-import { prisma, type Prospect, type Verdict } from "@argus/database";
+import { prisma, type ActionType, type Prospect, type Verdict } from "@argus/database";
 
 export interface ProspectInput {
   linkedInUrl: string;
@@ -137,6 +137,7 @@ export function findDecisionById(id: string, teamId: string) {
       messageDrafts: true,
       outcome: true,
       override: true,
+      actionTaken: true,
       prospect: true,
     },
   });
@@ -156,6 +157,20 @@ export async function createOverride(input: {
       originalVerdict: input.originalVerdict,
       newVerdict: input.newVerdict,
       reason: input.reason,
+    },
+  });
+}
+
+export async function createActionTaken(input: {
+  decisionId: string;
+  actionType: ActionType;
+  details?: Record<string, unknown> | null | undefined;
+}) {
+  return prisma.actionTaken.create({
+    data: {
+      decisionId: input.decisionId,
+      actionType: input.actionType,
+      details: (input.details ?? undefined) as never,
     },
   });
 }

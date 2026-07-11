@@ -80,6 +80,15 @@ async function handleMessage(message: ExtensionMessage): Promise<ExtensionRespon
           }),
         };
 
+      case "API_RECORD_ACTION":
+        return {
+          ok: true,
+          data: await apiFetch(`/api/v1/decisions/${message.decisionId}/action`, {
+            method: "POST",
+            body: JSON.stringify(message.payload),
+          }),
+        };
+
       default:
         return { ok: false, error: "Unknown message type" };
     }

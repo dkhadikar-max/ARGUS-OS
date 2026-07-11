@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { channelSchema, messageToneSchema, verdictSchema } from "./enums.js";
+import { actionTypeSchema, channelSchema, messageToneSchema, verdictSchema } from "./enums.js";
 
 // Bible §10.2 — POST /api/v1/decisions request body
 export const createDecisionRequestSchema = z.object({
@@ -85,6 +85,14 @@ export const decisionResponseSchema = z.object({
       id: z.string(),
       newVerdict: verdictSchema,
       reason: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
+  actionTaken: z
+    .object({
+      id: z.string(),
+      actionType: actionTypeSchema,
+      timestamp: z.string().datetime(),
     })
     .nullable()
     .optional(),

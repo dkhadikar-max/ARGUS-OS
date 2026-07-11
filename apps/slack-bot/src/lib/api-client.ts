@@ -1,4 +1,6 @@
 import type {
+  CreateActionRequest,
+  CreateActionResponse,
   CreateDecisionRequest,
   CreateOutcomeRequest,
   CreateOutcomeResponse,
@@ -102,4 +104,11 @@ export const argusApi = {
 
   getQueue: (creds: TeamCredentials) =>
     request<QueueResponse>("/api/v1/queue", { method: "GET", headers: authHeaders(creds) }),
+
+  recordAction: (creds: TeamCredentials, decisionId: string, payload: CreateActionRequest) =>
+    request<CreateActionResponse>(`/api/v1/decisions/${decisionId}/action`, {
+      method: "POST",
+      headers: authHeaders(creds),
+      body: JSON.stringify(payload),
+    }),
 };

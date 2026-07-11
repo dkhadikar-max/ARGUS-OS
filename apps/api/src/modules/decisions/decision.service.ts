@@ -1,7 +1,8 @@
-import { AppError, type CreateDecisionRequest, type DecisionResponse, type OverrideDecisionRequest, type OverrideDecisionResponse } from "@argus/shared";
+import { AppError, type CreateActionRequest, type CreateActionResponse, type CreateDecisionRequest, type DecisionResponse, type OverrideDecisionRequest, type OverrideDecisionResponse } from "@argus/shared";
 import type { AuthContext } from "../../middleware/auth.js";
 import { runAgentDebate } from "../../agents/orchestrator.js";
 import {
+  createActionTaken,
   createDecisionRecord,
   createOverride,
   findDecisionById,
@@ -134,6 +135,13 @@ function toDecisionResponse(
       : null,
     override: decision.override
       ? { id: decision.override.id, newVerdict: decision.override.newVerdict, reason: decision.override.reason }
+      : null,
+    actionTaken: decision.actionTaken
+      ? {
+          id: decision.actionTaken.id,
+          actionType: decision.actionTaken.actionType,
+          timestamp: decision.actionTaken.timestamp.toISOString(),
+        }
       : null,
   };
 }
@@ -358,5 +366,51 @@ export async function overrideDecision(
     reason: override.reason,
     overrideId: override.id,
     createdAt: override.createdAt.toISOString(),
+  };
+}
+
+/** Bible §5.1/§5.2 Action Graph, §9.1 ActionTaken (@unique decisionId — one
+ *  per decision, the same 1:1 shape as Override/Outcome). §10 never
+ *  contracts a REST endpoint for this; inferred from the sibling
+ *  override/outcome endpoints §10.2/§10.3 do. */
+export async function recordAction(
+  id: string,
+  request: CreateActionRequest,
+  auth: AuthContext,
+  meta?: RequestMeta,
+): Promise<CreateActionResponse> {
+  if (!auth.userId) {
+    throw new AppError("FORBIDDEN", "Only authenticated users can record a decision action");
+  }
+
+  const decision = await findDecisionById(id, auth.teamId);
+  if (!decision) {
+    throw new AppError("NOT_FOUND", "Decision not found");
+  }
+  if (decision.actionTaken) {
+    throw new AppError("DECISION_STALE", "An action has already been recorded for this decision");
+  }
+
+  const actionTaken = await createActionTaken({
+    decisionId: id,
+    actionType: request.actionType,
+    details: request.details,
+  });
+
+  await recordAudit({
+    entityType: "decision",
+    entityId: id,
+    action: "action_recorded",
+    actorId: auth.userId,
+    afterState: { actionType: actionTaken.actionType },
+    meta,
+  });
+
+  return {
+    id: actionTaken.id,
+    decisionId: id,
+    actionType: actionTaken.actionType,
+    details: (actionTaken.details as Record<string, unknown> | null) ?? null,
+    timestamp: actionTaken.timestamp.toISOString(),
   };
 }
