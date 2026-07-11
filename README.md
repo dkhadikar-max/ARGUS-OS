@@ -129,4 +129,26 @@ npm run typecheck       # strict tsc --noEmit across every workspace
 
 `.github/workflows/ci.yml` runs on every push/PR to `main`/`master`: `npm ci` → `npm run build` (in that order, for the reason above) → `npm run typecheck` → `npm run test`. No secrets or external services required — the whole pipeline runs green with zero configuration, the same way it does on this machine with no live Postgres/Redis/Clerk/Slack credentials.
 
-Bible §18 INF-3 also calls for a staging environment; that's blocked on the same thing as INF-1 (Railway/Vercel deploy config) and INF-2 (Sentry/PostHog wiring) — real hosting/observability accounts this environment doesn't have. The workflow itself has no such dependency and is fully built.
+Bible §18 INF-3 also calls for a staging environment; that's the one piece still blocked on a real hosting account (a second Render environment/branch), unlike the deploy config itself (see below), which is fully written and just needs an account connected to it.
+
+## Deployment (Bible §18 INF-1)
+
+Bible §7.2/§7.3 specify Railway (API + DB) + Vercel (Dashboard). **This deviates from that at explicit user request: Render replaces Railway** for `apps/api`, `apps/slack-bot`, Postgres, and Redis. Vercel is unchanged for `apps/dashboard`, since it's a separate piece of the Bible's own architecture diagram and wasn't part of that request.
+
+Every config schema detail below (top-level `databases:`/`services:` keys, `preDeployCommand` at the service level rather than nested under a `deploy` object, `fromService`'s `host`/`port`/`hostport` properties, `sync: false` for dashboard-entered secrets) was verified against Render's own current docs before writing `render.yaml` — none of it was assumed, since a wrong field name here would only surface as a failed deploy, not a local test failure.
+
+### Render (`render.yaml`)
+
+1. Connect this repo in the Render dashboard: **New +** → **Blueprint**. Render detects `render.yaml` automatically and provisions `argus-postgres`, `argus-redis`, `argus-api` (web service, health-checked at `/health`), and `argus-slack-bot` (background worker — no HTTP port, since it holds an outbound WebSocket to Slack rather than serving inbound requests).
+2. You'll be prompted once, at Blueprint creation, for every var marked `sync: false` in `render.yaml` — the actual secrets (`ANTHROPIC_API_KEY`, `APOLLO_API_KEY`, `CLERK_WEBHOOK_SECRET`, etc.) that obviously can't live in a committed file.
+3. `argus-api`'s `preDeployCommand` runs `prisma migrate deploy` (the non-interactive, production-safe Prisma command — `migrate dev` is a local-only tool) after build but before the new version takes traffic, Render's own documented pattern for exactly this.
+4. `argus-slack-bot`'s `API_BASE_URL` can't be templated automatically (`fromService` only exposes bare host/port, not a scheme-prefixed URL) — set it manually once `argus-api` exists, to either its private-network address (`http://argus-api:<port>`) or its public `onrender.com` URL.
+5. `CORS_ALLOWED_ORIGINS` in `render.yaml` has a placeholder dashboard URL — update it once the Vercel deployment's real URL is known.
+
+### Vercel (`apps/dashboard/vercel.json`)
+
+Vercel auto-detects the npm workspace root and installs from there — but `packages/shared` still needs to be *built* (not just installed) before `next build` can resolve its types, the same ordering issue found earlier for CI. `vercel.json`'s `buildCommand`/`installCommand` both `cd ../..` back to the monorepo root for exactly that reason. In the Vercel dashboard: **Add New** → **Project**, set **Root Directory** to `apps/dashboard`, and set the `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`/`CLERK_SECRET_KEY`/`API_BASE_URL` env vars (see `.env.example`) to the deployed `argus-api` URL.
+
+### Known gap
+
+Pinecone (`PINECONE_API_KEY`/`PINECONE_INDEX` in `.env.example`, Bible §9.3/§7.2's vector DB for semantic prospect search) was never actually implemented — found while auditing which env vars this deploy config needed to carry forward. It's excluded from `render.yaml` entirely rather than wiring in an unused variable; building the actual Pinecone integration is separate, not-yet-scheduled scope.

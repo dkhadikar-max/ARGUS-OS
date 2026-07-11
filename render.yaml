@@ -1,0 +1,125 @@
+# Render Blueprint (Infrastructure as Code) — Bible §18 INF-1.
+#
+# Deviates from Bible §7.2/§7.3's specified "Railway (API + DB) + Vercel
+# (Dashboard)" at explicit user request: Render replaces Railway here for
+# apps/api, apps/slack-bot, Postgres, and Redis. Vercel (see
+# apps/dashboard/vercel.json) is unchanged, since it wasn't part of that
+# request and is a separate piece of the stack in the Bible's own diagram.
+#
+# Schema verified against Render's own current docs before writing this
+# (render.com/docs/blueprint-spec, /docs/infrastructure-as-code, /docs/deploys)
+# rather than assumed — notably: preDeployCommand lives at the service level,
+# not nested under a "deploy" object the way Railway's config-as-code does;
+# fromService's connection properties are host/port/hostport, not a single
+# pre-built URL; sync: false marks a var as dashboard-entered-only.
+#
+# Deploy with: connect this repo in the Render dashboard and it detects this
+# file automatically ("New +" -> "Blueprint"). Vars marked `sync: false`
+# below are prompted for once, at Blueprint creation, and never overwritten
+# by subsequent blueprint syncs.
+
+databases:
+  - name: argus-postgres
+    plan: basic-256mb
+    region: oregon
+    postgresMajorVersion: "17"
+    databaseName: argus
+
+services:
+  # Bible §9.2 Redis schema (rate limiting, decision cache, BullMQ queues,
+  # pub/sub). No ipAllowList entry = private-network-only access by
+  # default, which is what we want: nothing outside argus-api/argus-
+  # slack-bot should ever reach this directly.
+  - name: argus-redis
+    type: keyvalue
+    plan: starter
+    region: oregon
+
+  # Bible §7, §8, §10 — the Express API + Claude multi-agent decision engine.
+  - name: argus-api
+    type: web
+    runtime: node
+    region: oregon
+    buildCommand: npm ci && npm run build --workspace=@argus/database --workspace=@argus/shared --workspace=@argus/api
+    # Runs after build, before the new version starts serving traffic —
+    # Render's own documented pattern for exactly this (Prisma migrations).
+    # migrate:deploy (not migrate dev) is the non-interactive, production-
+    # safe Prisma command; already existed as a script from Phase 1.
+    preDeployCommand: npm run migrate:deploy --workspace=@argus/database
+    startCommand: npm run start --workspace=@argus/api
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: argus-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: argus-redis
+          type: keyvalue
+          property: connectionString
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-4-6
+      - key: APOLLO_API_KEY
+        sync: false
+      - key: CLEARBIT_API_KEY
+        sync: false
+      - key: CLERK_JWT_ISSUER
+        sync: false
+      - key: CLERK_JWKS_URL
+        sync: false
+      - key: CLERK_WEBHOOK_SECRET
+        sync: false
+      - key: INTERNAL_SERVICE_TOKEN
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        # Chrome extension origins are chrome-extension://<id> (fixed per
+        # build) plus the deployed dashboard's real origin — replace the
+        # placeholder below once both are known.
+        value: "chrome-extension://,https://your-dashboard.vercel.app"
+      - key: RATE_LIMIT_FREE_PER_HOUR
+        value: "100"
+      - key: RATE_LIMIT_PAID_PER_HOUR
+        value: "500"
+      - key: SENTRY_DSN
+        sync: false
+      - key: POSTHOG_API_KEY
+        sync: false
+      - key: POSTHOG_HOST
+        value: https://app.posthog.com
+
+  # Bible §18 Epic 3 — Bolt.js Socket Mode bot. type: worker (not web): it
+  # holds an outbound WebSocket connection to Slack, not an inbound HTTP
+  # port, so it has no healthCheckPath and needs none.
+  - name: argus-slack-bot
+    type: worker
+    runtime: node
+    region: oregon
+    buildCommand: npm ci && npm run build --workspace=@argus/shared --workspace=@argus/slack-bot
+    startCommand: npm run start --workspace=@argus/slack-bot
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: REDIS_URL
+        fromService:
+          name: argus-redis
+          type: keyvalue
+          property: connectionString
+      - key: SLACK_APP_TOKEN
+        sync: false
+      - key: SLACK_SIGNING_SECRET
+        sync: false
+      - key: INTERNAL_SERVICE_TOKEN
+        sync: false
+      # fromService only exposes host/port/hostport (Render's private-
+      # network address), not a scheme-prefixed URL string it can
+      # concatenate for you — set this manually once argus-api exists,
+      # e.g. http://argus-api:<port> for private-network traffic, or its
+      # public onrender.com URL if you'd rather route over the public
+      # internet.
+      - key: API_BASE_URL
+        sync: false
