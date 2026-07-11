@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { QueueItem, Verdict } from "@argus/shared";
 import { QueueItemCard } from "./QueueItemCard";
 import { EmptyQueueState } from "./EmptyQueueState";
+import { track } from "../lib/analytics";
 
 const VERDICTS: Verdict[] = ["STRONG_YES", "YES", "WAIT", "PASS", "HARD_PASS"];
 const VERDICT_LABEL: Record<Verdict, string> = {
@@ -31,6 +32,20 @@ const SORTERS: Record<SortBy, (a: QueueItem, b: QueueItem) => number> = {
 export function QueueList({ items }: { items: QueueItem[] }) {
   const [hiddenVerdicts, setHiddenVerdicts] = useState<Set<Verdict>>(new Set());
   const [sortBy, setSortBy] = useState<SortBy>("priority");
+
+  // Bible §11.1 queue_viewed: "User opens Today Queue". Fires once, on
+  // mount, not on every filter/sort change -- those aren't a distinct
+  // event in the Bible's catalog. `filter_applied` is honestly always
+  // false here: this page has no URL-persisted filter state, so every
+  // fresh view genuinely starts unfiltered (the property exists for a
+  // hypothetical bookmarked/shared filtered-view link, which isn't
+  // supported yet). `time_spent_ms` (optional in the schema) isn't tracked
+  // -- that needs page-visibility/beacon handling on unmount, more
+  // lifecycle complexity than this pass's scope.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    track({ name: "queue_viewed", properties: { item_count: items.length, filter_applied: false } });
+  }, []);
 
   const visibleItems = useMemo(() => {
     return items.filter((item) => !hiddenVerdicts.has(item.verdict)).sort(SORTERS[sortBy]);

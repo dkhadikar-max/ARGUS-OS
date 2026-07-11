@@ -1,5 +1,8 @@
+"use client";
+
 import type { QueueItem } from "@argus/shared";
 import { VerdictBadge } from "./VerdictBadge";
+import { track } from "../lib/analytics";
 
 // Bible §6.2 Today Queue wireframe: "#1 STRONG YES 96% Sarah Chen, VP Eng
 // @ DataFlow — New since yesterday · ICP match · Intent hot — [View]
@@ -9,6 +12,14 @@ import { VerdictBadge } from "./VerdictBadge";
 // handler behind them, this links out to the one action that's real
 // today: the prospect's actual LinkedIn profile.
 export function QueueItemCard({ item }: { item: QueueItem }) {
+  function handleClick() {
+    // Bible §11.1 queue_item_clicked: "User clicks queue item".
+    track({
+      name: "queue_item_clicked",
+      properties: { decision_id: item.decisionId, rank: item.rank, verdict: item.verdict },
+    });
+  }
+
   return (
     <li className="flex items-start justify-between gap-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
       <div className="min-w-0 flex-1">
@@ -31,6 +42,7 @@ export function QueueItemCard({ item }: { item: QueueItem }) {
         href={item.prospect.linkedInUrl}
         target="_blank"
         rel="noopener noreferrer"
+        onClick={handleClick}
         className="shrink-0 rounded border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
       >
         View on LinkedIn

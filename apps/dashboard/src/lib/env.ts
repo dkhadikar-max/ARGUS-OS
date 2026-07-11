@@ -10,4 +10,17 @@ const API_BASE_URL = process.env["API_BASE_URL"] ?? "http://localhost:4000";
 // above at runtime -- it's set separately (usually to the same value).
 const NEXT_PUBLIC_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
-export const env = { API_BASE_URL, NEXT_PUBLIC_API_BASE_URL };
+// Bible §11.1 event tracking (queue_viewed/queue_item_clicked, lib/
+// analytics.ts) — same NEXT_PUBLIC_ constraint as above: PostHog only
+// works from the browser, so its key has to be one Next.js actually
+// inlines into the client bundle. No-ops safely when unset, same pattern
+// as every other analytics credential in this codebase.
+const NEXT_PUBLIC_POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY;
+const NEXT_PUBLIC_POSTHOG_HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://app.posthog.com";
+
+export const env = {
+  API_BASE_URL,
+  NEXT_PUBLIC_API_BASE_URL,
+  NEXT_PUBLIC_POSTHOG_KEY,
+  NEXT_PUBLIC_POSTHOG_HOST,
+};
