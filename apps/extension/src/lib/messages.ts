@@ -23,7 +23,8 @@ export type ExtensionMessage =
   | { type: "API_GET_DECISION"; decisionId: string }
   | { type: "API_OVERRIDE_DECISION"; decisionId: string; payload: OverrideDecisionRequest }
   | { type: "API_CREATE_OUTCOME"; payload: CreateOutcomeRequest }
-  | { type: "API_RECORD_ACTION"; decisionId: string; payload: CreateActionRequest };
+  | { type: "API_RECORD_ACTION"; decisionId: string; payload: CreateActionRequest }
+  | { type: "API_SHARE_DECISION"; decisionId: string };
 
 export type ExtensionResponse<T = unknown> =
   | { ok: true; data: T }

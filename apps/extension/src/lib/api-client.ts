@@ -7,6 +7,7 @@ import type {
   DecisionResponse,
   OverrideDecisionRequest,
   OverrideDecisionResponse,
+  ShareDecisionResponse,
 } from "@argus/shared";
 import type { ExtensionMessage, ExtensionResponse, StoredAuth } from "./messages.js";
 
@@ -47,4 +48,7 @@ export const api = {
 
   recordAction: (decisionId: string, payload: CreateActionRequest) =>
     send<CreateActionResponse>({ type: "API_RECORD_ACTION", decisionId, payload }),
+
+  shareDecision: (decisionId: string) =>
+    send<ShareDecisionResponse>({ type: "API_SHARE_DECISION", decisionId }),
 };

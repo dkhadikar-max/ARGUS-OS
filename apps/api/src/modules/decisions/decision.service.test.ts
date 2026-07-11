@@ -36,7 +36,15 @@ vi.mock("../../lib/enrichment/enrichment.service.js", () => ({ enrichProspect })
 const recordAudit = vi.fn();
 vi.mock("../../lib/audit.js", () => ({ recordAudit }));
 
-const { createDecision, getDecision, overrideDecision, recordAction } = await import("./decision.service.js");
+const resolveSlackTeamByArgusTeamId = vi.fn();
+vi.mock("../integrations/integration.service.js", () => ({ resolveSlackTeamByArgusTeamId }));
+
+const postSlackMessage = vi.fn();
+vi.mock("../../lib/slack-client.js", () => ({ postSlackMessage }));
+
+const { createDecision, getDecision, overrideDecision, recordAction, shareDecision } = await import(
+  "./decision.service.js"
+);
 
 const auth: AuthContext = { type: "user", userId: "user_1", teamId: "team_1", planTier: "FREE" };
 
@@ -568,6 +576,63 @@ describe("recordAction", () => {
         actorId: "user_1",
         afterState: { actionType: "MESSAGE_COPIED" },
       }),
+    );
+  });
+});
+
+describe("shareDecision", () => {
+  it("throws FORBIDDEN for API-key auth with no userId", async () => {
+    const apiKeyAuth: AuthContext = { type: "api_key", teamId: "team_1", planTier: "FREE", apiKeyId: "key_1" };
+    await expect(shareDecision("dec_1", apiKeyAuth)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(postSlackMessage).not.toHaveBeenCalled();
+  });
+
+  it("throws NOT_FOUND when the decision doesn't exist for this team", async () => {
+    repo.findDecisionById.mockResolvedValue(null);
+    await expect(shareDecision("dec_missing", auth)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("throws a clear VALIDATION_ERROR when the team hasn't connected Slack", async () => {
+    repo.findDecisionById.mockResolvedValue({
+      id: "dec_1",
+      verdict: "STRONG_YES",
+      confidence: 94,
+      reasoning: "Strong fit.",
+      prospect: { name: "Sarah Chen", title: "VP Eng", companyName: "DataFlow" },
+    });
+    resolveSlackTeamByArgusTeamId.mockResolvedValue(null);
+
+    await expect(shareDecision("dec_1", auth)).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(postSlackMessage).not.toHaveBeenCalled();
+  });
+
+  it("posts a summary to the team's alert channel and writes an audit entry", async () => {
+    repo.findDecisionById.mockResolvedValue({
+      id: "dec_1",
+      verdict: "STRONG_YES",
+      confidence: 94,
+      reasoning: "Strong fit.",
+      prospect: { name: "Sarah Chen", title: "VP Eng", companyName: "DataFlow" },
+    });
+    resolveSlackTeamByArgusTeamId.mockResolvedValue({
+      argusTeamId: "team_1",
+      apiKey: "key",
+      botToken: "xoxb-real-token",
+      botUserId: "U1",
+      alertChannelId: "C123",
+    });
+    postSlackMessage.mockResolvedValue(undefined);
+
+    const result = await shareDecision("dec_1", auth);
+
+    expect(postSlackMessage).toHaveBeenCalledWith(
+      "xoxb-real-token",
+      "C123",
+      expect.stringContaining("Sarah Chen"),
+    );
+    expect(result).toEqual({ shared: true, channelId: "C123" });
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ entityType: "decision", entityId: "dec_1", action: "shared", actorId: "user_1" }),
     );
   });
 });

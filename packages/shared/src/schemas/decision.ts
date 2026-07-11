@@ -141,3 +141,15 @@ export const overrideDecisionResponseSchema = z.object({
 export type OverrideDecisionResponse = z.infer<
   typeof overrideDecisionResponseSchema
 >;
+
+// Bible §6.5 Full Debate View's "[Share with Team]" button -- §10 never
+// contracts this endpoint (same category of gap as ActionTaken before it
+// got one), inferred from the same shape as the sibling override/action
+// endpoints above. Posts the decision to the team's connected Slack
+// channel (apps/slack-bot's own alertChannelId), the team's one shared
+// communication surface (Bible §7.1's own architecture diagram).
+export const shareDecisionResponseSchema = z.object({
+  shared: z.literal(true),
+  channelId: z.string(),
+});
+export type ShareDecisionResponse = z.infer<typeof shareDecisionResponseSchema>;

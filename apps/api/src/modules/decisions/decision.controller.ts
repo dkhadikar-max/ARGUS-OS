@@ -67,3 +67,13 @@ export async function recordActionHandler(req: Request, res: Response, next: Nex
     next(err);
   }
 }
+
+export async function shareDecisionHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.auth) throw new AppError("UNAUTHORIZED", "Authentication required");
+    const result = await decisionService.shareDecision(req.params["id"] as string, req.auth, requestMeta(req));
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}

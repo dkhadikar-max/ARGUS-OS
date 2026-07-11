@@ -1,4 +1,4 @@
-import { agentDebateOutputSchema, AppError, type CreateActionRequest, type CreateActionResponse, type CreateDecisionRequest, type DecisionResponse, type OverrideDecisionRequest, type OverrideDecisionResponse } from "@argus/shared";
+import { agentDebateOutputSchema, AppError, type CreateActionRequest, type CreateActionResponse, type CreateDecisionRequest, type DecisionResponse, type OverrideDecisionRequest, type OverrideDecisionResponse, type ShareDecisionResponse } from "@argus/shared";
 import type { AuthContext } from "../../middleware/auth.js";
 import { runAgentDebate } from "../../agents/orchestrator.js";
 import {
@@ -19,6 +19,8 @@ import { getCachedDebateOutput, setCachedDebateOutput } from "../../lib/decision
 import { track } from "../../lib/analytics.js";
 import { enrichProspect, type EnrichmentResult } from "../../lib/enrichment/enrichment.service.js";
 import { recordAudit, type RequestMeta } from "../../lib/audit.js";
+import { resolveSlackTeamByArgusTeamId } from "../integrations/integration.service.js";
+import { postSlackMessage } from "../../lib/slack-client.js";
 
 // Bible §8.3 classifies research data points as one of five lowercase
 // strings ("firmographic, demographic, technographic, intent, or risk"),
@@ -428,4 +430,51 @@ export async function recordAction(
     details: (actionTaken.details as Record<string, unknown> | null) ?? null,
     timestamp: actionTaken.timestamp.toISOString(),
   };
+}
+
+/** Bible §6.5 Full Debate View's "[Share with Team]" button. §10 never
+ *  contracts this endpoint (same gap ActionTaken had before it got one) --
+ *  posts a plain-text summary to the team's connected Slack channel, the
+ *  one shared team-wide surface (Bible §7.1). Throws a clear, specific
+ *  error when the team hasn't connected Slack, rather than a generic
+ *  failure -- there's nowhere else "the team" could mean today. */
+export async function shareDecision(
+  id: string,
+  auth: AuthContext,
+  meta?: RequestMeta,
+): Promise<ShareDecisionResponse> {
+  if (!auth.userId) {
+    throw new AppError("FORBIDDEN", "Only authenticated users can share a decision");
+  }
+
+  const decision = await findDecisionById(id, auth.teamId);
+  if (!decision) {
+    throw new AppError("NOT_FOUND", "Decision not found");
+  }
+
+  const slack = await resolveSlackTeamByArgusTeamId(auth.teamId);
+  if (!slack) {
+    throw new AppError(
+      "VALIDATION_ERROR",
+      "Connect Slack (Settings > Integrations) before sharing a decision with your team",
+    );
+  }
+
+  const text = [
+    `*${decision.prospect.name}*${decision.prospect.title ? `, ${decision.prospect.title}` : ""}${decision.prospect.companyName ? ` @ ${decision.prospect.companyName}` : ""}`,
+    `Verdict: *${decision.verdict}* (${decision.confidence}% confidence)`,
+    decision.reasoning,
+  ].join("\n");
+
+  await postSlackMessage(slack.botToken, slack.alertChannelId, text);
+
+  await recordAudit({
+    entityType: "decision",
+    entityId: id,
+    action: "shared",
+    actorId: auth.userId,
+    meta,
+  });
+
+  return { shared: true, channelId: slack.alertChannelId };
 }

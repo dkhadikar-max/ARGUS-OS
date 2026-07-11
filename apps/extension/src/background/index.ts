@@ -94,6 +94,12 @@ async function handleMessage(message: ExtensionMessage): Promise<ExtensionRespon
           }),
         };
 
+      case "API_SHARE_DECISION":
+        return {
+          ok: true,
+          data: await apiFetch(`/api/v1/decisions/${message.decisionId}/share`, { method: "POST" }),
+        };
+
       default:
         return { ok: false, error: "Unknown message type" };
     }

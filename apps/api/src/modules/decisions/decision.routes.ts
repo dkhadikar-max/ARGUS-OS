@@ -8,6 +8,7 @@ import {
   getDecisionHandler,
   overrideDecisionHandler,
   recordActionHandler,
+  shareDecisionHandler,
 } from "./decision.controller.js";
 
 export const decisionRouter = Router();
@@ -39,3 +40,8 @@ decisionRouter.post(
   validate(createActionRequestSchema),
   recordActionHandler,
 );
+
+// Bible §6.5 Full Debate View's "[Share with Team]" button — not itself
+// contracted by §10 either (see decision.service.ts shareDecision's
+// comment), inferred the same way the action endpoint above was.
+decisionRouter.post("/:id/share", requireAuth, shareDecisionHandler);

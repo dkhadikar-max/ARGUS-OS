@@ -1,7 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DecisionResponse } from "@argus/shared";
 import { VERDICT_CLASSES, VERDICT_LABEL } from "../verdict-styles.js";
 import { track } from "../../lib/analytics.js";
+import { api } from "../../lib/api-client.js";
 
 interface Props {
   decision: DecisionResponse;
@@ -28,6 +29,21 @@ export function FullDebateView({ decision, onBack }: Props) {
   const classes = VERDICT_CLASSES[decision.verdict];
   const debate = decision.debate;
   const mountedAt = useRef(performance.now());
+  const [sharing, setSharing] = useState(false);
+  const [shareStatus, setShareStatus] = useState<"idle" | "shared" | "error">("idle");
+
+  async function handleShare() {
+    setSharing(true);
+    setShareStatus("idle");
+    try {
+      await api.shareDecision(decision.id);
+      setShareStatus("shared");
+    } catch {
+      setShareStatus("error");
+    } finally {
+      setSharing(false);
+    }
+  }
 
   // Bible §11.1 full_debate_viewed: fires on leaving this view (not
   // entering), so `time_spent_ms` is a real measured duration instead of a
@@ -51,13 +67,28 @@ export function FullDebateView({ decision, onBack }: Props) {
 
   return (
     <div className="space-y-3 p-4">
-      <button
-        type="button"
-        onClick={onBack}
-        className="text-xs font-medium text-blue-700 hover:underline"
-      >
-        ← Back to Sidebar
-      </button>
+      <div className="flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={onBack}
+          className="text-xs font-medium text-blue-700 hover:underline"
+        >
+          ← Back to Sidebar
+        </button>
+        <button
+          type="button"
+          onClick={handleShare}
+          disabled={sharing}
+          className="rounded border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+        >
+          {sharing ? "Sharing…" : shareStatus === "shared" ? "Shared!" : "Share with Team"}
+        </button>
+      </div>
+      {shareStatus === "error" && (
+        <p className="text-xs text-red-600">
+          Couldn&apos;t share — connect Slack in Settings first, or try again.
+        </p>
+      )}
 
       <p className="text-sm font-semibold text-gray-900">
         {decision.prospect.name}
