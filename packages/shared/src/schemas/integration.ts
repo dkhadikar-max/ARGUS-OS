@@ -45,3 +45,9 @@ export const slackUserResolutionSchema = z.object({
   userId: z.string().nullable(),
 });
 export type SlackUserResolution = z.infer<typeof slackUserResolutionSchema>;
+
+// Bible §18 SLK-1 "Add to Slack" self-serve OAuth install.
+export const slackInstallResponseSchema = z.object({
+  url: z.string().url(),
+});
+export type SlackInstallResponse = z.infer<typeof slackInstallResponseSchema>;

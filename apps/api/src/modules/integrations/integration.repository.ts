@@ -77,3 +77,15 @@ export async function linkSlackUser(teamId: string, slackUserId: string, email: 
 export function findUserByEmailInTeam(teamId: string, email: string) {
   return prisma.user.findFirst({ where: { teamId, email } });
 }
+
+/** Used by the OAuth install flow (Bible §18 SLK-1), where the installing
+ *  admin's ARGUS userId is already known from the signed state param — unlike
+ *  linkSlackUser's email lookup, which is for other team members running
+ *  `/argus link` from a Slack DM where only their email is available. */
+export function linkSlackUserById(userId: string, slackUserId: string) {
+  return prisma.user.update({
+    where: { id: userId },
+    data: { slackUserId },
+    select: { id: true, teamId: true },
+  });
+}

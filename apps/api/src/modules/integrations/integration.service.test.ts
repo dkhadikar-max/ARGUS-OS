@@ -8,6 +8,7 @@ const repo = {
   findSlackIntegrationByTeamId: vi.fn(),
   findUserBySlackId: vi.fn(),
   linkSlackUser: vi.fn(),
+  linkSlackUserById: vi.fn(),
   findUserByEmailInTeam: vi.fn(),
 };
 vi.mock("./integration.repository.js", () => repo);
@@ -15,9 +16,26 @@ vi.mock("./integration.repository.js", () => repo);
 const track = vi.fn();
 vi.mock("../../lib/analytics.js", () => ({ track }));
 
-const { connectSlack, resolveSlackTeam, linkSlackUser, resolveSlackUser } = await import(
-  "./integration.service.js"
-);
+const oauthClient = {
+  buildAuthorizeUrl: vi.fn(),
+  exchangeCodeForToken: vi.fn(),
+};
+vi.mock("./slack-oauth.client.js", () => oauthClient);
+
+const oauthState = {
+  createOAuthState: vi.fn(),
+  consumeOAuthState: vi.fn(),
+};
+vi.mock("./oauth-state.js", () => oauthState);
+
+const {
+  connectSlack,
+  resolveSlackTeam,
+  linkSlackUser,
+  resolveSlackUser,
+  initiateSlackOAuth,
+  completeSlackOAuth,
+} = await import("./integration.service.js");
 
 const connectRequest: ConnectSlackRequest = {
   slackTeamId: "T123",
@@ -134,5 +152,92 @@ describe("resolveSlackUser", () => {
 
     const result = await resolveSlackUser("T123", "U_REP");
     expect(result).toEqual({ userId: "user_1" });
+  });
+});
+
+describe("initiateSlackOAuth", () => {
+  it("rejects non-admin roles with FORBIDDEN", async () => {
+    const auth: AuthContext = { type: "user", userId: "u1", role: "SDR", teamId: "team_1", planTier: "PRO" };
+    await expect(initiateSlackOAuth(auth)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(oauthState.createOAuthState).not.toHaveBeenCalled();
+  });
+
+  it("rejects API-key auth with no user attached", async () => {
+    const auth: AuthContext = { type: "api_key", role: "ADMIN", teamId: "team_1", planTier: "PRO" };
+    await expect(initiateSlackOAuth(auth)).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("creates a state token scoped to the admin's team+user and returns the authorize URL", async () => {
+    const auth: AuthContext = { type: "user", userId: "u1", role: "ADMIN", teamId: "team_1", planTier: "PRO" };
+    oauthState.createOAuthState.mockResolvedValue("random_state_token");
+    oauthClient.buildAuthorizeUrl.mockReturnValue("https://slack.com/oauth/v2/authorize?state=random_state_token");
+
+    const url = await initiateSlackOAuth(auth);
+
+    expect(oauthState.createOAuthState).toHaveBeenCalledWith({ teamId: "team_1", userId: "u1" });
+    expect(oauthClient.buildAuthorizeUrl).toHaveBeenCalledWith("random_state_token");
+    expect(url).toBe("https://slack.com/oauth/v2/authorize?state=random_state_token");
+  });
+});
+
+describe("completeSlackOAuth", () => {
+  it("redirects to the error page when Slack reports a consent error, without touching state", async () => {
+    const url = await completeSlackOAuth({ error: "access_denied" });
+    expect(url).toContain("/queue?slack=error");
+    expect(oauthState.consumeOAuthState).not.toHaveBeenCalled();
+  });
+
+  it("redirects to the error page when code or state is missing", async () => {
+    const url = await completeSlackOAuth({ code: "abc" });
+    expect(url).toContain("/queue?slack=error");
+  });
+
+  it("redirects to the error page when state is invalid, expired, or already used", async () => {
+    oauthState.consumeOAuthState.mockResolvedValue(null);
+    const url = await completeSlackOAuth({ code: "abc", state: "bad_state" });
+    expect(url).toContain("/queue?slack=error");
+    expect(repo.connectSlackIntegration).not.toHaveBeenCalled();
+  });
+
+  it("redirects to the error page when the Slack code exchange fails", async () => {
+    oauthState.consumeOAuthState.mockResolvedValue({ teamId: "team_1", userId: "u1" });
+    oauthClient.exchangeCodeForToken.mockRejectedValue(new Error("invalid_code"));
+
+    const url = await completeSlackOAuth({ code: "bad_code", state: "s1" });
+
+    expect(url).toContain("/queue?slack=error");
+    expect(repo.connectSlackIntegration).not.toHaveBeenCalled();
+  });
+
+  it("persists the integration, links the installing admin, tracks the event, and redirects to success", async () => {
+    oauthState.consumeOAuthState.mockResolvedValue({ teamId: "team_1", userId: "u1" });
+    oauthClient.exchangeCodeForToken.mockResolvedValue({
+      slackTeamId: "T123",
+      slackTeamName: "Acme Corp",
+      botToken: "xoxb-real",
+      botUserId: "U_BOT",
+      alertChannelId: "C_ALERTS",
+      installingSlackUserId: "U_ADMIN",
+    });
+    repo.connectSlackIntegration.mockResolvedValue("argus_slack_rawkey123");
+    repo.linkSlackUserById.mockResolvedValue({ id: "u1", teamId: "team_1" });
+
+    const url = await completeSlackOAuth({ code: "good_code", state: "s1" });
+
+    expect(repo.connectSlackIntegration).toHaveBeenCalledWith("team_1", {
+      slackTeamId: "T123",
+      botToken: "xoxb-real",
+      botUserId: "U_BOT",
+      alertChannelId: "C_ALERTS",
+    });
+    expect(repo.linkSlackUserById).toHaveBeenCalledWith("u1", "U_ADMIN");
+    expect(track).toHaveBeenCalledWith(
+      "u1",
+      expect.objectContaining({
+        name: "integration_connected",
+        properties: expect.objectContaining({ provider: "slack", auth_method: "oauth" }),
+      }),
+    );
+    expect(url).toContain("/queue?slack=connected");
   });
 });

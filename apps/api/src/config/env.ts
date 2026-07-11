@@ -47,6 +47,21 @@ const envSchema = z.object({
   // other external-service credential in this schema.
   POSTHOG_API_KEY: z.string().optional(),
   POSTHOG_HOST: z.string().default("https://app.posthog.com"),
+
+  // Bible §18 SLK-1 "Add to Slack" self-serve OAuth install (P0), replacing
+  // the manual paste-a-token connectSlack flow as the primary path. Optional
+  // like every other third-party credential — the /slack/install endpoint
+  // throws a clear error if these are unset rather than failing boot.
+  SLACK_CLIENT_ID: z.string().optional(),
+  SLACK_CLIENT_SECRET: z.string().optional(),
+  // This server's own public-facing URL, needed to build the redirect_uri
+  // Slack sends the browser back to after consent. Must exactly match a
+  // redirect URL configured in the Slack App's "OAuth & Permissions" page.
+  PUBLIC_API_URL: z.string().default("http://localhost:4000"),
+  // Where the OAuth callback sends the browser after connecting (success or
+  // failure) — the dashboard's existing Today Queue page, since Settings
+  // (DSH-5) doesn't exist yet to show a dedicated confirmation.
+  DASHBOARD_URL: z.string().default("http://localhost:3000"),
 });
 
 export type Env = z.infer<typeof envSchema>;

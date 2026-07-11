@@ -62,13 +62,18 @@ Every JWT-authenticated request (`middleware/auth.ts`) looks up a `User` row by 
 
 The dashboard additionally needs its own Clerk SDK credentials (distinct from the JWT-verification config above) in `apps/dashboard/.env.local`: `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`, from the same Clerk Dashboard's API Keys page. Without real values, `next dev`/`next build` still run, but every page 500s with `@clerk/backend: Missing publishableKey` — an honest, correct failure mode, not a bug to paper over with a fake-looking key.
 
-### Connecting Slack
+### Connecting Slack (Bible §18 SLK-1)
 
-The Slack Bot serves every connected team from one process (Bible §18 Epic 3), resolving each incoming event's workspace to an ARGUS team via `apps/api`'s `/api/v1/integrations/slack/*` endpoints — no per-workspace OAuth "Add to Slack" flow yet (see Known gaps below). To connect a team today:
+The Slack Bot serves every connected team from one process (Bible §18 Epic 3), resolving each incoming event's workspace to an ARGUS team via `apps/api`'s `/api/v1/integrations/slack/*` endpoints.
+
+**Self-serve OAuth (primary path).** A team admin clicks "Connect Slack" on the dashboard's Today Queue page, which hits `apps/dashboard`'s `/api/slack/install` Route Handler → `GET /api/v1/integrations/slack/install` on `apps/api` (JWT-authenticated, `ADMIN`/`FOUNDER`/`MANAGER` only) → Slack's own consent screen, where the admin also picks the alerts channel (requested via the `incoming-webhook` scope purely for its channel picker — the bot posts through `chat.postMessage`, not the webhook URL itself). Slack redirects back to `GET /api/v1/integrations/slack/oauth/callback`, which is public (no JWT — a single-use, Redis-backed `state` token generated at `/install` is the CSRF/security mechanism instead, 10-minute TTL, deleted on first use). On success this persists the integration *and* links the installing admin's `User.slackUserId` automatically from the OAuth response's `authed_user.id` — they don't need to separately run `/argus link`. Requires `SLACK_CLIENT_ID`/`SLACK_CLIENT_SECRET` (from the Slack app's OAuth & Permissions page) and `PUBLIC_API_URL` (must exactly match the redirect URL registered there).
+
+**Manual token entry (fallback)** — for workspaces whose Slack admin policy blocks third-party app installs, or for local dev without a public callback URL:
 
 1. Create a Slack app (Socket Mode enabled) and note its bot token (`xoxb-...`), bot user id, and app-level token (`xapp-...`).
-2. As a team admin (JWT-authenticated, `ADMIN`/`FOUNDER`/`MANAGER` role), `POST /api/v1/integrations/slack` with `{ slackTeamId, botToken, botUserId, alertChannelId }` — the response's `apiKey` is shown once, but the Slack Bot doesn't need it manually; it's stored server-side and resolved automatically per event.
-3. Each rep runs `/argus link` in Slack once, so button clicks and outcome logging attribute correctly to their ARGUS user.
+2. As a team admin, `POST /api/v1/integrations/slack` with `{ slackTeamId, botToken, botUserId, alertChannelId }` — the response's `apiKey` is shown once, but the Slack Bot doesn't need it manually; it's stored server-side and resolved automatically per event.
+
+Either way, each rep still runs `/argus link` in Slack once *unless* they were the OAuth-installing admin (linked automatically) — this attributes button clicks and outcome logging to their ARGUS user.
 
 ### Decision caching (Bible §18 AI-5)
 
@@ -94,7 +99,6 @@ Not yet wired: `queue_viewed`/`queue_item_clicked` in the dashboard, and the ext
 
 ### Known gaps (flagged, not hidden)
 
-- No self-serve "Add to Slack" OAuth flow — connecting a workspace requires the manual API call above (§18 SLK-1's "OAuth installation flow" is the natural next task).
 - No `ActionTaken` REST endpoint (the model exists in §9.1, but §10 never contracts it) — "accept verdict" is acknowledged locally in both the extension and the Slack bot without a durable record.
 - Slack message edits (`Edit First`) aren't persisted server-side, matching the extension's own client-local edit behavior.
 - The Full Debate View (§6.5) is an explicit P1 roadmap item — Slack's "View More" shows expanded evidence, not the full 5-agent debate.

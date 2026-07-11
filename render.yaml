@@ -91,6 +91,19 @@ services:
         sync: false
       - key: POSTHOG_HOST
         value: https://app.posthog.com
+      - key: SLACK_CLIENT_ID
+        sync: false
+      - key: SLACK_CLIENT_SECRET
+        sync: false
+      # Must match this service's real onrender.com (or custom) domain, and
+      # must exactly match the redirect URL registered in the Slack app's
+      # OAuth & Permissions page -- set once the service's real URL is known.
+      - key: PUBLIC_API_URL
+        sync: false
+      # The deployed dashboard's real Vercel URL -- where the OAuth callback
+      # sends the browser after connecting Slack.
+      - key: DASHBOARD_URL
+        sync: false
 
   # Bible §18 Epic 3 — Bolt.js Socket Mode bot. type: worker (not web): it
   # holds an outbound WebSocket connection to Slack, not an inbound HTTP
