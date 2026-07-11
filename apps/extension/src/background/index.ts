@@ -2,8 +2,13 @@ import type { ExtensionMessage, ExtensionResponse, StoredAuth } from "../lib/mes
 
 // Bible §18 INF-1: environment is fixed at build time for a given release
 // channel (dev/staging/prod), matching how the manifest's host_permissions
-// must also be static per Chrome Web Store build.
-const API_BASE_URL = "http://localhost:4000";
+// must also be static per Chrome Web Store build. Was hardcoded to
+// localhost with a comment saying this *should* vary by build — a real
+// Chrome Web Store submission built this way would ship permanently
+// pointed at a dev machine no end user has running. manifest.config.ts
+// reads the exact same env var to keep host_permissions in sync with
+// whatever URL this actually fetches.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000";
 const AUTH_STORAGE_KEY = "argus_auth";
 
 async function getAuth(): Promise<StoredAuth | null> {

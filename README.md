@@ -149,6 +149,15 @@ Two P1 backlog items, both with the same underlying gap as ActionTaken and Compa
 
 Out of scope (P2, explicitly not attempted): "Integration connections" (Slack connect already has its own UI on the Queue page) and "Billing page (Stripe)" (real payment processing, needing live Stripe credentials and business decisions this pass has no basis to make).
 
+### Chrome Web Store submission prep (Bible §19.2 T-7 launch runbook item)
+
+See **[CHROME_STORE_SUBMISSION.md](./CHROME_STORE_SUBMISSION.md)** for the full checklist, store listing copy, and a privacy policy draft. Two concrete things fixed in the codebase itself, not just documentation:
+
+- **Icons** (`apps/extension/public/icon-{16,32,48,128}.png`) didn't exist at all — `manifest.config.ts` had an explicit comment saying they were "supplied later by design." Generated programmatically (an SVG eye mark, rasterized to the required sizes) since a Store submission needs them regardless and this repo has no separate design-asset pipeline to hand it to.
+- **A real submission blocker**: `host_permissions` and the background service worker's fetch calls were hardcoded to `http://localhost:4000` — a "supposed to vary by build channel" comment existed, but nothing actually implemented that. A build submitted to the Store this way would ship permanently non-functional (every user's install would try to reach a dev machine's localhost). Both now read one `VITE_API_BASE_URL` env var (`apps/extension/.env.example`, new), keeping the manifest's declared permission and the code's actual fetch target in sync — verified by building once with the default and once with an override and diffing `dist/manifest.json` plus the bundled JS.
+
+What's left is genuinely not something this pass can do: creating the Google Developer account, paying its $5 fee, hosting the privacy policy at a public URL, and taking real screenshots of the sidebar against a live LinkedIn page (same "can't load an unpacked extension against a live page" limitation noted elsewhere in this README) all need a human with real credentials and judgment, not more code.
+
 ### Known gaps (flagged, not hidden)
 
 - Slack message edits (`Edit First`) aren't persisted server-side, matching the extension's own client-local edit behavior.
