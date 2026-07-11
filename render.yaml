@@ -17,6 +17,23 @@
 # file automatically ("New +" -> "Blueprint"). Vars marked `sync: false`
 # below are prompted for once, at Blueprint creation, and never overwritten
 # by subsequent blueprint syncs.
+#
+# Bible §18 INF-3 "Staging environment" (P0): Render's Preview Environments
+# spin up a fresh copy of every service/database/env-group here (schema
+# verified against render.com/docs/blueprint-spec and /docs/preview-
+# environments) whenever a PR is opened, without a second hand-maintained
+# Blueprint to drift out of sync with this one. `generation: manual` (not
+# `automatic`) is a deliberate cost choice, not an oversight: Preview
+# Environments require a paid Render plan and provision real duplicate
+# instances of argus-postgres/argus-redis/argus-api/argus-slack-bot per PR,
+# so opt-in per-PR (via `[render preview]` in the PR title) avoids silently
+# billing for a preview on every trivial PR. expireAfterDays bounds the cost
+# of one left open by mistake. Preview instances start empty (Render does not
+# copy production data into them) -- fine for testing app behavior, but seed
+# data would need an initialDeployHook if that's ever needed.
+previews:
+  generation: manual
+  expireAfterDays: 7
 
 databases:
   - name: argus-postgres
