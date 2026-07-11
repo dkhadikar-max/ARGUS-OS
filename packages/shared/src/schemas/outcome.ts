@@ -43,6 +43,18 @@ const verdictAggregationSchema = z.object({
   avgTimeToMeeting: z.number().nullable(),
 });
 
+// Bible §4.4 Manager Morgan persona: "Decision accuracy score per rep" /
+// "Filter by rep, see decision history" -- one row per team member who has
+// generated at least one decision, using the exact same weighted
+// STRONG_YES/YES meeting-rate proxy as the team-wide `accuracy.score` below,
+// just scoped to that rep's own decisions.
+const repAccuracySchema = z.object({
+  userId: z.string(),
+  name: z.string(),
+  totalDecisions: z.number().int().nonnegative(),
+  score: z.number().min(0).max(1).nullable(),
+});
+
 export const listOutcomesResponseSchema = z.object({
   data: z.array(
     z.object({
@@ -79,6 +91,7 @@ export const listOutcomesResponseSchema = z.object({
     totalDecisions: z.number().int().nonnegative(),
     mode: z.enum(["learning", "calibrating", "mature"]),
     score: z.number().min(0).max(1).nullable(),
+    byRep: z.array(repAccuracySchema),
   }),
 });
 export type ListOutcomesResponse = z.infer<typeof listOutcomesResponseSchema>;

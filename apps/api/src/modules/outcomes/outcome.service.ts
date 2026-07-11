@@ -4,6 +4,7 @@ import {
   countDecisionsForTeam,
   createOutcomeRecord,
   findDecisionForOutcome,
+  getDecisionsForRepBreakdown,
   getTeamOutcomesForVerdict,
   getVerdictAggregations,
   listOutcomes,
@@ -27,6 +28,41 @@ function calibrationMode(totalDecisions: number): "learning" | "calibrating" | "
   if (totalDecisions < CALIBRATING_THRESHOLD) return "learning";
   if (totalDecisions <= MATURE_THRESHOLD) return "calibrating";
   return "mature";
+}
+
+// Bible §4.4 Manager Morgan: "Decision accuracy score per rep" -- same
+// weighted STRONG_YES/YES meeting-rate proxy as the team-wide
+// `accuracy.score` above, just grouped by the rep who generated each
+// decision instead of collapsed across the whole team.
+function computeRepBreakdown(
+  decisions: Awaited<ReturnType<typeof getDecisionsForRepBreakdown>>,
+): ListOutcomesResponse["accuracy"]["byRep"] {
+  const byRep = new Map<
+    string,
+    { name: string; totalDecisions: number; positivePredictions: number; meetings: number }
+  >();
+
+  for (const d of decisions) {
+    const bucket = byRep.get(d.userId) ?? {
+      name: d.user.name ?? d.user.email,
+      totalDecisions: 0,
+      positivePredictions: 0,
+      meetings: 0,
+    };
+    bucket.totalDecisions += 1;
+    if ((d.verdict === "STRONG_YES" || d.verdict === "YES") && d.outcome) {
+      bucket.positivePredictions += 1;
+      if (MEETING_OUTCOME_TYPES.has(d.outcome.type)) bucket.meetings += 1;
+    }
+    byRep.set(d.userId, bucket);
+  }
+
+  return Array.from(byRep.entries()).map(([userId, bucket]) => ({
+    userId,
+    name: bucket.name,
+    totalDecisions: bucket.totalDecisions,
+    score: bucket.positivePredictions > 0 ? bucket.meetings / bucket.positivePredictions : null,
+  }));
 }
 
 /**
@@ -141,10 +177,11 @@ export async function createOutcome(
 export async function listOutcomesForTeam(
   query: ListOutcomesQuery,
 ): Promise<ListOutcomesResponse> {
-  const [{ rows, total }, aggregationRows, totalDecisions] = await Promise.all([
+  const [{ rows, total }, aggregationRows, totalDecisions, repDecisions] = await Promise.all([
     listOutcomes(query),
     getVerdictAggregations(query.teamId),
     countDecisionsForTeam(query.teamId),
+    getDecisionsForRepBreakdown(query.teamId),
   ]);
 
   const byVerdict: ListOutcomesResponse["aggregations"]["byVerdict"] = {};
@@ -205,6 +242,7 @@ export async function listOutcomesForTeam(
       totalDecisions,
       mode: calibrationMode(totalDecisions),
       score: positivePredictionCount > 0 ? positivePredictionMeetings / positivePredictionCount : null,
+      byRep: computeRepBreakdown(repDecisions),
     },
   };
 }

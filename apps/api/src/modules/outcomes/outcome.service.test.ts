@@ -10,6 +10,7 @@ const repo = {
   listOutcomes: vi.fn(),
   getVerdictAggregations: vi.fn(),
   countDecisionsForTeam: vi.fn(),
+  getDecisionsForRepBreakdown: vi.fn(),
 };
 
 vi.mock("./outcome.repository.js", () => repo);
@@ -132,6 +133,7 @@ describe("listOutcomesForTeam", () => {
       { type: "NO_RESPONSE", timeToOutcomeDays: null, decision: { verdict: "STRONG_YES" } },
     ]);
     repo.countDecisionsForTeam.mockResolvedValue(75);
+    repo.getDecisionsForRepBreakdown.mockResolvedValue([]);
 
     const result = await listOutcomesForTeam({ teamId: "team_1", limit: 20, offset: 0 });
 
@@ -141,7 +143,7 @@ describe("listOutcomesForTeam", () => {
       avgTimeToMeeting: 2,
     });
     expect(result.pagination).toEqual({ total: 1, limit: 20, offset: 0, hasMore: false });
-    expect(result.accuracy).toEqual({ totalDecisions: 75, mode: "calibrating", score: 0.5 });
+    expect(result.accuracy).toEqual({ totalDecisions: 75, mode: "calibrating", score: 0.5, byRep: [] });
   });
 
   it("returns a null accuracy score when there's no STRONG_YES/YES outcome yet, without fabricating a number", async () => {
@@ -150,10 +152,11 @@ describe("listOutcomesForTeam", () => {
       { type: "NO_RESPONSE", timeToOutcomeDays: null, decision: { verdict: "PASS" } },
     ]);
     repo.countDecisionsForTeam.mockResolvedValue(10);
+    repo.getDecisionsForRepBreakdown.mockResolvedValue([]);
 
     const result = await listOutcomesForTeam({ teamId: "team_1", limit: 20, offset: 0 });
 
-    expect(result.accuracy).toEqual({ totalDecisions: 10, mode: "learning", score: null });
+    expect(result.accuracy).toEqual({ totalDecisions: 10, mode: "learning", score: null, byRep: [] });
   });
 
   it("weights STRONG_YES/YES accuracy by each bucket's own sample size", async () => {
@@ -166,10 +169,32 @@ describe("listOutcomesForTeam", () => {
       ...Array.from({ length: 8 }, () => ({ type: "NO_RESPONSE" as const, timeToOutcomeDays: null, decision: { verdict: "YES" as const } })),
     ]);
     repo.countDecisionsForTeam.mockResolvedValue(200);
+    repo.getDecisionsForRepBreakdown.mockResolvedValue([]);
 
     const result = await listOutcomesForTeam({ teamId: "team_1", limit: 20, offset: 0 });
 
     expect(result.accuracy.score).toBeCloseTo(0.2); // (1 + 1) meetings / (1 + 9) total
     expect(result.accuracy.mode).toBe("calibrating"); // Bible's own "50-200" is inclusive of 200
+  });
+
+  it("computes a per-rep accuracy breakdown (Bible §4.4 Manager Morgan)", async () => {
+    repo.listOutcomes.mockResolvedValue({ rows: [], total: 0 });
+    repo.getVerdictAggregations.mockResolvedValue([]);
+    repo.countDecisionsForTeam.mockResolvedValue(3);
+    repo.getDecisionsForRepBreakdown.mockResolvedValue([
+      { userId: "user_1", verdict: "STRONG_YES", user: { name: "Sarah Rep", email: "sarah@x.com" }, outcome: { type: "MEETING_BOOKED" } },
+      { userId: "user_1", verdict: "YES", user: { name: "Sarah Rep", email: "sarah@x.com" }, outcome: { type: "NO_RESPONSE" } },
+      // No logged outcome yet -- still counts toward totalDecisions, not toward score.
+      { userId: "user_1", verdict: "WAIT", user: { name: "Sarah Rep", email: "sarah@x.com" }, outcome: null },
+      // A different rep with no name set falls back to email.
+      { userId: "user_2", verdict: "PASS", user: { name: null, email: "unnamed@x.com" }, outcome: null },
+    ]);
+
+    const result = await listOutcomesForTeam({ teamId: "team_1", limit: 20, offset: 0 });
+
+    expect(result.accuracy.byRep).toEqual([
+      { userId: "user_1", name: "Sarah Rep", totalDecisions: 3, score: 0.5 },
+      { userId: "user_2", name: "unnamed@x.com", totalDecisions: 1, score: null },
+    ]);
   });
 });

@@ -22,9 +22,10 @@ const MODE_LABEL: Record<string, string> = {
 
 // Bible §18 DSH-3 "Analytics": decision history table (real, from GET
 // /api/v1/outcomes' existing `data`), outcome charts (Tremor, real, from
-// that same endpoint's `aggregations.byVerdict`), and an accuracy score
-// display (real, computed server-side — see README "Analytics" section
-// for exactly what "accuracy" means here and why it can be null).
+// that same endpoint's `aggregations.byVerdict`), an accuracy score display,
+// and a per-rep accuracy breakdown (§4.4 Manager Morgan persona) — all real,
+// computed server-side (see README "Analytics" section for exactly what
+// "accuracy" means here and why it can be null).
 export default async function AnalyticsPage() {
   const outcomes = await api.getOutcomes();
 
@@ -81,6 +82,43 @@ export default async function AnalyticsPage() {
               valueFormatter={(value: number) => `${value}%`}
               yAxisWidth={48}
             />
+          </Card>
+        )}
+      </section>
+
+      <section className="mb-8">
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Accuracy by rep
+        </h2>
+        {outcomes.accuracy.byRep.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">
+            <p className="text-sm font-medium text-gray-900">No decisions yet</p>
+            <p className="mt-1 text-sm text-gray-500">
+              This fills in once reps on your team start generating verdicts.
+            </p>
+          </div>
+        ) : (
+          <Card>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableHeaderCell>Rep</TableHeaderCell>
+                  <TableHeaderCell>Decisions</TableHeaderCell>
+                  <TableHeaderCell>Accuracy</TableHeaderCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {outcomes.accuracy.byRep.map((rep) => (
+                  <TableRow key={rep.userId}>
+                    <TableCell>{rep.name}</TableCell>
+                    <TableCell>{rep.totalDecisions}</TableCell>
+                    <TableCell>
+                      {rep.score === null ? "Not enough data yet" : `${Math.round(rep.score * 100)}%`}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </Card>
         )}
       </section>

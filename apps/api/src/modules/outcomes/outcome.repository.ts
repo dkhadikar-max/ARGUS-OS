@@ -124,3 +124,19 @@ export function getVerdictAggregations(teamId: string) {
 export function countDecisionsForTeam(teamId: string) {
   return prisma.decision.count({ where: { teamId } });
 }
+
+/** Bible §4.4 Manager Morgan persona's per-rep breakdown -- queries Decision
+ *  (not Outcome) so a rep's `totalDecisions` counts every verdict they've
+ *  generated, the same "all decisions, not just outcome-logged ones"
+ *  distinction `countDecisionsForTeam` already makes for the team total. */
+export function getDecisionsForRepBreakdown(teamId: string) {
+  return prisma.decision.findMany({
+    where: { teamId },
+    select: {
+      userId: true,
+      verdict: true,
+      user: { select: { name: true, email: true } },
+      outcome: { select: { type: true } },
+    },
+  });
+}
