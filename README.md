@@ -121,13 +121,22 @@ Wired into the two places that already take a real, durable action on a decision
 
 Not wired: the dashboard's Today Queue wireframe (§6.2) shows View/Message/Snooze buttons per card, but no dashboard UI calls this endpoint yet — `QueueItemCard.tsx` still links out to the prospect's real LinkedIn profile instead (see Known gaps). The endpoint exists now; the dashboard buttons that would call it are separate, not-yet-built UI work.
 
+### Company Memory (Bible §10.5, §18 DSH-4)
+
+`GET /api/v1/memory` implements §10.5's contract — a real endpoint backing the dashboard's new `/company-memory` page (`components/PatternCard.tsx` + a risk-flags table), reachable via a small `NavBar` now shared across pages (the app had no navigation between pages until this pass, since Queue was the only real one). A brand-new team with no `CompanyMemory` row yet (§5.3's "empty on Day 1" cold-start problem) gets the same valid empty shape back, not a 404.
+
+**What's real:** `patterns` maps the exact array `outcome.service.ts`'s `updateCompanyMemoryPattern` already computes (per-verdict meeting-rate correlations) into §10.5's response shape. `confidence` per pattern isn't a real statistical significance test (this codebase doesn't run one) — it's a disclosed heuristic instead of a fabricated number: `min(95, 50 + sampleSize * 5)`, rising with sample size and capped well short of certainty, documented as exactly that in `memory.service.ts`.
+
+**What's honestly empty, not fabricated:** `riskFlags` (Bible's own example — "Director title + >1000 employees" — implies clustering the Risk Agent's free-text per-decision output, stored in `Decision.agentOutputs`, into named recurring conditions across decisions; that's real text-clustering work, not a data-mapping task like patterns was, and isn't built), `icpAccuracy` (needs versioned ICP history with retrospective accuracy tracking — `CompanyMemory.icpHistory` exists as a schema column but nothing ever writes to it), and `topPerformingMessages` (needs message-to-reply-rate correlation, not computed anywhere). All three return as empty array / `null` per the response schema rather than invented data, and the dashboard page shows an honest empty state for each rather than hiding the gap.
+
 ### Known gaps (flagged, not hidden)
 
 - Slack message edits (`Edit First`) aren't persisted server-side, matching the extension's own client-local edit behavior.
 - The Full Debate View (§6.5) is an explicit P1 roadmap item — Slack's "View More" shows expanded evidence, not the full 5-agent debate.
 - `Integration.config` stores the Slack bot token and a generated API key in plaintext JSON — Bible §18 INF-4 ("Data encryption at rest") is an explicit, not-yet-built P1 item.
 - Clerk's `user.deleted` webhook is logged, not acted on — hard-deleting would violate the Decision/Outcome/MessageDraft foreign keys against that user, and a real implementation needs a GDPR-safe anonymization strategy (Bible §16.1 Risk #7, itself an explicit not-yet-built item).
-- The dashboard's Today Queue page has no filter/sort controls yet (Bible §18 DSH-2's "Filter and sort controls" is an explicit P1 item) and no Analytics/Company Memory/Settings pages (DSH-3/4/5, mostly P1/P2).
+- The dashboard's Today Queue page has no filter/sort controls yet (Bible §18 DSH-2's "Filter and sort controls" is an explicit P1 item), and still has no Analytics or Settings pages (DSH-3/DSH-5 — Company Memory/DSH-4 is now built, see above).
+- Company Memory's risk-flags clustering, ICP accuracy tracking, and top-performing-message correlation aren't built (see "Company Memory" section above for exactly why each is separate, larger scope than a data-mapping task).
 - Queue item cards link out to the prospect's real LinkedIn profile instead of wiring up the wireframe's View/Message/Snooze buttons — the ActionTaken endpoint those would call now exists (see above), but the dashboard buttons/UI themselves don't yet.
 - A transitive `postcss` vulnerability (GHSA-qx2v-qp2m-jg93) ships inside Next.js's own vendored dependency (`next/node_modules/postcss`) with no fix currently available upstream — not introduced by this codebase and not safely fixable without downgrading Next.js.
 - Dashboard PostHog events (`queue_viewed`, `queue_item_clicked`) aren't wired yet — the extension's client-side events (`sidebar_opened`, `message_copied`, `message_edited`) are, as of this pass.

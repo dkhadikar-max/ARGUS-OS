@@ -1,5 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
-import type { QueueResponse } from "@argus/shared";
+import type { CompanyMemoryResponse, QueueResponse } from "@argus/shared";
 import { env } from "./env";
 
 export class ApiError extends Error {}
@@ -35,4 +35,5 @@ async function apiFetch<T>(path: string): Promise<T> {
 
 export const api = {
   getQueue: () => apiFetch<QueueResponse>("/api/v1/queue"),
+  getCompanyMemory: () => apiFetch<CompanyMemoryResponse>("/api/v1/memory"),
 };

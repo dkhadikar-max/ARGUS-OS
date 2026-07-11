@@ -4,6 +4,7 @@ export * from "./schemas/decision.js";
 export * from "./schemas/action.js";
 export * from "./schemas/outcome.js";
 export * from "./schemas/queue.js";
+export * from "./schemas/memory.js";
 export * from "./schemas/errors.js";
 export * from "./schemas/icp.js";
 export * from "./schemas/integration.js";
