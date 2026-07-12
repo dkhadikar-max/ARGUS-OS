@@ -466,7 +466,20 @@ export async function shareDecision(
     decision.reasoning,
   ].join("\n");
 
-  await postSlackMessage(slack.botToken, slack.alertChannelId, text);
+  try {
+    await postSlackMessage(slack.botToken, slack.alertChannelId, text);
+  } catch (err) {
+    // A team that's connected Slack can still fail here later (a revoked
+    // bot token, a deleted alert channel) -- surfaced as the same typed,
+    // actionable error as the "not connected at all" check above, rather
+    // than an unhandled exception falling through to a generic 500.
+    throw new AppError(
+      "VALIDATION_ERROR",
+      "Couldn't post to Slack -- check that ARGUS is still connected to your team's Slack workspace",
+      undefined,
+      { cause: err instanceof Error ? err.message : String(err) },
+    );
+  }
 
   await recordAudit({
     entityType: "decision",

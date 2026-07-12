@@ -635,4 +635,25 @@ describe("shareDecision", () => {
       expect.objectContaining({ entityType: "decision", entityId: "dec_1", action: "shared", actorId: "user_1" }),
     );
   });
+
+  it("wraps a real Slack posting failure (e.g. revoked token) as a typed, actionable error instead of an unhandled exception", async () => {
+    repo.findDecisionById.mockResolvedValue({
+      id: "dec_1",
+      verdict: "STRONG_YES",
+      confidence: 94,
+      reasoning: "Strong fit.",
+      prospect: { name: "Sarah Chen", title: "VP Eng", companyName: "DataFlow" },
+    });
+    resolveSlackTeamByArgusTeamId.mockResolvedValue({
+      argusTeamId: "team_1",
+      apiKey: "key",
+      botToken: "xoxb-revoked-token",
+      botUserId: "U1",
+      alertChannelId: "C123",
+    });
+    postSlackMessage.mockRejectedValue(new Error("Slack chat.postMessage failed: token_revoked"));
+
+    await expect(shareDecision("dec_1", auth)).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
 });

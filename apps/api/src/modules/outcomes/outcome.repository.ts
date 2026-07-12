@@ -128,7 +128,15 @@ export function countDecisionsForTeam(teamId: string) {
 /** Bible §4.4 Manager Morgan persona's per-rep breakdown -- queries Decision
  *  (not Outcome) so a rep's `totalDecisions` counts every verdict they've
  *  generated, the same "all decisions, not just outcome-logged ones"
- *  distinction `countDecisionsForTeam` already makes for the team total. */
+ *  distinction `countDecisionsForTeam` already makes for the team total.
+ *
+ *  Unlike memory.repository.ts's own team-wide aggregation queries, this
+ *  one is deliberately NOT capped to a recent-N window: a `take` ordered by
+ *  recency, applied across the whole team, could silently drop a less
+ *  active rep's older decisions out of the result entirely -- making that
+ *  rep vanish from the coaching breakdown this exists for, which is worse
+ *  than the (real, but currently modest at this product's scale) cost of
+ *  an unbounded scan. */
 export function getDecisionsForRepBreakdown(teamId: string) {
   return prisma.decision.findMany({
     where: { teamId },

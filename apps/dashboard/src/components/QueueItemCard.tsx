@@ -54,7 +54,10 @@ export function QueueItemCard({ item }: { item: QueueItem }) {
     if (!full) return;
 
     const body = full.message.linkedin ?? full.message.email;
-    if (!body) return;
+    if (!body) {
+      setError("No message was generated for this decision.");
+      return;
+    }
 
     await navigator.clipboard.writeText(body);
     setCopied(true);
@@ -62,17 +65,19 @@ export function QueueItemCard({ item }: { item: QueueItem }) {
     setExpanded(true);
 
     setPendingAction("message");
-    await recordQueueActionAction(item.decisionId, "MESSAGE_COPIED", {
+    const result = await recordQueueActionAction(item.decisionId, "MESSAGE_COPIED", {
       channel: full.message.linkedin ? "LINKEDIN" : "EMAIL",
     });
     setPendingAction(null);
+    if (!result.ok) setError(result.error ?? "Failed to record this action.");
     router.refresh();
   }
 
   async function handleSnooze() {
     setPendingAction("snooze");
-    await recordQueueActionAction(item.decisionId, "SNOOZED");
+    const result = await recordQueueActionAction(item.decisionId, "SNOOZED");
     setPendingAction(null);
+    if (!result.ok) setError(result.error ?? "Failed to record this action.");
     router.refresh();
   }
 
@@ -94,6 +99,14 @@ export function QueueItemCard({ item }: { item: QueueItem }) {
             {item.reason} · {item.lastActivity}
           </p>
           <p className="mt-1 text-xs font-medium text-blue-700">{item.suggestedAction}</p>
+          <a
+            href={item.prospect.linkedInUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 inline-block text-xs font-medium text-blue-700 hover:underline"
+          >
+            View on LinkedIn ↗
+          </a>
         </div>
 
         <div className="flex shrink-0 gap-2">
@@ -134,14 +147,6 @@ export function QueueItemCard({ item }: { item: QueueItem }) {
               {decision.message.linkedin ?? decision.message.email}
             </p>
           )}
-          <a
-            href={item.prospect.linkedInUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-block text-xs font-medium text-blue-700 hover:underline"
-          >
-            View on LinkedIn ↗
-          </a>
         </div>
       )}
     </li>

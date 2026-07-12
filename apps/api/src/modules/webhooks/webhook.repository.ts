@@ -1,19 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { Prisma, prisma } from "@argus/database";
+import { slugify } from "../../lib/slugify.js";
 
 export interface ClerkUserData {
   id: string;
   email: string;
   name?: string | undefined;
   avatarUrl?: string | undefined;
-}
-
-function slugify(input: string): string {
-  return input
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)/g, "")
-    .slice(0, 40);
 }
 
 /**

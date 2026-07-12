@@ -9,8 +9,21 @@ const VERDICT_LABEL: Record<DecisionResponse["verdict"], string> = {
   HARD_PASS: "HARD PASS",
 };
 
+// Slack caps a section block's text at 3000 characters. The agent debate
+// schema puts no max-length on the LLM-generated arrays each section below
+// concatenates (data_points, criteria_evaluated, signals, risks), so a
+// verbose decision could plausibly exceed that -- Slack would reject the
+// whole message (`invalid_blocks`) rather than just trimming it. A safe
+// margin below the real limit, not the limit itself, to leave room for the
+// truncation notice.
+const SLACK_SECTION_TEXT_LIMIT = 2900;
+
 function section(text: string): KnownBlock {
-  return { type: "section", text: { type: "mrkdwn", text } };
+  const truncated =
+    text.length > SLACK_SECTION_TEXT_LIMIT
+      ? `${text.slice(0, SLACK_SECTION_TEXT_LIMIT)}\n_(truncated — see the full debate in the ARGUS sidebar)_`
+      : text;
+  return { type: "section", text: { type: "mrkdwn", text: truncated } };
 }
 
 /**

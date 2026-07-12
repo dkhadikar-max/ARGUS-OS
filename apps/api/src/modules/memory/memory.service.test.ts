@@ -139,6 +139,22 @@ describe("getCompanyMemoryForTeam — topPerformingMessages", () => {
     ]);
   });
 
+  it("counts a hook once per draft even if it appears twice in that draft's own personalizationHooks array", async () => {
+    repo.getCompanyMemory.mockResolvedValue(null);
+    repo.getMessageDraftsForTeam.mockResolvedValue([
+      // Same hook listed twice in one draft -- should still only count as 1 occurrence.
+      { personalizationHooks: ["K8s scaling post", "K8s scaling post"], decision: { outcome: { type: "MEETING_BOOKED" } } },
+      { personalizationHooks: ["K8s scaling post"], decision: { outcome: { type: "NO_RESPONSE" } } },
+      { personalizationHooks: ["K8s scaling post"], decision: { outcome: { type: "NO_RESPONSE" } } },
+    ]);
+
+    const result = await getCompanyMemoryForTeam("team_1");
+
+    expect(result.topPerformingMessages).toEqual([
+      { pattern: "K8s scaling post", replyRate: 1 / 3, sampleSize: 3 },
+    ]);
+  });
+
   it("excludes hooks below the minimum sample size so a single lucky message can't look like a top performer", async () => {
     repo.getCompanyMemory.mockResolvedValue(null);
     repo.getMessageDraftsForTeam.mockResolvedValue([
@@ -260,17 +276,18 @@ describe("getCompanyMemoryForTeam — riskFlags", () => {
     expect(result.riskFlags[0]?.falsePositiveRate).toBe(0.5);
   });
 
-  it("takes the highest severity seen across occurrences of the same category", async () => {
+  it("takes the highest severity seen across occurrences, and keeps recommendation in sync with it (not the first-seen occurrence)", async () => {
     repo.getCompanyMemory.mockResolvedValue(null);
     repo.getDecisionsForRiskFlags.mockResolvedValue([
-      { agentOutputs: agentOutputsWithRisks([{ category: "Timing", severity: "minor", mitigation: "m" }]), outcome: null },
-      { agentOutputs: agentOutputsWithRisks([{ category: "Timing", severity: "dealbreaker", mitigation: "m" }]), outcome: null },
-      { agentOutputs: agentOutputsWithRisks([{ category: "Timing", severity: "moderate", mitigation: "m" }]), outcome: null },
+      { agentOutputs: agentOutputsWithRisks([{ category: "Timing", severity: "minor", mitigation: "Mention no rush" }]), outcome: null },
+      { agentOutputs: agentOutputsWithRisks([{ category: "Timing", severity: "dealbreaker", mitigation: "Do not proceed until budget confirmed" }]), outcome: null },
+      { agentOutputs: agentOutputsWithRisks([{ category: "Timing", severity: "moderate", mitigation: "Follow up next quarter" }]), outcome: null },
     ]);
 
     const result = await getCompanyMemoryForTeam("team_1");
 
     expect(result.riskFlags[0]?.severity).toBe("dealbreaker");
+    expect(result.riskFlags[0]?.recommendation).toBe("Do not proceed until budget confirmed");
   });
 
   it("counts a category once per decision even if it appears twice in the same decision's risk list", async () => {

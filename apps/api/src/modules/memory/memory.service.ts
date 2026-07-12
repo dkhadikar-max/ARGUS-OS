@@ -1,6 +1,7 @@
 import type { OutcomeType } from "@argus/database";
 import { agentDebateOutputSchema, type CompanyMemoryResponse } from "@argus/shared";
 import { getCompanyMemory, getDecisionsForRiskFlags, getMessageDraftsForTeam } from "./memory.repository.js";
+import { slugify } from "../../lib/slugify.js";
 
 // Shape actually written by outcome.service.ts's updateCompanyMemoryPattern
 // -- an internal representation, distinct from (and mapped below to) Bible
@@ -81,7 +82,11 @@ function computeTopPerformingMessages(
       : [];
     const replied = REPLIED_OUTCOME_TYPES.has(draft.decision.outcome.type);
 
-    for (const hook of hooks) {
+    // A hook repeated twice within the same draft's own array still only
+    // counts as one occurrence for that draft -- same reasoning
+    // computeRiskFlags below applies per-decision for risk categories.
+    const uniqueHooks = new Set(hooks);
+    for (const hook of uniqueHooks) {
       const bucket = byHook.get(hook) ?? { total: 0, replied: 0 };
       bucket.total += 1;
       if (replied) bucket.replied += 1;
@@ -181,8 +186,12 @@ function computeRiskFlags(decisions: DecisionForRiskFlags[]): CompanyMemoryRespo
         recommendation: risk.mitigation,
       };
       bucket.decisionsWithCategory += 1;
+      // recommendation tracks whichever occurrence set maxSeverity, so the
+      // two never drift apart (a "dealbreaker" row always shows the
+      // mitigation text that actually came with a dealbreaker instance).
       if (SEVERITY_RANK[risk.severity] > SEVERITY_RANK[bucket.maxSeverity]) {
         bucket.maxSeverity = risk.severity;
+        bucket.recommendation = risk.mitigation;
       }
       if (decision.outcome) {
         bucket.outcomeLoggedCount += 1;
@@ -201,7 +210,7 @@ function computeRiskFlags(decisions: DecisionForRiskFlags[]): CompanyMemoryRespo
   return Array.from(byCategory.entries())
     .filter(([, bucket]) => bucket.decisionsWithCategory >= MIN_RISK_SAMPLE_SIZE)
     .map(([category, bucket]) => ({
-      id: `risk-${category.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+      id: `risk-${slugify(category)}`,
       condition: category,
       severity: bucket.maxSeverity,
       recommendation: bucket.recommendation,

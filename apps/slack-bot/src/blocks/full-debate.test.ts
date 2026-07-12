@@ -100,4 +100,19 @@ describe("buildFullDebateBlocks", () => {
     const text = JSON.stringify(blocks);
     expect(text).toContain("Sarah Chen, VP Engineering @ DataFlow Inc.");
   });
+
+  it("truncates a section instead of exceeding Slack's 3000-char block limit", () => {
+    const verboseDebate: NonNullable<DecisionResponse["debate"]> = {
+      ...debate,
+      research: {
+        ...debate.research,
+        summary: "x".repeat(3500),
+      },
+    };
+    const blocks = buildFullDebateBlocks(decision({ debate: verboseDebate }));
+    const researchBlock = blocks[1] as { text: { text: string } };
+
+    expect(researchBlock.text.text.length).toBeLessThan(3000);
+    expect(researchBlock.text.text).toContain("truncated");
+  });
 });
