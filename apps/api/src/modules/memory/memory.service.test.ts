@@ -67,6 +67,7 @@ describe("getCompanyMemoryForTeam", () => {
       riskFlags: [],
       icpAccuracy: null,
       topPerformingMessages: [],
+      learningInsights: null,
     });
   });
 

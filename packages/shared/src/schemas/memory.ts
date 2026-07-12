@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { learningAgentOutputSchema } from "./agents.js";
 
 // Bible §10.5 — GET /api/v1/memory response, verbatim shape.
 export const companyMemoryPatternSchema = z.object({
@@ -45,5 +46,11 @@ export const companyMemoryResponseSchema = z.object({
       sampleSize: z.number().int().nonnegative(),
     }),
   ),
+  // Bible §8.8 Learning Agent's most recent run, null until the team has
+  // crossed the "n>=20 outcomes" significance threshold at least once (see
+  // outcome.service.ts's checkAndRunLearningAgent).
+  learningInsights: learningAgentOutputSchema
+    .extend({ generatedAt: z.string().datetime() })
+    .nullable(),
 });
 export type CompanyMemoryResponse = z.infer<typeof companyMemoryResponseSchema>;

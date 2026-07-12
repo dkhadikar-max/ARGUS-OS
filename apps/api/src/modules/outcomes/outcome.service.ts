@@ -2,6 +2,7 @@ import { AppError, type CreateOutcomeRequest, type CreateOutcomeResponse, type L
 import type { AuthContext } from "../../middleware/auth.js";
 import {
   countDecisionsForTeam,
+  countOutcomesForTeam,
   countOverriddenDecisionsForTeam,
   createOutcomeRecord,
   findDecisionForOutcome,
@@ -15,6 +16,8 @@ import { publishTeamEvent } from "../../lib/pubsub.js";
 import { invalidateDecisionCache } from "../../lib/decision-cache.js";
 import { track } from "../../lib/analytics.js";
 import { recordAudit, type RequestMeta } from "../../lib/audit.js";
+import { runLearningAgent } from "../../agents/learning.service.js";
+import { logger } from "../../lib/logger.js";
 
 const MEETING_OUTCOME_TYPES = new Set(["MEETING_BOOKED", "OPPORTUNITY_CREATED", "CLOSED_WON"]);
 
@@ -98,10 +101,10 @@ function computeRepBreakdown(
 
 /**
  * Lightweight synchronous learning update (Bible §5.3 Learning Layer,
- * §8.8 Learning Agent). The full background Learning Agent (prompt-tuning,
- * ICP refinement) is a Phase 2 P1 roadmap item (§15.1 "Learning loop v2");
- * this recomputes the Company Memory pattern for the affected verdict
- * segment immediately so Today Queue / Company Memory reflect it right away.
+ * §8.8 Learning Agent) that recomputes the Company Memory pattern for the
+ * affected verdict segment immediately, so Today Queue / Company Memory
+ * reflect it right away -- distinct from the full Learning Agent below,
+ * which runs periodically and does real cross-decision analysis via Claude.
  */
 async function updateCompanyMemoryPattern(
   teamId: string,
@@ -121,6 +124,19 @@ async function updateCompanyMemoryPattern(
   });
 
   return patternDescription;
+}
+
+// Bible §8.8 "n>=20" significance threshold: fires the full Learning Agent
+// once per 20 outcomes (20, 40, 60, ...), not on every outcome -- same
+// "only recompute on a real threshold crossing" reasoning as
+// decision.service.ts's Override Rate Guardrail. Best-effort: a failure
+// here must never fail the outcome-logging request that triggered it.
+const LEARNING_AGENT_INTERVAL = 20;
+
+async function maybeRunLearningAgent(teamId: string): Promise<void> {
+  const totalOutcomes = await countOutcomesForTeam(teamId);
+  if (totalOutcomes < LEARNING_AGENT_INTERVAL || totalOutcomes % LEARNING_AGENT_INTERVAL !== 0) return;
+  await runLearningAgent(teamId);
 }
 
 export async function createOutcome(
@@ -150,6 +166,14 @@ export async function createOutcome(
   });
 
   const patternUpdated = await updateCompanyMemoryPattern(auth.teamId, decision.verdict);
+
+  // Best-effort and never awaited by the request/response cycle beyond this
+  // point's own await -- a Claude call failing here must not fail the
+  // outcome the rep just logged (same reasoning as decision.service.ts's
+  // Override Rate Guardrail).
+  await maybeRunLearningAgent(auth.teamId).catch((err) => {
+    logger.warn({ err, teamId: auth.teamId }, "Learning Agent run failed; outcome itself still recorded");
+  });
 
   // Bible §18 AI-5 "Cache invalidation rules": this outcome is new ground
   // truth for `historicalEngagement` on this prospect (§8.5's Intent Agent

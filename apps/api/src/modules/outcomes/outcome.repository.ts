@@ -8,6 +8,12 @@ export function findDecisionForOutcome(decisionId: string, teamId: string) {
   });
 }
 
+/** Bible §8.8 Learning Agent's "n>=20" significance threshold -- how many
+ *  outcomes this team has ever logged, used to fire a run on every 20th. */
+export function countOutcomesForTeam(teamId: string) {
+  return prisma.outcome.count({ where: { decision: { teamId } } });
+}
+
 export function createOutcomeRecord(input: {
   decisionId: string;
   userId: string;

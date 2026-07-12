@@ -117,6 +117,88 @@ export default async function CompanyMemoryPage() {
           </table>
         )}
       </section>
+
+      <section>
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Learning Agent report
+        </h2>
+        {memory.learningInsights ? (
+          <div className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 text-sm">
+            <p className="text-gray-500">
+              Recommendations only &mdash; nothing here is applied automatically. Generated{" "}
+              {new Date(memory.learningInsights.generatedAt).toLocaleDateString()}, priority:{" "}
+              <span className="font-medium text-gray-900">{memory.learningInsights.priority}</span>.
+            </p>
+
+            {memory.learningInsights.systematic_errors.length > 0 && (
+              <div>
+                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Systematic errors
+                </h3>
+                <ul className="list-inside list-disc space-y-1 text-gray-700">
+                  {memory.learningInsights.systematic_errors.map((error, i) => (
+                    <li key={i}>{error}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {memory.learningInsights.patterns.length > 0 && (
+              <div>
+                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Patterns found
+                </h3>
+                <ul className="space-y-2">
+                  {memory.learningInsights.patterns.map((pattern, i) => (
+                    <li key={i} className="rounded border border-gray-100 p-2">
+                      <p className="text-gray-900">{pattern.pattern}</p>
+                      <p className="mt-0.5 text-xs text-gray-500">{pattern.evidence}</p>
+                      <p className="mt-0.5 text-xs text-gray-600">→ {pattern.recommendation}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {memory.learningInsights.prompt_adjustments.length > 0 && (
+              <div>
+                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Suggested prompt adjustments
+                </h3>
+                <ul className="space-y-2">
+                  {memory.learningInsights.prompt_adjustments.map((adj, i) => (
+                    <li key={i} className="rounded border border-gray-100 p-2">
+                      <p className="font-medium text-gray-900">{adj.agent}</p>
+                      <p className="mt-0.5 text-xs text-gray-600">{adj.reason}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {memory.learningInsights.icp_recommendations.length > 0 && (
+              <div>
+                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  ICP recommendations
+                </h3>
+                <ul className="list-inside list-disc space-y-1 text-gray-700">
+                  {memory.learningInsights.icp_recommendations.map((rec, i) => (
+                    <li key={i}>{rec}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">
+            <p className="text-sm font-medium text-gray-900">No report yet</p>
+            <p className="mt-1 text-sm text-gray-500">
+              The Learning Agent runs every 20 logged outcomes and analyzes what&apos;s working across your
+              team&apos;s decisions.
+            </p>
+          </div>
+        )}
+      </section>
     </main>
   );
 }

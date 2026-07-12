@@ -117,3 +117,32 @@ export const agentDebateOutputSchema = z.object({
   judge: judgeAgentOutputSchema,
 });
 export type AgentDebateOutput = z.infer<typeof agentDebateOutputSchema>;
+
+// Bible §8.8 Learning Agent output_format. Deliberately not "applied"
+// anywhere in the schema layer -- prompt_adjustments and icp_recommendations
+// are recommendations for a human to review (the prompt's own constraint:
+// "never change prompts without human review in first 90 days"), not
+// instructions the system acts on automatically.
+export const learningAgentOutputSchema = z.object({
+  accuracy_by_verdict: z.record(verdictSchema, score100),
+  systematic_errors: z.array(z.string()),
+  patterns: z.array(
+    z.object({
+      pattern: z.string(),
+      evidence: z.string(),
+      confidence: score100,
+      recommendation: z.string(),
+    }),
+  ),
+  prompt_adjustments: z.array(
+    z.object({
+      agent: z.string(),
+      current: z.string(),
+      suggested: z.string(),
+      reason: z.string(),
+    }),
+  ),
+  icp_recommendations: z.array(z.string()),
+  priority: z.enum(["high", "medium", "low"]),
+});
+export type LearningAgentOutput = z.infer<typeof learningAgentOutputSchema>;

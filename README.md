@@ -248,6 +248,14 @@ The Policy names "Cross-Rep Benchmarking" as one of six specific assets in its o
 
 `outcome.service.ts`'s `computeRepBreakdown` now also buckets by (rep, verdict) — `byRep[].byVerdict: Record<Verdict, { count, meetingRate }>` — from the exact same `getDecisionsForRepBreakdown` rows already being fetched, no new query. The Analytics page's per-rep table gained a "STRONG YES vs team avg" column, reusing the team-wide `aggregations.byVerdict.STRONG_YES.meetingRate` the meeting-rate chart above it already computes — not a second implementation of the same number.
 
+### Learning Agent (Bible §8.8, §5.3 Learning Layer)
+
+`LEARNING_AGENT_PROMPT` (`agents/prompts.ts`) existed from the start of this project but was never invoked anywhere — `outcome.service.ts`'s lightweight per-verdict pattern recompute (`updateCompanyMemoryPattern`) was the disclosed MVP stand-in, with the full agent explicitly deferred as a "Phase 2 roadmap item." This wires up the real thing:
+
+- **Trigger**: `outcome.service.ts`'s `maybeRunLearningAgent`, called best-effort from `createOutcome` on every 20th outcome a team logs (20, 40, 60, ...) — the same "only fire on a real threshold crossing" reasoning as the Override Rate Guardrail, matching the prompt's own stated "n>=20 for statistical significance" constraint. A failed run is logged and never fails the outcome-logging request that triggered it.
+- **The agent itself**: `agents/learning.service.ts`'s `runLearningAgent` feeds the team's last 100 decisions-with-outcomes (`getTeamOutcomeHistory`, already existed) and current ICP into `LEARNING_AGENT_PROMPT`, via the same forced tool-use mechanism `orchestrator.ts` uses (a hand-authored JSON schema mirroring `learningAgentOutputSchema` field-for-field) rather than hoping the model follows the prompt's `<output_format>` block verbatim. No per-team prompt-customization table exists in this codebase, so `{{current_prompts}}` is filled with an honest note instead of fabricated stored data.
+- **Storage/display**: a new nullable `CompanyMemory.learningInsights` column (small migration, `20260712210325_add_learning_insights`), surfaced as a new "Learning Agent report" section on the Company Memory dashboard page. Nothing here is ever auto-applied — `prompt_adjustments` and `icp_recommendations` are recommendations for a human to read, per the prompt's own "never change prompts without human review in first 90 days" constraint.
+
 ### Chrome Web Store submission prep (Bible §19.2 T-7 launch runbook item)
 
 See **[CHROME_STORE_SUBMISSION.md](./CHROME_STORE_SUBMISSION.md)** for the full checklist, store listing copy, and a privacy policy draft. Two concrete things fixed in the codebase itself, not just documentation:

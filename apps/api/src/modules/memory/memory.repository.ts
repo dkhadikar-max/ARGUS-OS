@@ -4,6 +4,17 @@ export function getCompanyMemory(teamId: string) {
   return prisma.companyMemory.findUnique({ where: { teamId } });
 }
 
+/** Bible §8.8 Learning Agent's most recent run. Upserts because a team's
+ *  first-ever run (crossing the n>=20 threshold) may happen before any
+ *  outcome has otherwise created this team's CompanyMemory row. */
+export function upsertLearningInsights(teamId: string, insights: unknown) {
+  return prisma.companyMemory.upsert({
+    where: { teamId },
+    create: { teamId, patterns: [], riskFlags: [], icpHistory: [], learningInsights: insights as never },
+    update: { learningInsights: insights as never },
+  });
+}
+
 // Both queries below aggregate over a team's entire history with no
 // pagination -- correct today, but cost grows unbounded with a team's
 // lifetime volume. This caps it to the most recent N rows rather than a

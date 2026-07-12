@@ -12,6 +12,7 @@ const repo = {
   countDecisionsForTeam: vi.fn(),
   getDecisionsForRepBreakdown: vi.fn(),
   countOverriddenDecisionsForTeam: vi.fn(),
+  countOutcomesForTeam: vi.fn(),
 };
 
 vi.mock("./outcome.repository.js", () => repo);
@@ -28,6 +29,9 @@ vi.mock("../../lib/analytics.js", () => ({ track }));
 const recordAudit = vi.fn();
 vi.mock("../../lib/audit.js", () => ({ recordAudit }));
 
+const runLearningAgent = vi.fn();
+vi.mock("../../agents/learning.service.js", () => ({ runLearningAgent }));
+
 const { createOutcome, listOutcomesForTeam } = await import("./outcome.service.js");
 
 const auth: AuthContext = { type: "user", userId: "user_1", teamId: "team_1", planTier: "FREE" };
@@ -42,6 +46,7 @@ const request: CreateOutcomeRequest = {
 beforeEach(() => {
   vi.clearAllMocks();
   repo.countOverriddenDecisionsForTeam.mockResolvedValue(0);
+  repo.countOutcomesForTeam.mockResolvedValue(0);
 });
 
 describe("createOutcome", () => {
@@ -112,6 +117,60 @@ describe("createOutcome", () => {
         actorId: "user_1",
       }),
     );
+  });
+
+  // Bible §8.8 Learning Agent "n>=20" significance threshold -- fires once
+  // per 20 outcomes, not on every outcome.
+  describe("Learning Agent trigger", () => {
+    beforeEach(() => {
+      repo.findDecisionForOutcome.mockResolvedValue({
+        id: "dec_1",
+        verdict: "STRONG_YES",
+        outcome: null,
+        prospectId: "prospect_1",
+      });
+      repo.createOutcomeRecord.mockResolvedValue({
+        id: "out_1",
+        decisionId: "dec_1",
+        type: "MEETING_BOOKED",
+        value: null,
+        timeToOutcomeDays: 1,
+        feedback: "Sarah was engaged.",
+        loggedAt: new Date("2026-07-11T09:15:00Z"),
+      });
+      repo.getTeamOutcomesForVerdict.mockResolvedValue([]);
+      repo.upsertCompanyMemoryPatternForVerdict.mockResolvedValue(undefined);
+    });
+
+    it("fires on exactly the 20th outcome", async () => {
+      repo.countOutcomesForTeam.mockResolvedValue(20);
+      await createOutcome(request, auth);
+      expect(runLearningAgent).toHaveBeenCalledWith("team_1");
+    });
+
+    it("does not fire on the 19th outcome", async () => {
+      repo.countOutcomesForTeam.mockResolvedValue(19);
+      await createOutcome(request, auth);
+      expect(runLearningAgent).not.toHaveBeenCalled();
+    });
+
+    it("does not fire on the 21st outcome", async () => {
+      repo.countOutcomesForTeam.mockResolvedValue(21);
+      await createOutcome(request, auth);
+      expect(runLearningAgent).not.toHaveBeenCalled();
+    });
+
+    it("fires again on the 40th outcome", async () => {
+      repo.countOutcomesForTeam.mockResolvedValue(40);
+      await createOutcome(request, auth);
+      expect(runLearningAgent).toHaveBeenCalledWith("team_1");
+    });
+
+    it("is best-effort: a Learning Agent failure doesn't fail the outcome request", async () => {
+      repo.countOutcomesForTeam.mockResolvedValue(20);
+      runLearningAgent.mockRejectedValue(new Error("Claude is down"));
+      await expect(createOutcome(request, auth)).resolves.toMatchObject({ id: "out_1" });
+    });
   });
 });
 

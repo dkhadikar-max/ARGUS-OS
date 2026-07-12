@@ -1,5 +1,6 @@
 import type { OutcomeType, Verdict } from "@argus/database";
-import { agentDebateOutputSchema, type CompanyMemoryResponse } from "@argus/shared";
+import { agentDebateOutputSchema, learningAgentOutputSchema, type CompanyMemoryResponse } from "@argus/shared";
+import { z } from "zod";
 import { getCompanyMemory, getDecisionsForRiskFlags, getMessageDraftsForTeam } from "./memory.repository.js";
 import { slugify } from "../../lib/slugify.js";
 import { computeVersionAccuracy } from "../icp/icp.service.js";
@@ -261,6 +262,13 @@ function computeIcpAccuracy(
   return { current, trend, lastUpdated: new Date().toISOString() };
 }
 
+const learningInsightsSchema = learningAgentOutputSchema.extend({ generatedAt: z.string().datetime() });
+
+function toLearningInsights(raw: unknown): CompanyMemoryResponse["learningInsights"] {
+  const parsed = learningInsightsSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
 /** Bible §10.5 GET /api/v1/memory. A brand-new team with no outcomes logged
  *  yet has no CompanyMemory row at all (§5.3's "empty on Day 1" cold-start
  *  problem) -- that's a valid, expected state, not a 404: this returns the
@@ -288,5 +296,6 @@ export async function getCompanyMemoryForTeam(teamId: string): Promise<CompanyMe
     riskFlags: computeRiskFlags(riskDecisions),
     icpAccuracy: computeIcpAccuracy(icp, decisionsSinceIcpActivation, memory?.icpHistory),
     topPerformingMessages: computeTopPerformingMessages(messageDrafts),
+    learningInsights: toLearningInsights(memory?.learningInsights),
   };
 }
