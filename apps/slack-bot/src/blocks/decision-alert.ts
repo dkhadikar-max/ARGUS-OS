@@ -44,6 +44,19 @@ export function buildDecisionAlertBlocks(decision: DecisionResponse): KnownBlock
     },
   ];
 
+  // ARGUS Unanimous Policy v2.1 L4 Policy Engine (not the Bible) -- shown
+  // right after the verdict, before evidence/reasoning, so a rep sees a
+  // BLOCK/REQUIRE_APPROVAL/FLAG before deciding whether to click "Accept &
+  // Message" at all, the same reasoning QueueItemCard.tsx's own proactive
+  // display already uses on the dashboard side.
+  if (decision.policyFlags && decision.policyFlags.length > 0) {
+    const policyEmoji: Record<string, string> = { BLOCK: "⛔", REQUIRE_APPROVAL: "⚠️", FLAG: "⚠️" };
+    const policyLines = decision.policyFlags
+      .map((flag) => `${policyEmoji[flag.action] ?? "⚠️"} *${flag.action}:* ${flag.message}`)
+      .join("\n");
+    blocks.push({ type: "section", text: { type: "mrkdwn", text: policyLines } });
+  }
+
   if (evidenceLines) {
     blocks.push({ type: "section", text: { type: "mrkdwn", text: evidenceLines } });
   }

@@ -228,7 +228,12 @@ Built as a real, additive subsystem, mirroring the ICP editor's own established 
 - **Enforcement, not just a warning**: `recordAction` now rejects `MESSAGE_SENT`/`MESSAGE_COPIED` with a `VALIDATION_ERROR` naming the violated rule's own message when a `BLOCK`-action flag matched that decision — the one point in the Governor Model's flow where even the rep's own approval isn't sufficient, so it's enforced at the last point before an action is recorded rather than only ever shown as a dismissable warning. `FLAG`/`REQUIRE_APPROVAL` don't block anything in V1 — they're surfaced via `policyFlags` for the rep to see, matching "Human Approval (V1: required)" already being how every other action in this system works.
 - **Settings UI**: `PolicyRulesEditor.tsx`, a line-for-line mirror of `IcpCriteriaEditor.tsx`'s add/remove-row Client Component pattern — including the exact same uncontrolled-input handling for the "in" operator's comma-separated list (a controlled input whose value is re-derived from the parsed array fights the user's own typing the instant they type a delimiter; see that component's own comment).
 
-`QueueItemCard.tsx`'s expanded decision view now shows `policyFlags` proactively (color-coded red for `BLOCK`, amber for `FLAG`/`REQUIRE_APPROVAL`) — so a rep sees why *before* clicking Message, not only from `recordAction`'s own rejection error after the fact. Not yet built: the L4 row's own "Full governance UI" (V3+, explicitly not V1/MVP scope) and surfacing `policyFlags` on the extension sidebar or in Slack alerts — both are the natural next increment once this is confirmed useful, kept out of this pass to stay scoped to what the Policy document actually requires for V1.
+`policyFlags` are now surfaced proactively everywhere a decision is shown, all reusing each surface's own existing patterns rather than introducing new ones:
+- **Dashboard** — `QueueItemCard.tsx`'s expanded view (color-coded red for `BLOCK`, amber for `FLAG`/`REQUIRE_APPROVAL`).
+- **Extension sidebar** — `VerdictCard.tsx`, same color-coding, right below the verdict badge.
+- **Slack alerts** — `decision-alert.ts`'s block builder adds a section right after the verdict, before evidence/reasoning, so a rep sees a flag before clicking "Accept & Message" at all.
+
+A rep now sees why *before* attempting to act, not only from `recordAction`'s own rejection error after a `BLOCK` flag has already stopped the click. Not yet built: the L4 row's own "Full governance UI" (V3+, explicitly not V1/MVP scope) — that's the one remaining piece, and it's explicitly out of scope for V1 per the Policy document itself, not a gap in what's shipped.
 
 ### Chrome Web Store submission prep (Bible §19.2 T-7 launch runbook item)
 
@@ -289,7 +294,7 @@ The 11 commits after the audit above (Full Debate View, Datadog metrics, Company
 - The dashboard now has real React component tests too (see "Dashboard test infrastructure" above), including `QueueItemCard.tsx`'s View/Message/Snooze handlers — the last of the three components flagged as untested now covered.
 - Datadog infra metrics are now wired (see "Datadog infra metrics" above) — "Railway metrics" specifically doesn't apply, since this project deploys to Render, not Railway (an explicit user-requested deviation noted under Deployment below).
 - Apollo's People Enrichment (person-level: verified title, seniority, email) is now wired too, alongside the existing Organization Enrichment — see "Prospect enrichment" above.
-- A new Policy Engine (`GET`/`PUT /api/v1/policy`, a Settings UI, and real `BLOCK` enforcement on `recordAction`) is built per ARGUS Unanimous Policy v2.1's L4 layer — see "Policy Engine" above. `QueueItemCard.tsx` now shows its `policyFlags` proactively (color-coded by `BLOCK`/`REQUIRE_APPROVAL`/`FLAG`) when a rep expands a decision, not just after a `BLOCK` flag rejects an attempted send. Not yet surfaced on the extension sidebar or in Slack alerts — that's the natural next increment.
+- A new Policy Engine (`GET`/`PUT /api/v1/policy`, a Settings UI, and real `BLOCK` enforcement on `recordAction`) is built per ARGUS Unanimous Policy v2.1's L4 layer — see "Policy Engine" above. Its `policyFlags` are now surfaced proactively on all three surfaces a decision reaches a rep through (dashboard, extension sidebar, Slack alerts), not just from `recordAction`'s own rejection error after a `BLOCK` flag stops an attempted send. Only the L4 layer's own "Full governance UI" remains — explicitly V3+ scope per the Policy document itself.
 
 ## Testing
 

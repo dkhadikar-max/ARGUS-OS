@@ -51,4 +51,22 @@ describe("buildDecisionAlertBlocks", () => {
     const text = JSON.stringify(blocks);
     expect(text).not.toContain("Suggested message");
   });
+
+  it("shows Policy Engine flags right after the verdict when present (Policy v2.1 L4, not the Bible)", () => {
+    const blocks = buildDecisionAlertBlocks(
+      decision({
+        policyFlags: [{ field: "verdict", action: "BLOCK", message: "Do not contact HARD_PASS prospects" }],
+      }),
+    );
+    const text = JSON.stringify(blocks);
+    expect(text).toContain("BLOCK");
+    expect(text).toContain("Do not contact HARD_PASS prospects");
+  });
+
+  it("omits the policy section entirely when the decision has no flags", () => {
+    const blocks = buildDecisionAlertBlocks(decision({ policyFlags: [] }));
+    const text = JSON.stringify(blocks);
+    expect(text).not.toContain("BLOCK");
+    expect(text).not.toContain("REQUIRE_APPROVAL");
+  });
 });

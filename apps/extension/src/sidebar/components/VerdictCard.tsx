@@ -22,6 +22,26 @@ export function VerdictCard({ decision }: Props) {
           {decision.confidence}% conf
         </span>
       </div>
+      {/* ARGUS Unanimous Policy v2.1 L4 Policy Engine (not the Bible) --
+          same proactive display QueueItemCard.tsx and the Slack alert
+          already use, so a rep sees a BLOCK/REQUIRE_APPROVAL/FLAG before
+          acting, not only from a BLOCK flag's own rejection after the fact. */}
+      {decision.policyFlags && decision.policyFlags.length > 0 && (
+        <ul className="mt-3 space-y-1">
+          {decision.policyFlags.map((flag, i) => (
+            <li
+              key={i}
+              className={`rounded border-l-2 p-2 text-xs ${
+                flag.action === "BLOCK"
+                  ? "border-red-400 bg-red-50 text-red-700"
+                  : "border-amber-400 bg-amber-50 text-amber-800"
+              }`}
+            >
+              <span className="font-semibold">{flag.action}:</span> {flag.message}
+            </li>
+          ))}
+        </ul>
+      )}
       <p className="mt-3 text-sm leading-relaxed text-gray-700">{decision.reasoning}</p>
     </div>
   );
