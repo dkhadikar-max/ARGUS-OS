@@ -6,17 +6,32 @@ import { updateIcpAction } from "../app/settings/actions";
 
 const OPERATORS: IcpCriterion["operator"][] = ["equals", "in", "gte", "lte", "between", "contains"];
 
+// Bible §9.1's icpCriterionSchema allows `value` to be a string[] (e.g. an
+// "in" operator listing multiple industries) -- distinct from a plain
+// string, which a single-value text field could never produce. A
+// comma-separated input parses into the real array (trimmed, empty
+// entries dropped) rather than one long string standing in for a list.
+function parseListValue(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function listValueToInput(value: IcpCriterion["value"]): string {
+  return Array.isArray(value) ? value.join(", ") : "";
+}
+
 interface Props {
   initialCriteria: IcpCriterion[];
 }
 
 // Bible §18 DSH-5 "Team ICP editor" (P1). A dynamic add/remove list needs
 // client state, so this is the one part of Settings that isn't a plain
-// <form action> like the preferences form. `value` is edited as a single
-// text field here -- icpCriterionSchema also allows a string[] (e.g. an
-// "in" operator listing multiple industries), which this simplified editor
-// can't produce distinctly from a comma-free string; a real multi-value
-// input is future polish, not a data-model gap.
+// <form action> like the preferences form. The "in" operator gets its own
+// comma-separated list input producing a real string[] (see
+// parseListValue above); every other operator keeps the single-value text
+// field, since only "in" has list semantics in icpCriterionSchema.
 export function IcpCriteriaEditor({ initialCriteria }: Props) {
   const [criteria, setCriteria] = useState<IcpCriterion[]>(initialCriteria);
   const [message, setMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
@@ -30,6 +45,23 @@ export function IcpCriteriaEditor({ initialCriteria }: Props) {
 
   function updateRow(index: number, patch: Partial<IcpCriterion>) {
     setCriteria((prev) => prev.map((c, i) => (i === index ? { ...c, ...patch } : c)));
+  }
+
+  function handleOperatorChange(index: number, operator: IcpCriterion["operator"]) {
+    setCriteria((prev) =>
+      prev.map((c, i) => {
+        if (i !== index) return c;
+        if (operator === "in") {
+          // Seed the array from whatever single value was already there,
+          // rather than silently discarding it.
+          const seeded = Array.isArray(c.value) ? c.value : c.value === "" ? [] : [String(c.value)];
+          return { ...c, operator, value: seeded };
+        }
+        // Switching away from "in": collapse the array back to a plain
+        // string instead of losing the data outright.
+        return { ...c, operator, value: Array.isArray(c.value) ? c.value.join(", ") : c.value };
+      }),
+    );
   }
 
   function addRow() {
@@ -72,7 +104,7 @@ export function IcpCriteriaEditor({ initialCriteria }: Props) {
             />
             <select
               value={criterion.operator}
-              onChange={(e) => updateRow(index, { operator: e.target.value as IcpCriterion["operator"] })}
+              onChange={(e) => handleOperatorChange(index, e.target.value as IcpCriterion["operator"])}
               className="rounded border border-gray-300 px-2 py-1 text-sm"
             >
               {OPERATORS.map((op) => (
@@ -81,13 +113,32 @@ export function IcpCriteriaEditor({ initialCriteria }: Props) {
                 </option>
               ))}
             </select>
-            <input
-              type="text"
-              placeholder="value"
-              value={String(criterion.value)}
-              onChange={(e) => updateRow(index, { value: e.target.value })}
-              className="w-32 rounded border border-gray-300 px-2 py-1 text-sm"
-            />
+            {criterion.operator === "in" ? (
+              // Deliberately uncontrolled (defaultValue + onBlur, not
+              // value + onChange): a controlled input whose value is
+              // re-derived from the parsed array fights the user's typing
+              // the moment they type a delimiter -- "SaaS," would
+              // immediately re-render as "SaaS" (the trailing comma
+              // stripped as an empty entry) before they can type the next
+              // item, corrupting every subsequent character. Committing
+              // only on blur means the field always shows exactly what
+              // was typed.
+              <input
+                type="text"
+                placeholder="value1, value2, value3"
+                defaultValue={listValueToInput(criterion.value)}
+                onBlur={(e) => updateRow(index, { value: parseListValue(e.target.value) })}
+                className="w-48 rounded border border-gray-300 px-2 py-1 text-sm"
+              />
+            ) : (
+              <input
+                type="text"
+                placeholder="value"
+                value={String(criterion.value)}
+                onChange={(e) => updateRow(index, { value: e.target.value })}
+                className="w-32 rounded border border-gray-300 px-2 py-1 text-sm"
+              />
+            )}
             <input
               type="number"
               step="0.05"
