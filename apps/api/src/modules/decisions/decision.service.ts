@@ -1,4 +1,4 @@
-import { agentDebateOutputSchema, AppError, type CreateActionRequest, type CreateActionResponse, type CreateDecisionRequest, type DecisionResponse, type EditMessageDraftRequest, type EditMessageDraftResponse, type OverrideDecisionRequest, type OverrideDecisionResponse, type PolicyFlag, type ShareDecisionResponse } from "@argus/shared";
+import { agentDebateOutputSchema, AppError, scoreToVerdict, type CreateActionRequest, type CreateActionResponse, type CreateDecisionRequest, type DecisionResponse, type EditMessageDraftRequest, type EditMessageDraftResponse, type OverrideDecisionRequest, type OverrideDecisionResponse, type PolicyFlag, type ShareDecisionResponse } from "@argus/shared";
 import type { AuthContext } from "../../middleware/auth.js";
 import { runAgentDebate } from "../../agents/orchestrator.js";
 import {
@@ -253,11 +253,19 @@ export async function createDecision(
     await setCachedDebateOutput(prospect.id, request.context.teamId, icpVersion, output);
   }
 
+  // Bible §8.7 maps weightedScore to verdict via fixed bands, and the Judge
+  // agent is asked to compute both fields itself -- but live testing found
+  // it can mislabel the verdict against its own weightedScore (e.g.
+  // weightedScore 28, squarely in the 0-29 HARD_PASS band, labeled PASS
+  // instead). Deriving verdict from weightedScore here removes that whole
+  // class of drift regardless of why the model gets its own label wrong.
+  const verdict = scoreToVerdict(output.judge.weighted_score);
+
   // Policy v2.1's "Policy Check" gate: evaluated against this decision's
   // own verdict/confidence/prospect title -- same on a cache hit or a fresh
   // debate, since the policy is about the *result*, not how it was computed.
   const policyFlags = evaluatePolicyRules((policy?.rules as never) ?? [], {
-    verdict: output.judge.verdict,
+    verdict,
     confidence: output.judge.confidence,
     prospectTitle: prospect.title,
   });
@@ -266,7 +274,7 @@ export async function createDecision(
     userId: request.context.userId,
     teamId: request.context.teamId,
     prospectId: prospect.id,
-    verdict: output.judge.verdict,
+    verdict,
     confidence: output.judge.confidence,
     weightedScore: output.judge.weighted_score,
     reasoning: output.judge.reasoning,
