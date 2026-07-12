@@ -46,6 +46,9 @@ vi.mock("../../lib/slack-client.js", () => ({ postSlackMessage }));
 const getPolicy = vi.fn();
 vi.mock("../policy/policy.repository.js", () => ({ getPolicy }));
 
+const getRecentOverrideCounts = vi.fn();
+vi.mock("../outcomes/outcome.repository.js", () => ({ getRecentOverrideCounts }));
+
 const { createDecision, getDecision, overrideDecision, recordAction, shareDecision, editMessageDraft } = await import(
   "./decision.service.js"
 );
@@ -102,6 +105,9 @@ beforeEach(() => {
     Promise.resolve({ prospect, apollo: null, clearbit: null }),
   );
   getPolicy.mockResolvedValue(null); // default: team has no policy rules configured
+  // default: below the guardrail's own minimum sample size, so it never
+  // fires unless a test explicitly sets a larger window.
+  getRecentOverrideCounts.mockResolvedValue({ total: 0, overridden: 0 });
 });
 
 describe("createDecision", () => {
@@ -642,6 +648,94 @@ describe("overrideDecision", () => {
         afterState: { verdict: "PASS", reason: "Already a customer" },
       }),
     );
+  });
+
+  describe("Override Rate Guardrail (Policy v2.1, not the Bible)", () => {
+    beforeEach(() => {
+      repo.findDecisionById.mockResolvedValue({ id: "dec_1", verdict: "YES", override: null });
+      repo.createOverride.mockResolvedValue({
+        id: "ovr_1",
+        originalVerdict: "YES",
+        newVerdict: "PASS",
+        reason: null,
+        createdAt: new Date("2026-07-10T14:35:00Z"),
+      });
+      resolveSlackTeamByArgusTeamId.mockResolvedValue({
+        argusTeamId: "team_1",
+        apiKey: "key",
+        botToken: "xoxb-real-token",
+        botUserId: "U1",
+        alertChannelId: "C123",
+      });
+      postSlackMessage.mockResolvedValue(undefined);
+    });
+
+    it("alerts Slack and records an audit entry when this override crosses 40% with a large enough sample", async () => {
+      // 8 of 20 already overridden (40%, not yet over); this 9th push it to
+      // 45% -- exactly the crossing moment the guardrail should catch.
+      getRecentOverrideCounts.mockResolvedValue({ total: 20, overridden: 9 });
+
+      await overrideDecision("dec_1", { newVerdict: "PASS" }, auth);
+
+      expect(postSlackMessage).toHaveBeenCalledWith(
+        "xoxb-real-token",
+        "C123",
+        expect.stringContaining("45%"),
+      );
+      expect(recordAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entityType: "policy_guardrail",
+          entityId: "team_1",
+          action: "override_rate_exceeded",
+        }),
+      );
+    });
+
+    it("does not trigger below the minimum sample size, even at 100% override rate", async () => {
+      getRecentOverrideCounts.mockResolvedValue({ total: 3, overridden: 3 });
+
+      await overrideDecision("dec_1", { newVerdict: "PASS" }, auth);
+
+      expect(postSlackMessage).not.toHaveBeenCalled();
+      expect(recordAudit).not.toHaveBeenCalledWith(
+        expect.objectContaining({ entityType: "policy_guardrail" }),
+      );
+    });
+
+    it("does not re-trigger on a later override once the team is already above 40% (fires once, on the crossing, not every time after)", async () => {
+      // Already 10/20 (50%) before this override -- rate was already above
+      // 40%, so this one isn't the crossing.
+      getRecentOverrideCounts.mockResolvedValue({ total: 20, overridden: 10 });
+
+      await overrideDecision("dec_1", { newVerdict: "PASS" }, auth);
+
+      expect(postSlackMessage).not.toHaveBeenCalled();
+    });
+
+    it("does not trigger when the resulting rate is still at or below 40%", async () => {
+      getRecentOverrideCounts.mockResolvedValue({ total: 20, overridden: 8 }); // 40% exactly
+
+      await overrideDecision("dec_1", { newVerdict: "PASS" }, auth);
+
+      expect(postSlackMessage).not.toHaveBeenCalled();
+    });
+
+    it("still succeeds even when the guardrail's own Slack alert fails (best-effort)", async () => {
+      getRecentOverrideCounts.mockResolvedValue({ total: 20, overridden: 9 });
+      postSlackMessage.mockRejectedValue(new Error("Slack is down"));
+
+      await expect(overrideDecision("dec_1", { newVerdict: "PASS" }, auth)).resolves.toMatchObject({
+        newVerdict: "PASS",
+      });
+    });
+
+    it("still succeeds even when the guardrail check itself throws (e.g. a DB error)", async () => {
+      getRecentOverrideCounts.mockRejectedValue(new Error("db unavailable"));
+
+      await expect(overrideDecision("dec_1", { newVerdict: "PASS" }, auth)).resolves.toMatchObject({
+        newVerdict: "PASS",
+      });
+    });
   });
 });
 

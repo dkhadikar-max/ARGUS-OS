@@ -2,6 +2,7 @@ import { AppError, type CreateOutcomeRequest, type CreateOutcomeResponse, type L
 import type { AuthContext } from "../../middleware/auth.js";
 import {
   countDecisionsForTeam,
+  countOverriddenDecisionsForTeam,
   createOutcomeRecord,
   findDecisionForOutcome,
   getDecisionsForRepBreakdown,
@@ -177,11 +178,13 @@ export async function createOutcome(
 export async function listOutcomesForTeam(
   query: ListOutcomesQuery,
 ): Promise<ListOutcomesResponse> {
-  const [{ rows, total }, aggregationRows, totalDecisions, repDecisions] = await Promise.all([
+  const [{ rows, total }, aggregationRows, totalDecisions, repDecisions, overriddenDecisions] = await Promise.all([
     listOutcomes(query),
     getVerdictAggregations(query.teamId),
     countDecisionsForTeam(query.teamId),
     getDecisionsForRepBreakdown(query.teamId),
+    // ARGUS Unanimous Policy v2.1 "Override Rate Guardrail" (not the Bible).
+    countOverriddenDecisionsForTeam(query.teamId),
   ]);
 
   const byVerdict: ListOutcomesResponse["aggregations"]["byVerdict"] = {};
@@ -243,6 +246,7 @@ export async function listOutcomesForTeam(
       mode: calibrationMode(totalDecisions),
       score: positivePredictionCount > 0 ? positivePredictionMeetings / positivePredictionCount : null,
       byRep: computeRepBreakdown(repDecisions),
+      overrideRate: totalDecisions > 0 ? overriddenDecisions / totalDecisions : null,
     },
   };
 }

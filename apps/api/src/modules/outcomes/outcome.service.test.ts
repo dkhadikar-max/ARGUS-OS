@@ -11,6 +11,7 @@ const repo = {
   getVerdictAggregations: vi.fn(),
   countDecisionsForTeam: vi.fn(),
   getDecisionsForRepBreakdown: vi.fn(),
+  countOverriddenDecisionsForTeam: vi.fn(),
 };
 
 vi.mock("./outcome.repository.js", () => repo);
@@ -40,6 +41,7 @@ const request: CreateOutcomeRequest = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  repo.countOverriddenDecisionsForTeam.mockResolvedValue(0);
 });
 
 describe("createOutcome", () => {
@@ -143,7 +145,7 @@ describe("listOutcomesForTeam", () => {
       avgTimeToMeeting: 2,
     });
     expect(result.pagination).toEqual({ total: 1, limit: 20, offset: 0, hasMore: false });
-    expect(result.accuracy).toEqual({ totalDecisions: 75, mode: "calibrating", score: 0.5, byRep: [] });
+    expect(result.accuracy).toEqual({ totalDecisions: 75, mode: "calibrating", score: 0.5, byRep: [], overrideRate: 0 });
   });
 
   it("returns a null accuracy score when there's no STRONG_YES/YES outcome yet, without fabricating a number", async () => {
@@ -156,7 +158,22 @@ describe("listOutcomesForTeam", () => {
 
     const result = await listOutcomesForTeam({ teamId: "team_1", limit: 20, offset: 0 });
 
-    expect(result.accuracy).toEqual({ totalDecisions: 10, mode: "learning", score: null, byRep: [] });
+    expect(result.accuracy).toEqual({ totalDecisions: 10, mode: "learning", score: null, byRep: [], overrideRate: 0 });
+  });
+
+  it("computes overrideRate as a fraction of all-time decisions, null when there are none yet (Policy v2.1 Override Rate Guardrail)", async () => {
+    repo.listOutcomes.mockResolvedValue({ rows: [], total: 0 });
+    repo.getVerdictAggregations.mockResolvedValue([]);
+    repo.getDecisionsForRepBreakdown.mockResolvedValue([]);
+
+    repo.countDecisionsForTeam.mockResolvedValue(0);
+    let result = await listOutcomesForTeam({ teamId: "team_1", limit: 20, offset: 0 });
+    expect(result.accuracy.overrideRate).toBeNull();
+
+    repo.countDecisionsForTeam.mockResolvedValue(20);
+    repo.countOverriddenDecisionsForTeam.mockResolvedValue(5);
+    result = await listOutcomesForTeam({ teamId: "team_1", limit: 20, offset: 0 });
+    expect(result.accuracy.overrideRate).toBe(0.25);
   });
 
   it("weights STRONG_YES/YES accuracy by each bucket's own sample size", async () => {

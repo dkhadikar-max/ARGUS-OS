@@ -125,6 +125,37 @@ export function countDecisionsForTeam(teamId: string) {
   return prisma.decision.count({ where: { teamId } });
 }
 
+/** ARGUS Unanimous Policy v2.1 "Override Rate Guardrail" (not the Bible) --
+ *  all-time count of overridden decisions, for the Analytics display stat.
+ *  `overrideDecision`'s own real-time guardrail check queries the rolling
+ *  window version below instead. */
+export function countOverriddenDecisionsForTeam(teamId: string) {
+  return prisma.decision.count({ where: { teamId, override: { isNot: null } } });
+}
+
+/** The real-time half of the Override Rate Guardrail: counts within a
+ *  rolling window (not all-time), since a guardrail needs to react to a
+ *  recent quality problem, not get diluted by a team's whole history.
+ *
+ *  Cohorted by Decision.createdAt (when the verdict was generated), not
+ *  Override.createdAt (when the override action happened) -- the same
+ *  convention icp.service.ts's own recent-window accuracy scoring already
+ *  uses. This means overriding a decision from outside the window won't
+ *  count toward either side of the ratio, a deliberate, disclosed choice:
+ *  the guardrail is about the quality of *this window's own decisions*,
+ *  not a raw count of override clicks regardless of when the underlying
+ *  verdict was made. */
+export async function getRecentOverrideCounts(
+  teamId: string,
+  since: Date,
+): Promise<{ total: number; overridden: number }> {
+  const [total, overridden] = await Promise.all([
+    prisma.decision.count({ where: { teamId, createdAt: { gte: since } } }),
+    prisma.decision.count({ where: { teamId, createdAt: { gte: since }, override: { isNot: null } } }),
+  ]);
+  return { total, overridden };
+}
+
 /** Bible §4.4 Manager Morgan persona's per-rep breakdown -- queries Decision
  *  (not Outcome) so a rep's `totalDecisions` counts every verdict they've
  *  generated, the same "all decisions, not just outcome-logged ones"

@@ -24,6 +24,8 @@ import { resolveSlackTeamByArgusTeamId } from "../integrations/integration.servi
 import { postSlackMessage } from "../../lib/slack-client.js";
 import { getPolicy } from "../policy/policy.repository.js";
 import { evaluatePolicyRules } from "../policy/policy.service.js";
+import { getRecentOverrideCounts } from "../outcomes/outcome.repository.js";
+import { logger } from "../../lib/logger.js";
 
 // Bible §8.3 classifies research data points as one of five lowercase
 // strings ("firmographic, demographic, technographic, intent, or risk"),
@@ -362,6 +364,55 @@ export async function getDecision(
   return toDecisionResponse(decision, true);
 }
 
+// ARGUS Unanimous Policy v2.1 "Override Rate Guardrail" (not the Bible):
+// "If override rate exceeds 40%, trigger emergency prompt review within 24
+// hours." A rolling window, not all-time (see outcome.repository.ts's
+// getRecentOverrideCounts), so a real recent quality problem isn't diluted
+// by a team's whole history. Requires a minimum sample size first -- a
+// brand-new team's first override would otherwise be a 100% "rate" that
+// means nothing, the same reasoning Company Memory's riskFlags already
+// applies (a minimum of 3 occurrences before calling something recurring).
+const OVERRIDE_RATE_GUARDRAIL_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const OVERRIDE_RATE_GUARDRAIL_THRESHOLD = 0.4;
+const OVERRIDE_RATE_GUARDRAIL_MIN_SAMPLE = 10;
+
+/** Alerts the team's Slack channel exactly once per crossing -- computed as
+ *  "the rate before this override" vs. "the rate after", so it fires only
+ *  on the override that actually pushes the team over 40%, not on every
+ *  subsequent override while already above it. Best-effort: a Slack
+ *  failure here must never fail the override the rep just made. */
+async function checkOverrideRateGuardrail(teamId: string, meta?: RequestMeta): Promise<void> {
+  const since = new Date(Date.now() - OVERRIDE_RATE_GUARDRAIL_WINDOW_MS);
+  const { total, overridden } = await getRecentOverrideCounts(teamId, since);
+  if (total < OVERRIDE_RATE_GUARDRAIL_MIN_SAMPLE) return;
+
+  const rateAfter = overridden / total;
+  const rateBefore = (overridden - 1) / total;
+  if (rateBefore > OVERRIDE_RATE_GUARDRAIL_THRESHOLD || rateAfter <= OVERRIDE_RATE_GUARDRAIL_THRESHOLD) {
+    return;
+  }
+
+  await recordAudit({
+    entityType: "policy_guardrail",
+    entityId: teamId,
+    action: "override_rate_exceeded",
+    actorId: "system",
+    afterState: { rate: rateAfter, total, overridden, windowDays: 7 },
+    meta,
+  });
+
+  const slack = await resolveSlackTeamByArgusTeamId(teamId).catch(() => null);
+  if (!slack) return;
+
+  await postSlackMessage(
+    slack.botToken,
+    slack.alertChannelId,
+    `⚠️ *Policy Guardrail:* Override rate hit ${Math.round(rateAfter * 100)}% over the last 7 days (${overridden}/${total} decisions) — Policy v2.1 requires an emergency prompt review within 24 hours.`,
+  ).catch((err) => {
+    logger.warn({ err, teamId }, "Override rate guardrail Slack alert failed; audit entry still recorded");
+  });
+}
+
 export async function overrideDecision(
   id: string,
   request: OverrideDecisionRequest,
@@ -409,6 +460,10 @@ export async function overrideDecision(
     beforeState: { verdict: override.originalVerdict },
     afterState: { verdict: override.newVerdict, reason: override.reason },
     meta,
+  });
+
+  await checkOverrideRateGuardrail(auth.teamId, meta).catch((err) => {
+    logger.warn({ err, teamId: auth.teamId }, "Override rate guardrail check failed; override itself still recorded");
   });
 
   return {

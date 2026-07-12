@@ -92,6 +92,14 @@ export const listOutcomesResponseSchema = z.object({
     mode: z.enum(["learning", "calibrating", "mature"]),
     score: z.number().min(0).max(1).nullable(),
     byRep: z.array(repAccuracySchema),
+    // ARGUS Unanimous Policy v2.1 "Override Rate Guardrail" (not the
+    // Bible) -- all-time fraction of decisions a rep has overridden, for
+    // Analytics visibility. Null (not 0) when the team has no decisions
+    // yet, same "honest not-enough-data" reasoning as `score` above. The
+    // *real-time* 40%-threshold guardrail this Policy line also describes
+    // is a separate, rolling-7-day check in decision.service.ts's
+    // overrideDecision, not this all-time display stat.
+    overrideRate: z.number().min(0).max(1).nullable(),
   }),
 });
 export type ListOutcomesResponse = z.infer<typeof listOutcomesResponseSchema>;

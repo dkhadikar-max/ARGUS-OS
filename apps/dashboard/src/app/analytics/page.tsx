@@ -70,6 +70,32 @@ export default async function AnalyticsPage({
         </Card>
       </section>
 
+      {/* ARGUS Unanimous Policy v2.1 "Override Rate Guardrail" (not the
+          Bible): all-time visibility here; the real-time 40%-threshold
+          Slack alert is a separate check in decision.service.ts's
+          overrideDecision, this is just the display stat. */}
+      <section className="mb-8">
+        <Card>
+          <Text>Override rate — all-time</Text>
+          {outcomes.accuracy.overrideRate === null ? (
+            <Metric>Not enough data yet</Metric>
+          ) : (
+            <>
+              <Metric
+                className={outcomes.accuracy.overrideRate > 0.4 ? "text-red-600" : undefined}
+              >
+                {Math.round(outcomes.accuracy.overrideRate * 100)}%
+              </Metric>
+              <Text className="mt-1">
+                Share of decisions a rep has overridden.
+                {outcomes.accuracy.overrideRate > 0.4 &&
+                  " Above the 40% Policy v2.1 guardrail — worth an emergency prompt review."}
+              </Text>
+            </>
+          )}
+        </Card>
+      </section>
+
       <section className="mb-8">
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
           Meeting rate by verdict
