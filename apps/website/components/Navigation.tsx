@@ -32,10 +32,10 @@ export function Navigation() {
       </div>
 
       <a
-        href="#plans"
+        href="#start"
         className="font-mono text-xs font-semibold px-5 py-2.5 bg-amber text-obsidian tracking-[0.05em] uppercase hover:bg-amber-glow transition-colors duration-200"
       >
-        Start Free
+        Free Assessment
       </a>
     </nav>
   );

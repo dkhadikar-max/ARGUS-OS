@@ -16,8 +16,12 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "ARGUS AI — Decision Operating System for B2B Revenue Teams",
+  // Policy v2.1 "Do Not Change": the One-Liner and Promise, quoted verbatim
+  // -- replacing the previous "AI Revenue Intelligence" framing, which read
+  // too close to the "Decision Intelligence" branding the Policy killed in
+  // favor of "Decision Operating System."
   description:
-    "AI Revenue Intelligence that tells your team what to do next—and why. Analyze prospects, explain decisions, learn from outcomes, and build company-wide revenue intelligence.",
+    "Stop guessing. Start deciding with evidence. ARGUS is the Decision Operating System for B2B revenue teams — know why before you act, every time.",
   keywords: [
     "AI sales tool",
     "revenue intelligence",

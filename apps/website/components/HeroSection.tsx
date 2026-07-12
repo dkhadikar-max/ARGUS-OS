@@ -13,14 +13,21 @@ export function HeroSection() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, ease: "easeOut" }}
           >
-            <div className="flex items-center gap-2 mb-6">
+            <div className="flex items-center gap-2 mb-4">
               <div className="w-1.5 h-1.5 bg-amber rotate-45" />
               <span className="font-mono text-[11px] text-amber uppercase tracking-[0.15em]">
                 Decision Operating System v3.0
               </span>
             </div>
 
-            <h1 className="text-display text-pearl mb-8">
+            {/* Policy v2.1 Homepage Hierarchy, step 1 "Pain" (frozen, do not
+                change): the concrete cost the rest of the page's evidence-
+                and-reasoning pitch is answering. */}
+            <p className="font-mono text-[13px] text-ash uppercase tracking-[0.1em] mb-4">
+              40% of pipeline time is wasted on poor-fit prospects.
+            </p>
+
+            <h1 className="text-display text-pearl mb-6">
               Every revenue team has AI.
               <br />
               Nobody has a{" "}
@@ -29,24 +36,33 @@ export function HeroSection() {
               </strong>
             </h1>
 
-            <p className="text-lg text-ash leading-relaxed max-w-[480px] mb-10">
-              ARGUS analyzes the evidence, explains the reasoning, and learns
-              from every outcome — so your organization makes better revenue
-              decisions, automatically.
+            {/* Policy v2.1 Homepage Hierarchy, step 2 "Promise" and the
+                separately-frozen "One-Liner" — both quoted verbatim,
+                do not change either. */}
+            <p className="text-lg text-ash leading-relaxed max-w-[480px] mb-2">
+              Know why before you act — every time.
+            </p>
+            <p className="text-lg text-pearl font-semibold leading-relaxed max-w-[480px] mb-10">
+              Stop guessing. Start deciding with evidence.
             </p>
 
+            {/* Policy v2.1 Homepage Hierarchy, step 5 "Path" (frozen):
+                Free Assessment (primary) / Intelligence Sprint (secondary).
+                Both scroll to the same CTA section below — "View the
+                Evidence Chain" (→ #evidence) isn't lost, it's still one
+                click away via the Evidence link already in the nav bar. */}
             <div className="flex flex-wrap gap-4 mb-12">
               <a
-                href="#plans"
+                href="#start"
                 className="font-mono text-[13px] font-semibold px-8 py-4 bg-amber text-obsidian tracking-[0.05em] hover:bg-amber-glow transition-colors duration-200"
               >
-                Start Free
+                Free Assessment
               </a>
               <a
-                href="#evidence"
+                href="#start"
                 className="font-mono text-[13px] px-8 py-4 border border-slate text-ash hover:text-pearl hover:border-ash transition-colors duration-200"
               >
-                View the Evidence Chain
+                Intelligence Sprint
               </a>
             </div>
 
