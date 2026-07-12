@@ -10,13 +10,18 @@
     "migrate:deploy": "prisma migrate deploy",
     "studio": "prisma studio",
     "build": "prisma generate && tsc -p tsconfig.json",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "seed": "tsx prisma/seed.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.19.1"
   },
   "devDependencies": {
     "prisma": "^5.19.1",
+    "tsx": "^4.19.1",
     "typescript": "^5.5.4"
   }
 }
