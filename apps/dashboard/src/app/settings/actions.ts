@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { IcpCriterion, MessageTone, UpdateIcpRequest, UpdateUserPreferencesRequest } from "@argus/shared";
+import type { IcpCriterion, MessageTone, PolicyRule, UpdateIcpRequest, UpdatePolicyRequest, UpdateUserPreferencesRequest } from "@argus/shared";
 import { api, ApiError } from "../../lib/api-client";
 
 export interface ActionResult {
@@ -41,6 +41,22 @@ export async function updateIcpAction(criteria: IcpCriterion[]): Promise<ActionR
     await api.updateIcp(payload);
   } catch (err) {
     return { ok: false, error: err instanceof ApiError ? err.message : "Failed to save ICP" };
+  }
+
+  revalidatePath("/settings");
+  return { ok: true };
+}
+
+// Policy v2.1 L4 Policy Engine (not the Bible) -- same "Client Component
+// calls the action directly" pattern as updateIcpAction above, for the
+// same reason (a dynamic add/remove rule list needs real client state).
+export async function updatePolicyAction(rules: PolicyRule[]): Promise<ActionResult> {
+  const payload: UpdatePolicyRequest = { rules };
+
+  try {
+    await api.updatePolicy(payload);
+  } catch (err) {
+    return { ok: false, error: err instanceof ApiError ? err.message : "Failed to save policy" };
   }
 
   revalidatePath("/settings");

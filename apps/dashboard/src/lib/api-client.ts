@@ -6,8 +6,10 @@ import type {
   DecisionResponse,
   IcpResponse,
   ListOutcomesResponse,
+  PolicyResponse,
   QueueResponse,
   UpdateIcpRequest,
+  UpdatePolicyRequest,
   UpdateUserPreferencesRequest,
   UserPreferencesResponse,
 } from "@argus/shared";
@@ -73,6 +75,11 @@ export const api = {
   getIcp: () => apiFetch<IcpResponse>("/api/v1/icp"),
   updateIcp: (payload: UpdateIcpRequest) =>
     apiFetch<IcpResponse>("/api/v1/icp", { method: "PUT", body: JSON.stringify(payload) }),
+  // Policy v2.1 L4 Policy Engine -- not the Bible, see packages/shared's
+  // schemas/policy.ts.
+  getPolicy: () => apiFetch<PolicyResponse>("/api/v1/policy"),
+  updatePolicy: (payload: UpdatePolicyRequest) =>
+    apiFetch<PolicyResponse>("/api/v1/policy", { method: "PUT", body: JSON.stringify(payload) }),
   // teamId is omitted -- outcome.routes.ts defaults it from the caller's
   // own JWT-resolved team when absent from the query string. userId scopes
   // just the `data` decision-history array server-side (Bible §4.4 Manager

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { actionTypeSchema, channelSchema, messageToneSchema, verdictSchema } from "./enums.js";
 import { agentDebateOutputSchema } from "./agents.js";
+import { policyFlagSchema } from "./policy.js";
 
 // Bible §10.2 — POST /api/v1/decisions request body
 export const createDecisionRequestSchema = z.object({
@@ -73,6 +74,9 @@ export const decisionResponseSchema = z.object({
   // endpoint "View More" actually calls -- always includes it, since that
   // request exists specifically for deep inspection.
   debate: agentDebateOutputSchema.nullable().optional(),
+  // Policy v2.1 L4 Policy Engine's "Policy Check" result -- empty array
+  // when no rule matched, not the Bible, see packages/shared/schemas/policy.ts.
+  policyFlags: z.array(policyFlagSchema).optional(),
   message: messagePayloadSchema,
   recommendedAction: z.enum([
     "message_now",

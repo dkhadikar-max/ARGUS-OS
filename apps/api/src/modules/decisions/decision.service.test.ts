@@ -43,6 +43,9 @@ vi.mock("../integrations/integration.service.js", () => ({ resolveSlackTeamByArg
 const postSlackMessage = vi.fn();
 vi.mock("../../lib/slack-client.js", () => ({ postSlackMessage }));
 
+const getPolicy = vi.fn();
+vi.mock("../policy/policy.repository.js", () => ({ getPolicy }));
+
 const { createDecision, getDecision, overrideDecision, recordAction, shareDecision, editMessageDraft } = await import(
   "./decision.service.js"
 );
@@ -98,6 +101,7 @@ beforeEach(() => {
   enrichProspect.mockImplementation((prospect) =>
     Promise.resolve({ prospect, apollo: null, clearbit: null }),
   );
+  getPolicy.mockResolvedValue(null); // default: team has no policy rules configured
 });
 
 describe("createDecision", () => {
@@ -184,6 +188,68 @@ describe("createDecision", () => {
         actorId: "user_1",
       }),
     );
+  });
+
+  it("evaluates the team's policy rules against the verdict/confidence and surfaces the resulting flags (Policy v2.1 L4 Policy Engine)", async () => {
+    repo.upsertProspect.mockResolvedValue({
+      id: "prospect_1",
+      name: "Sarah Chen",
+      title: "VP Engineering",
+      companyName: "DataFlow Inc.",
+      companyDomain: "dataflow.io",
+      linkedInUrl: request.prospect.linkedInUrl,
+      companySize: null,
+      companyIndustry: null,
+      companyFunding: null,
+      rawProfile: null,
+      enrichedData: null,
+    });
+    repo.getActiveIcp.mockResolvedValue(null);
+    repo.getCompanyMemory.mockResolvedValue(null);
+    repo.getUserPreferences.mockResolvedValue(null);
+    repo.getProspectDecisionHistory.mockResolvedValue([]);
+    repo.getTeamOutcomeHistory.mockResolvedValue([]);
+    // agentDebateOutput's judge.confidence is 94 -- this rule should match.
+    getPolicy.mockResolvedValue({
+      rules: [{ field: "confidence", operator: "gte", value: 90, action: "FLAG", message: "Very high confidence -- double-check evidence" }],
+      version: 1,
+    });
+    runAgentDebate.mockResolvedValue({ output: agentDebateOutput, processingTimeMs: 3200 });
+    repo.createDecisionRecord.mockResolvedValue({ id: "dec_1" });
+    repo.findDecisionById.mockResolvedValue({
+      id: "dec_1",
+      verdict: "STRONG_YES",
+      confidence: 94,
+      reasoning: "Strong across the board.",
+      recommendedAction: "message_now",
+      processingTimeMs: 3200,
+      createdAt: new Date("2026-07-10T14:32:00Z"),
+      updatedAt: new Date("2026-07-10T14:32:00Z"),
+      policyFlags: [{ field: "confidence", action: "FLAG", message: "Very high confidence -- double-check evidence" }],
+      evidence: [],
+      messageDrafts: [],
+      outcome: null,
+      override: null,
+      prospect: {
+        id: "prospect_1",
+        name: "Sarah Chen",
+        title: "VP Engineering",
+        companyName: "DataFlow Inc.",
+        linkedInUrl: "https://linkedin.com/in/sarahchen",
+      },
+    });
+
+    const result = await createDecision(request, auth);
+
+    expect(getPolicy).toHaveBeenCalledWith("team_1");
+    expect(repo.createDecisionRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        policyFlags: [{ field: "confidence", action: "FLAG", message: "Very high confidence -- double-check evidence" }],
+      }),
+    );
+    expect(result.policyFlags).toEqual([
+      { field: "confidence", action: "FLAG", message: "Very high confidence -- double-check evidence" },
+    ]);
   });
 
   it("adds Apollo/Clearbit-sourced evidence when enrichment finds data (Bible §18 AI-2)", async () => {
@@ -640,6 +706,57 @@ describe("recordAction", () => {
         afterState: { actionType: "MESSAGE_COPIED" },
       }),
     );
+  });
+
+  it("blocks MESSAGE_SENT/MESSAGE_COPIED when a BLOCK policy flag matched this decision (Policy v2.1 L4 Policy Engine)", async () => {
+    repo.findDecisionById.mockResolvedValue({
+      id: "dec_1",
+      actionTaken: null,
+      policyFlags: [{ field: "verdict", action: "BLOCK", message: "Do not contact HARD_PASS prospects" }],
+    });
+
+    await expect(recordAction("dec_1", { actionType: "MESSAGE_SENT" }, auth)).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+    });
+    expect(repo.createActionTaken).not.toHaveBeenCalled();
+  });
+
+  it("does not block non-message actions (e.g. SNOOZED) even when a BLOCK policy flag matched", async () => {
+    repo.findDecisionById.mockResolvedValue({
+      id: "dec_1",
+      actionTaken: null,
+      policyFlags: [{ field: "verdict", action: "BLOCK", message: "Do not contact" }],
+    });
+    repo.createActionTaken.mockResolvedValue({
+      id: "act_1",
+      decisionId: "dec_1",
+      actionType: "SNOOZED",
+      details: null,
+      timestamp: new Date("2026-07-11T09:00:00Z"),
+    });
+
+    await expect(recordAction("dec_1", { actionType: "SNOOZED" }, auth)).resolves.toMatchObject({
+      actionType: "SNOOZED",
+    });
+  });
+
+  it("does not block a message action when only non-BLOCK flags (FLAG/REQUIRE_APPROVAL) matched", async () => {
+    repo.findDecisionById.mockResolvedValue({
+      id: "dec_1",
+      actionTaken: null,
+      policyFlags: [{ field: "confidence", action: "FLAG", message: "Low confidence" }],
+    });
+    repo.createActionTaken.mockResolvedValue({
+      id: "act_1",
+      decisionId: "dec_1",
+      actionType: "MESSAGE_SENT",
+      details: null,
+      timestamp: new Date("2026-07-11T09:00:00Z"),
+    });
+
+    await expect(recordAction("dec_1", { actionType: "MESSAGE_SENT" }, auth)).resolves.toMatchObject({
+      actionType: "MESSAGE_SENT",
+    });
   });
 });
 

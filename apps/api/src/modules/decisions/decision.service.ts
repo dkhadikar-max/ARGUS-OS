@@ -1,4 +1,4 @@
-import { agentDebateOutputSchema, AppError, type CreateActionRequest, type CreateActionResponse, type CreateDecisionRequest, type DecisionResponse, type EditMessageDraftRequest, type EditMessageDraftResponse, type OverrideDecisionRequest, type OverrideDecisionResponse, type ShareDecisionResponse } from "@argus/shared";
+import { agentDebateOutputSchema, AppError, type CreateActionRequest, type CreateActionResponse, type CreateDecisionRequest, type DecisionResponse, type EditMessageDraftRequest, type EditMessageDraftResponse, type OverrideDecisionRequest, type OverrideDecisionResponse, type PolicyFlag, type ShareDecisionResponse } from "@argus/shared";
 import type { AuthContext } from "../../middleware/auth.js";
 import { runAgentDebate } from "../../agents/orchestrator.js";
 import {
@@ -22,6 +22,8 @@ import { enrichProspect, type EnrichmentResult } from "../../lib/enrichment/enri
 import { recordAudit, type RequestMeta } from "../../lib/audit.js";
 import { resolveSlackTeamByArgusTeamId } from "../integrations/integration.service.js";
 import { postSlackMessage } from "../../lib/slack-client.js";
+import { getPolicy } from "../policy/policy.repository.js";
+import { evaluatePolicyRules } from "../policy/policy.service.js";
 
 // Bible §8.3 classifies research data points as one of five lowercase
 // strings ("firmographic, demographic, technographic, intent, or risk"),
@@ -140,6 +142,7 @@ function toDecisionResponse(
     verdict: decision.verdict,
     confidence: decision.confidence,
     reasoning: decision.reasoning,
+    policyFlags: (decision.policyFlags as PolicyFlag[] | null) ?? [],
     evidence: decision.evidence.map((e) => {
       const data = e.data as { signal?: string; relevance?: string };
       return {
@@ -189,7 +192,7 @@ export async function createDecision(
   // so the Research Agent gets real firmographics, not just whatever the
   // LinkedIn content script scraped. No-ops (and stays cheap) once a
   // prospect was enriched within the last 30 days — see enrichment.service.ts.
-  const [enrichment, icp, companyMemory, userPreferences, prospectHistory, teamHistory] =
+  const [enrichment, icp, companyMemory, userPreferences, prospectHistory, teamHistory, policy] =
     await Promise.all([
       enrichProspect(upsertedProspect),
       getActiveIcp(request.context.teamId),
@@ -197,6 +200,10 @@ export async function createDecision(
       getUserPreferences(request.context.userId),
       getProspectDecisionHistory(upsertedProspect.id, request.context.teamId),
       getTeamOutcomeHistory(request.context.teamId),
+      // Policy v2.1 L4 Policy Engine (not the Bible -- see policy.service.ts)
+      // -- fetched alongside everything else this decision needs, evaluated
+      // once the debate's verdict/confidence are known below.
+      getPolicy(request.context.teamId),
     ]);
   const prospect = enrichment.prospect;
 
@@ -244,6 +251,15 @@ export async function createDecision(
     await setCachedDebateOutput(prospect.id, request.context.teamId, icpVersion, output);
   }
 
+  // Policy v2.1's "Policy Check" gate: evaluated against this decision's
+  // own verdict/confidence/prospect title -- same on a cache hit or a fresh
+  // debate, since the policy is about the *result*, not how it was computed.
+  const policyFlags = evaluatePolicyRules((policy?.rules as never) ?? [], {
+    verdict: output.judge.verdict,
+    confidence: output.judge.confidence,
+    prospectTitle: prospect.title,
+  });
+
   const decision = await createDecisionRecord({
     userId: request.context.userId,
     teamId: request.context.teamId,
@@ -255,6 +271,7 @@ export async function createDecision(
     recommendedAction: output.judge.recommended_action,
     agentConsensus: output.judge.agent_consensus,
     agentOutputs: output,
+    policyFlags,
     processingTimeMs,
     evidence: [
       ...output.research.data_points.map((dp) => ({
@@ -424,6 +441,21 @@ export async function recordAction(
   }
   if (decision.actionTaken) {
     throw new AppError("DECISION_STALE", "An action has already been recorded for this decision");
+  }
+
+  // Policy v2.1's Governor Model: Decision Engine -> Policy Check -> Human
+  // Approval -> execution tools. "Human Approval (V1: required)" is already
+  // how every action here works (nothing sends automatically) -- a BLOCK
+  // flag is the one case where even the human's own approval isn't enough,
+  // so it's enforced here, at the last point before an action is recorded,
+  // rather than only surfaced as a warning the rep could click past.
+  if (request.actionType === "MESSAGE_SENT" || request.actionType === "MESSAGE_COPIED") {
+    const blockingFlag = ((decision.policyFlags as PolicyFlag[] | null) ?? []).find(
+      (flag) => flag.action === "BLOCK",
+    );
+    if (blockingFlag) {
+      throw new AppError("VALIDATION_ERROR", `Blocked by policy: ${blockingFlag.message}`);
+    }
   }
 
   const actionTaken = await createActionTaken({

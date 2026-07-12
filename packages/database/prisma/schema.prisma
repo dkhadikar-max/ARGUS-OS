@@ -93,6 +93,7 @@ model Team {
   users         User[]
   icp           ICPDefinition?
   companyMemory CompanyMemory?
+  policy        PolicyDefinition?
   decisions     Decision[]
   apiKeys       ApiKey[]
   webhooks      Webhook[]
@@ -158,6 +159,28 @@ model CompanyMemory {
   patterns  Json // { patterns: [{ description, evidence, confidence, type }] }
   riskFlags Json // { flags: [{ condition, severity, recommendation }] }
   icpHistory Json // { versions: [{ criteria, accuracy, date }] }
+
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  teamId String @unique
+
+  @@index([teamId])
+}
+
+// ARGUS Unanimous Policy v2.1 "Seven-Layer Stack", L4 "Policy Engine" --
+// "Configurable rules (JSON)" for V1/MVP. Not part of the original Bible
+// (searched the full 73-page text for "policy"/"governance"/"policy
+// engine" -- no match anywhere); introduced fresh by this separate, later,
+// frozen governing document. Mirrors ICPDefinition's own shape exactly
+// (single JSON blob per team, versioned on every edit) rather than one row
+// per rule, for the same reason ICPDefinition does: a small, team-scoped
+// list edited as a whole, not queried/joined row-by-row.
+model PolicyDefinition {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rules   Json // { rules: [{ field, operator, value, action, message }] }
+  version Int  @default(1)
 
   team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
   teamId String @unique
@@ -268,6 +291,10 @@ model Decision {
   recommendedAction String? // "message_now", "wait", etc.
   agentConsensus    String? // "high", "medium", "low"
   agentOutputs      Json? // Full agent outputs for audit
+  // Policy v2.1 L4 Policy Engine -- results of evaluating the team's
+  // PolicyDefinition.rules against this decision at creation time.
+  // { flags: [{ field, action, message }] }, empty/null when no rule matched.
+  policyFlags       Json?
   processingTimeMs  Int? // Performance tracking
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt

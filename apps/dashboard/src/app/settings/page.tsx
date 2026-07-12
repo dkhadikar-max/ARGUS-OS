@@ -1,12 +1,19 @@
 import { api } from "../../lib/api-client";
 import { IcpCriteriaEditor } from "../../components/IcpCriteriaEditor";
+import { PolicyRulesEditor } from "../../components/PolicyRulesEditor";
 import { updatePreferencesAction } from "./actions";
 
 // Bible §18 DSH-5 "Settings" (P1 items only -- "Integration connections" and
 // "Billing page (Stripe)" are P2 and out of scope here; Slack connect
 // already lives on the Queue page's "Connect Slack" button).
 export default async function SettingsPage() {
-  const [preferences, icp] = await Promise.all([api.getPreferences(), api.getIcp()]);
+  const [preferences, icp, policy] = await Promise.all([
+    api.getPreferences(),
+    api.getIcp(),
+    // ARGUS Unanimous Policy v2.1 "L4 Policy Engine" -- not the Bible, see
+    // packages/shared/schemas/policy.ts.
+    api.getPolicy(),
+  ]);
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
@@ -112,6 +119,18 @@ export default async function SettingsPage() {
           <IcpCriteriaEditor initialCriteria={icp.criteria} />
           {icp.updatedAt === null && (
             <p className="mt-3 text-xs text-gray-400">No ICP saved yet for this team.</p>
+          )}
+        </div>
+      </section>
+
+      <section className="mt-8">
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Policy Engine
+        </h2>
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <PolicyRulesEditor initialRules={policy.rules} />
+          {policy.updatedAt === null && (
+            <p className="mt-3 text-xs text-gray-400">No policy rules configured yet for this team.</p>
           )}
         </div>
       </section>

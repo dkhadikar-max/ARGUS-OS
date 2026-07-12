@@ -215,6 +215,21 @@ Both surfaces are now wired to call it:
 
 No test-infrastructure investment was made for the extension's `MessageComposer.tsx`/Slack's `actions.ts` themselves — the actual logic (schema validation, the service's original-vs-current `editDiff` semantics, the auth/not-found/no-draft error paths) is unit-tested at the API layer (`decision.service.test.ts`, `packages/shared`'s `decision.test.ts`), and neither the extension nor the Slack bot has ever had direct handler/component tests in this codebase (unlike the dashboard, which got that infrastructure deliberately in an earlier pass) — adding a whole new testing stack to either app solely to cover this one thin call-through would be a disproportionate addition relative to the actual gap being filled.
 
+### Policy Engine (ARGUS Unanimous Policy v2.1 "L4 Policy Engine" — not the Bible)
+
+A separate, later, frozen governing document — `ARGUS-Unanimous-Policy-v2.1-FINAL.md`, unanimously adopted by Kimi/GPT/GPT-2 — introduces a "Seven-Layer Stack" that extends the Bible's own Five Graphs with two new layers: L2 Reasoning Engine and **L4 Policy Engine** ("Configurable rules (JSON)" for V1/MVP, "Full governance UI" for V3+). Its "Governor Model" places a "Policy Check" step between the Decision Engine and Human Approval: `Claude → ARGUS Decision Engine → Policy Check (L4) → Human Approval (V1: required) → HubSpot/Slack/LinkedIn/CRM → Outcome Tracking → Company Memory Update`. Searched the full 73-page Bible text for "policy"/"governance"/"policy engine" before building anything — no match anywhere, confirming this is genuinely new scope, not something to reconcile against existing Bible content.
+
+Built as a real, additive subsystem, mirroring the ICP editor's own established pattern (`ICPDefinition`) rather than inventing a new one:
+
+- **Schema**: new `PolicyDefinition` model (one JSON-blob-of-rules row per team, versioned on every edit — same shape as `ICPDefinition.criteria`) and a new `Decision.policyFlags: Json?` column (parallel to the existing `agentOutputs` column) storing the result of evaluating that team's rules against a given decision.
+- **Rule shape**: `{ field, operator, value, action, message }` — `field` is one of `verdict` / `confidence` / `prospect.title` (the values already known right after the agent debate, before the Decision row is even written); `operator` reuses ICP's own set (`equals`/`in`/`gte`/`lte`/`contains`); `action` is `FLAG` / `REQUIRE_APPROVAL` / `BLOCK`.
+- **`GET`/`PUT /api/v1/policy`** (`modules/policy`): same admin-only gate, same version-bump-on-upsert, same audit-log write as the sibling ICP endpoint — not contracted by §10 either, for the obvious reason that §10 predates this policy document entirely.
+- **Evaluation**: `policy.service.ts`'s `evaluatePolicyRules` is a pure function (no I/O), run inside `decision.service.ts`'s `createDecision` right after the verdict/confidence are known (whether from a fresh debate or an AI-5 cache hit), with the result stored on the new `Decision.policyFlags` column and surfaced in `DecisionResponse.policyFlags`.
+- **Enforcement, not just a warning**: `recordAction` now rejects `MESSAGE_SENT`/`MESSAGE_COPIED` with a `VALIDATION_ERROR` naming the violated rule's own message when a `BLOCK`-action flag matched that decision — the one point in the Governor Model's flow where even the rep's own approval isn't sufficient, so it's enforced at the last point before an action is recorded rather than only ever shown as a dismissable warning. `FLAG`/`REQUIRE_APPROVAL` don't block anything in V1 — they're surfaced via `policyFlags` for the rep to see, matching "Human Approval (V1: required)" already being how every other action in this system works.
+- **Settings UI**: `PolicyRulesEditor.tsx`, a line-for-line mirror of `IcpCriteriaEditor.tsx`'s add/remove-row Client Component pattern — including the exact same uncontrolled-input handling for the "in" operator's comma-separated list (a controlled input whose value is re-derived from the parsed array fights the user's own typing the instant they type a delimiter; see that component's own comment).
+
+Not yet built: the L4 row's own "Full governance UI" (V3+, explicitly not V1/MVP scope) and any UI surfacing `policyFlags` on the extension sidebar or Slack alerts — both are the natural next increment once this is confirmed useful, kept out of this pass to stay scoped to what the Policy document actually requires for V1.
+
 ### Chrome Web Store submission prep (Bible §19.2 T-7 launch runbook item)
 
 See **[CHROME_STORE_SUBMISSION.md](./CHROME_STORE_SUBMISSION.md)** for the full checklist, store listing copy, and a privacy policy draft. Two concrete things fixed in the codebase itself, not just documentation:
@@ -274,6 +289,7 @@ The 11 commits after the audit above (Full Debate View, Datadog metrics, Company
 - The dashboard now has real React component tests too (see "Dashboard test infrastructure" above), including `QueueItemCard.tsx`'s View/Message/Snooze handlers — the last of the three components flagged as untested now covered.
 - Datadog infra metrics are now wired (see "Datadog infra metrics" above) — "Railway metrics" specifically doesn't apply, since this project deploys to Render, not Railway (an explicit user-requested deviation noted under Deployment below).
 - Apollo's People Enrichment (person-level: verified title, seniority, email) is now wired too, alongside the existing Organization Enrichment — see "Prospect enrichment" above.
+- A new Policy Engine (`GET`/`PUT /api/v1/policy`, a Settings UI, and real `BLOCK` enforcement on `recordAction`) is built per ARGUS Unanimous Policy v2.1's L4 layer — see "Policy Engine" above. Its resulting `policyFlags` aren't yet surfaced anywhere on the extension sidebar or in Slack alerts, only in the raw API response and dashboard-side data; that's the natural next increment.
 
 ## Testing
 

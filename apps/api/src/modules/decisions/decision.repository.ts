@@ -71,6 +71,9 @@ export interface CreateDecisionInput {
   recommendedAction: string;
   agentConsensus: string;
   agentOutputs: unknown;
+  // Policy v2.1 L4 Policy Engine's "Policy Check" result -- not the Bible,
+  // see policy.service.ts's evaluatePolicyRules.
+  policyFlags: unknown;
   processingTimeMs: number;
   evidence: Array<{
     type: "FIRMOGRAPHIC" | "DEMOGRAPHIC" | "TECHNOGRAPHIC" | "INTENT" | "MARKET" | "HISTORICAL" | "DERIVED";
@@ -99,6 +102,7 @@ export function createDecisionRecord(input: CreateDecisionInput) {
       recommendedAction: input.recommendedAction,
       agentConsensus: input.agentConsensus,
       agentOutputs: input.agentOutputs as never,
+      policyFlags: input.policyFlags as never,
       processingTimeMs: input.processingTimeMs,
       evidence: {
         create: input.evidence.map((e) => ({
