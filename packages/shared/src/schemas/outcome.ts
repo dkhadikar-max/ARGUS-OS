@@ -43,6 +43,17 @@ const verdictAggregationSchema = z.object({
   avgTimeToMeeting: z.number().nullable(),
 });
 
+// ARGUS Unanimous Policy v2.1 "FINAL COMPETITIVE DEFENSE" -- "Cross-Rep
+// Benchmarking" is named as one of six specific assets DIY can't replicate,
+// with a worked example: "Your STRONG YES closes at 34% vs team avg 28%."
+// Not the Bible; same shape as the team-wide verdictAggregationSchema
+// above, minus avgTimeToMeeting (getDecisionsForRepBreakdown doesn't fetch
+// timeToOutcomeDays, so there's nothing to average per rep-per-verdict).
+const repVerdictAccuracySchema = z.object({
+  count: z.number().int().nonnegative(),
+  meetingRate: z.number().min(0).max(1).nullable(),
+});
+
 // Bible §4.4 Manager Morgan persona: "Decision accuracy score per rep" /
 // "Filter by rep, see decision history" -- one row per team member who has
 // generated at least one decision, using the exact same weighted
@@ -53,6 +64,7 @@ const repAccuracySchema = z.object({
   name: z.string(),
   totalDecisions: z.number().int().nonnegative(),
   score: z.number().min(0).max(1).nullable(),
+  byVerdict: z.record(verdictSchema, repVerdictAccuracySchema.optional()),
 });
 
 export const listOutcomesResponseSchema = z.object({

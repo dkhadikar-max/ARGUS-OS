@@ -140,18 +140,33 @@ export default async function AnalyticsPage({
                   <TableHeaderCell>Rep</TableHeaderCell>
                   <TableHeaderCell>Decisions</TableHeaderCell>
                   <TableHeaderCell>Accuracy</TableHeaderCell>
+                  <TableHeaderCell>STRONG YES vs team avg</TableHeaderCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {outcomes.accuracy.byRep.map((rep) => (
-                  <TableRow key={rep.userId}>
-                    <TableCell>{rep.name}</TableCell>
-                    <TableCell>{rep.totalDecisions}</TableCell>
-                    <TableCell>
-                      {rep.score === null ? "Not enough data yet" : `${Math.round(rep.score * 100)}%`}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {outcomes.accuracy.byRep.map((rep) => {
+                  // ARGUS Unanimous Policy v2.1 "Cross-Rep Benchmarking" (not
+                  // the Bible): "Your STRONG YES closes at 34% vs team avg
+                  // 28%" -- the team-wide figure reuses the same
+                  // aggregations.byVerdict.STRONG_YES the chart above already
+                  // computes, not a second implementation of the same number.
+                  const repStrongYes = rep.byVerdict.STRONG_YES;
+                  const teamStrongYes = outcomes.aggregations.byVerdict.STRONG_YES;
+                  return (
+                    <TableRow key={rep.userId}>
+                      <TableCell>{rep.name}</TableCell>
+                      <TableCell>{rep.totalDecisions}</TableCell>
+                      <TableCell>
+                        {rep.score === null ? "Not enough data yet" : `${Math.round(rep.score * 100)}%`}
+                      </TableCell>
+                      <TableCell>
+                        {repStrongYes?.meetingRate == null || !teamStrongYes
+                          ? "Not enough data yet"
+                          : `${Math.round(repStrongYes.meetingRate * 100)}% vs ${Math.round(teamStrongYes.meetingRate * 100)}%`}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </Card>

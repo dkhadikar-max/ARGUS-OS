@@ -35,6 +35,12 @@ function calibrationMode(totalDecisions: number): "learning" | "calibrating" | "
 // weighted STRONG_YES/YES meeting-rate proxy as the team-wide
 // `accuracy.score` above, just grouped by the rep who generated each
 // decision instead of collapsed across the whole team.
+//
+// `byVerdict` additionally buckets by (rep, verdict) -- ARGUS Unanimous
+// Policy v2.1's "Cross-Rep Benchmarking" ("Your STRONG YES closes at 34%
+// vs team avg 28%"), not the Bible. Only count/meetingRate, not
+// avgTimeToMeeting: getDecisionsForRepBreakdown doesn't select
+// timeToOutcomeDays, so there's nothing to average per rep-per-verdict.
 function computeRepBreakdown(
   decisions: Awaited<ReturnType<typeof getDecisionsForRepBreakdown>>,
 ): ListOutcomesResponse["accuracy"]["byRep"] {
@@ -42,6 +48,7 @@ function computeRepBreakdown(
     string,
     { name: string; totalDecisions: number; positivePredictions: number; meetings: number }
   >();
+  const byRepVerdict = new Map<string, Map<Verdict, { count: number; meetings: number; withOutcome: number }>>();
 
   for (const d of decisions) {
     const bucket = byRep.get(d.userId) ?? {
@@ -56,14 +63,37 @@ function computeRepBreakdown(
       if (MEETING_OUTCOME_TYPES.has(d.outcome.type)) bucket.meetings += 1;
     }
     byRep.set(d.userId, bucket);
+
+    const verdictMap = byRepVerdict.get(d.userId) ?? new Map<Verdict, { count: number; meetings: number; withOutcome: number }>();
+    const verdictBucket = verdictMap.get(d.verdict) ?? { count: 0, meetings: 0, withOutcome: 0 };
+    verdictBucket.count += 1;
+    if (d.outcome) {
+      verdictBucket.withOutcome += 1;
+      if (MEETING_OUTCOME_TYPES.has(d.outcome.type)) verdictBucket.meetings += 1;
+    }
+    verdictMap.set(d.verdict, verdictBucket);
+    byRepVerdict.set(d.userId, verdictMap);
   }
 
-  return Array.from(byRep.entries()).map(([userId, bucket]) => ({
-    userId,
-    name: bucket.name,
-    totalDecisions: bucket.totalDecisions,
-    score: bucket.positivePredictions > 0 ? bucket.meetings / bucket.positivePredictions : null,
-  }));
+  return Array.from(byRep.entries()).map(([userId, bucket]) => {
+    const verdictMap = byRepVerdict.get(userId);
+    const repByVerdict: Record<string, { count: number; meetingRate: number | null }> = {};
+    if (verdictMap) {
+      for (const [verdict, v] of verdictMap) {
+        repByVerdict[verdict] = {
+          count: v.count,
+          meetingRate: v.withOutcome > 0 ? v.meetings / v.withOutcome : null,
+        };
+      }
+    }
+    return {
+      userId,
+      name: bucket.name,
+      totalDecisions: bucket.totalDecisions,
+      score: bucket.positivePredictions > 0 ? bucket.meetings / bucket.positivePredictions : null,
+      byVerdict: repByVerdict as ListOutcomesResponse["accuracy"]["byRep"][number]["byVerdict"],
+    };
+  });
 }
 
 /**

@@ -210,8 +210,45 @@ describe("listOutcomesForTeam", () => {
     const result = await listOutcomesForTeam({ teamId: "team_1", limit: 20, offset: 0 });
 
     expect(result.accuracy.byRep).toEqual([
-      { userId: "user_1", name: "Sarah Rep", totalDecisions: 3, score: 0.5 },
-      { userId: "user_2", name: "unnamed@x.com", totalDecisions: 1, score: null },
+      {
+        userId: "user_1",
+        name: "Sarah Rep",
+        totalDecisions: 3,
+        score: 0.5,
+        byVerdict: {
+          STRONG_YES: { count: 1, meetingRate: 1 },
+          YES: { count: 1, meetingRate: 0 },
+          WAIT: { count: 1, meetingRate: null },
+        },
+      },
+      {
+        userId: "user_2",
+        name: "unnamed@x.com",
+        totalDecisions: 1,
+        score: null,
+        byVerdict: { PASS: { count: 1, meetingRate: null } },
+      },
     ]);
+  });
+
+  it("computes a per-rep, per-verdict breakdown for Cross-Rep Benchmarking (Policy v2.1, not the Bible: 'Your STRONG YES closes at 34% vs team avg 28%')", async () => {
+    repo.listOutcomes.mockResolvedValue({ rows: [], total: 0 });
+    repo.getVerdictAggregations.mockResolvedValue([]);
+    repo.countDecisionsForTeam.mockResolvedValue(4);
+    repo.getDecisionsForRepBreakdown.mockResolvedValue([
+      // Sarah: 2 of 2 STRONG_YES-with-outcome converted -- 100%.
+      { userId: "user_1", verdict: "STRONG_YES", user: { name: "Sarah Rep", email: "sarah@x.com" }, outcome: { type: "MEETING_BOOKED" } },
+      { userId: "user_1", verdict: "STRONG_YES", user: { name: "Sarah Rep", email: "sarah@x.com" }, outcome: { type: "OPPORTUNITY_CREATED" } },
+      // Jordan: 1 of 2 STRONG_YES-with-outcome converted -- 50%.
+      { userId: "user_2", verdict: "STRONG_YES", user: { name: "Jordan Rep", email: "jordan@x.com" }, outcome: { type: "MEETING_BOOKED" } },
+      { userId: "user_2", verdict: "STRONG_YES", user: { name: "Jordan Rep", email: "jordan@x.com" }, outcome: { type: "NO_RESPONSE" } },
+    ]);
+
+    const result = await listOutcomesForTeam({ teamId: "team_1", limit: 20, offset: 0 });
+
+    const sarah = result.accuracy.byRep.find((r) => r.userId === "user_1");
+    const jordan = result.accuracy.byRep.find((r) => r.userId === "user_2");
+    expect(sarah?.byVerdict.STRONG_YES).toEqual({ count: 2, meetingRate: 1 });
+    expect(jordan?.byVerdict.STRONG_YES).toEqual({ count: 2, meetingRate: 0.5 });
   });
 });
