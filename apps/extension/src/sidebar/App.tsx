@@ -9,6 +9,7 @@ import { EvidenceAccordion } from "./components/EvidenceAccordion.js";
 import { MessageComposer } from "./components/MessageComposer.js";
 import { VerdictActions } from "./components/VerdictActions.js";
 import { FullDebateView } from "./components/FullDebateView.js";
+import { OutcomeButtons } from "./components/OutcomeButtons.js";
 
 // Bible §7.2 EXT-5: full Clerk OAuth handshake lives in the web dashboard
 // (Epic 5, not yet built in this pass) — the sidebar only consumes a token
@@ -214,6 +215,7 @@ export function App({ onClose, mountStartedAt }: Props) {
               submitting={false}
               selectedVerdict={selectedVerdict}
             />
+            <OutcomeButtons decisionId={decision.id} existingOutcome={decision.outcome} />
           </div>
         )}
       </div>
