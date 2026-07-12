@@ -1,7 +1,9 @@
-import type { OutcomeType } from "@argus/database";
+import type { OutcomeType, Verdict } from "@argus/database";
 import { agentDebateOutputSchema, type CompanyMemoryResponse } from "@argus/shared";
 import { getCompanyMemory, getDecisionsForRiskFlags, getMessageDraftsForTeam } from "./memory.repository.js";
 import { slugify } from "../../lib/slugify.js";
+import { computeVersionAccuracy } from "../icp/icp.service.js";
+import { getDecisionsSince, getIcp } from "../icp/icp.repository.js";
 
 // Shape actually written by outcome.service.ts's updateCompanyMemoryPattern
 // -- an internal representation, distinct from (and mapped below to) Bible
@@ -225,31 +227,66 @@ function computeRiskFlags(decisions: DecisionForRiskFlags[]): CompanyMemoryRespo
     .slice(0, MAX_RISK_RESULTS);
 }
 
+interface IcpHistoryEntry {
+  version?: number;
+  accuracy?: number | null;
+}
+
+// Bible §10.5 `icpAccuracy` -- `current` is the *active* ICP version's own
+// accuracy, computed live from decisions since it activated (icp.service.ts
+// only snapshots a version's *final* accuracy into icpHistory once it's
+// retired, so the active one has to be scored fresh on every read). `trend`
+// compares that against the last *closed* version's own final accuracy --
+// an honest "not enough history yet" (not a fabricated delta) until at
+// least one ICP edit has happened since this feature shipped, since
+// icpHistory starts empty for every team regardless of how long they've
+// had an ICP defined.
+function computeIcpAccuracy(
+  icp: { updatedAt: Date } | null,
+  decisionsSinceActivation: Array<{ verdict: Verdict; outcome: { type: OutcomeType } | null }>,
+  icpHistory: unknown,
+): CompanyMemoryResponse["icpAccuracy"] {
+  if (!icp) return null;
+
+  const current = computeVersionAccuracy(decisionsSinceActivation);
+  if (current === null) return null; // active version hasn't earned a scoreable outcome yet
+
+  const history = Array.isArray(icpHistory) ? (icpHistory as IcpHistoryEntry[]) : [];
+  const lastClosedVersion = history[history.length - 1];
+  const trend =
+    lastClosedVersion && typeof lastClosedVersion.accuracy === "number"
+      ? `${current - lastClosedVersion.accuracy >= 0 ? "+" : ""}${(current - lastClosedVersion.accuracy).toFixed(2)}`
+      : "not enough history yet";
+
+  return { current, trend, lastUpdated: new Date().toISOString() };
+}
+
 /** Bible §10.5 GET /api/v1/memory. A brand-new team with no outcomes logged
  *  yet has no CompanyMemory row at all (§5.3's "empty on Day 1" cold-start
  *  problem) -- that's a valid, expected state, not a 404: this returns the
  *  same empty shape either way. */
 export async function getCompanyMemoryForTeam(teamId: string): Promise<CompanyMemoryResponse> {
-  const [memory, messageDrafts, riskDecisions] = await Promise.all([
+  const [memory, messageDrafts, riskDecisions, icp] = await Promise.all([
     getCompanyMemory(teamId),
     getMessageDraftsForTeam(teamId),
     getDecisionsForRiskFlags(teamId),
+    getIcp(teamId),
   ]);
+
+  const decisionsSinceIcpActivation = icp ? await getDecisionsSince(teamId, icp.updatedAt) : [];
 
   const patterns = Array.isArray(memory?.patterns)
     ? (memory.patterns as unknown as InternalPattern[]).map(toPublicPattern)
     : [];
 
-  // icpAccuracy has no producer anywhere in this codebase yet (see README
-  // "Company Memory" section for exactly why it's separate, larger scope)
-  // -- returned honestly null rather than fabricated. patterns,
-  // topPerformingMessages, and riskFlags are all real now.
+  // patterns, topPerformingMessages, riskFlags, and icpAccuracy are all
+  // real now -- computed server-side, not fabricated.
   return {
     teamId,
     generatedAt: new Date().toISOString(),
     patterns,
     riskFlags: computeRiskFlags(riskDecisions),
-    icpAccuracy: null,
+    icpAccuracy: computeIcpAccuracy(icp, decisionsSinceIcpActivation, memory?.icpHistory),
     topPerformingMessages: computeTopPerformingMessages(messageDrafts),
   };
 }

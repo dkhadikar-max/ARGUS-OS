@@ -1,12 +1,11 @@
 import { api } from "../../lib/api-client";
 import { PatternCard } from "../../components/PatternCard";
 
-// Bible §18 DSH-4 "Company Memory". Patterns, top-performing messages, and
-// now risk flags are all real, computed server-side (see README "Company
-// Memory" for exactly what each one does and doesn't mean). ICP accuracy
-// still has no producer anywhere in this codebase yet -- shown as an
-// honest empty state rather than fabricated data, and flagged in README
-// rather than silently hidden.
+// Bible §18 DSH-4 "Company Memory". Patterns, top-performing messages, risk
+// flags, and ICP accuracy are all real, computed server-side (see README
+// "Company Memory" for exactly what each one does and doesn't mean, and
+// exactly why ICP accuracy can still show its own empty state for a team
+// that hasn't edited its ICP since this feature shipped).
 export default async function CompanyMemoryPage() {
   const memory = await api.getCompanyMemory();
 
@@ -78,9 +77,9 @@ export default async function CompanyMemoryPage() {
           </p>
         ) : (
           <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">
-            <p className="text-sm font-medium text-gray-900">Not tracked yet</p>
+            <p className="text-sm font-medium text-gray-900">Not enough data yet</p>
             <p className="mt-1 text-sm text-gray-500">
-              ICP accuracy needs versioned ICP history this codebase doesn&apos;t track yet — see the project README.
+              This fills in once your current ICP has at least one STRONG YES or YES decision with a logged outcome.
             </p>
           </div>
         )}

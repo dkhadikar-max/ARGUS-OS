@@ -7,12 +7,21 @@ const repo = {
 };
 vi.mock("./memory.repository.js", () => repo);
 
+// icp.service.js's computeVersionAccuracy is real, pure, already-tested
+// logic -- left unmocked so these tests exercise the real integration
+// rather than a second stand-in for it. Only its own data-fetching
+// repository is mocked.
+const icpRepo = { getIcp: vi.fn(), getDecisionsSince: vi.fn() };
+vi.mock("../icp/icp.repository.js", () => icpRepo);
+
 const { getCompanyMemoryForTeam } = await import("./memory.service.js");
 
 beforeEach(() => {
   vi.clearAllMocks();
   repo.getMessageDraftsForTeam.mockResolvedValue([]);
   repo.getDecisionsForRiskFlags.mockResolvedValue([]);
+  icpRepo.getIcp.mockResolvedValue(null);
+  icpRepo.getDecisionsSince.mockResolvedValue([]);
 });
 
 // A minimal but schema-valid agentDebateOutput -- only `risk.risks` varies
@@ -308,5 +317,58 @@ describe("getCompanyMemoryForTeam — riskFlags", () => {
 
     expect(result.riskFlags).toHaveLength(1);
     expect(result.riskFlags[0]?.occurrenceRate).toBe(1); // 3 decisions, not 4 risk-item occurrences
+  });
+});
+
+describe("getCompanyMemoryForTeam — icpAccuracy", () => {
+  it("returns null when the team has no ICP defined at all", async () => {
+    icpRepo.getIcp.mockResolvedValue(null);
+
+    const result = await getCompanyMemoryForTeam("team_1");
+
+    expect(result.icpAccuracy).toBeNull();
+    expect(icpRepo.getDecisionsSince).not.toHaveBeenCalled();
+  });
+
+  it("returns null when the active version has no scoreable (STRONG_YES/YES + logged outcome) decisions yet", async () => {
+    const activatedAt = new Date("2026-07-01T00:00:00Z");
+    icpRepo.getIcp.mockResolvedValue({ version: 2, updatedAt: activatedAt });
+    icpRepo.getDecisionsSince.mockResolvedValue([{ verdict: "WAIT", outcome: { type: "MEETING_BOOKED" } }]);
+
+    const result = await getCompanyMemoryForTeam("team_1");
+
+    expect(result.icpAccuracy).toBeNull();
+    expect(icpRepo.getDecisionsSince).toHaveBeenCalledWith("team_1", activatedAt);
+  });
+
+  it("computes current accuracy live from decisions since the active version activated, with an honest 'not enough history' trend when icpHistory is empty", async () => {
+    icpRepo.getIcp.mockResolvedValue({ version: 2, updatedAt: new Date("2026-07-01T00:00:00Z") });
+    icpRepo.getDecisionsSince.mockResolvedValue([
+      { verdict: "STRONG_YES", outcome: { type: "MEETING_BOOKED" } },
+      { verdict: "YES", outcome: { type: "NO_RESPONSE" } },
+    ]);
+    repo.getCompanyMemory.mockResolvedValue({ patterns: [], icpHistory: [] });
+
+    const result = await getCompanyMemoryForTeam("team_1");
+
+    expect(result.icpAccuracy?.current).toBe(0.5);
+    expect(result.icpAccuracy?.trend).toBe("not enough history yet");
+  });
+
+  it("computes trend as a signed delta against the last closed version's own accuracy", async () => {
+    icpRepo.getIcp.mockResolvedValue({ version: 2, updatedAt: new Date("2026-07-01T00:00:00Z") });
+    icpRepo.getDecisionsSince.mockResolvedValue([
+      { verdict: "STRONG_YES", outcome: { type: "MEETING_BOOKED" } },
+      { verdict: "STRONG_YES", outcome: { type: "MEETING_BOOKED" } },
+    ]); // current = 1.0
+    repo.getCompanyMemory.mockResolvedValue({
+      patterns: [],
+      icpHistory: [{ version: 1, accuracy: 0.6 }],
+    });
+
+    const result = await getCompanyMemoryForTeam("team_1");
+
+    expect(result.icpAccuracy?.current).toBe(1);
+    expect(result.icpAccuracy?.trend).toBe("+0.40");
   });
 });
