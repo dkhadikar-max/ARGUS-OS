@@ -1,0 +1,72 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --obsidian: #0A0E17;
+    --graphite: #111827;
+    --slate: #374151;
+    --ash: #6B7280;
+    --pearl: #F3F4F6;
+    --amber: #D97706;
+    --amber-glow: #F59E0B;
+    --signal: #059669;
+    --alert: #DC2626;
+    --wait: #6366F1;
+    --pass: #6B7280;
+    --hard-pass: #1F2937;
+    --border-default: rgba(55, 65, 81, 0.5);
+    --border-bright: rgba(217, 119, 6, 0.3);
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    font-family: var(--font-sans), system-ui, sans-serif;
+    background-color: var(--obsidian);
+    color: var(--pearl);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background-color: rgba(217, 119, 6, 0.3);
+    color: var(--pearl);
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--obsidian);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--slate);
+    border-radius: 0;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--ash);
+  }
+}
+
+@layer components {
+  .font-mono {
+    font-family: var(--font-mono), ui-monospace, monospace;
+  }
+
+  .section-label {
+    @apply font-mono text-[11px] text-amber uppercase tracking-[0.15em] mb-4;
+  }
+
+  .hairline-border {
+    border: 1px solid var(--border-default);
+  }
+
+  .hairline-border-bright {
+    border: 1px solid var(--border-bright);
+  }
+}
