@@ -23,10 +23,10 @@ apps/dashboard       Next.js 16 App Router + Clerk + Today Queue (Bible §6.2, �
 
 Docker wasn't available when this repo was scaffolded. Until it is, install both as native services:
 
-- **PostgreSQL**: install via the [EnterpriseDB installer](https://www.postgresql.org/download/windows/), or `winget install PostgreSQL.PostgreSQL`. Create a database named `argus`.
-- **Redis**: native Windows builds aren't officially maintained by Redis; the simplest options are `winget install Memurai.Memurai` (Redis-compatible, runs as a Windows service) or WSL2 with `apt install redis-server`.
+- **PostgreSQL**: install via the [EnterpriseDB installer](https://www.postgresql.org/download/windows/), or `winget install PostgreSQL.PostgreSQL`. Create a database named `argus`. **Done on this machine** — PostgreSQL 18 runs as the `postgresql-x64-18` Windows service; the `argus` database exists and the first-ever migration (`20260712170501_init`, all 19 models) has been applied and verified against a live connection (not mocked).
+- **Redis**: native Windows builds aren't officially maintained by Redis; the simplest options are `winget install Memurai.Memurai` (Redis-compatible, runs as a Windows service) or WSL2 with `apt install redis-server`. **Not yet installed on this machine** — `apps/api` boots without it (`ioredis` logs a connection error and retries in the background rather than crashing), but anything that actually depends on Redis (decision caching, Socket.io pub/sub in `lib/websocket.ts`) will silently fail until it's installed and `REDIS_URL` points at a real instance.
 
-Once either is running, set `DATABASE_URL` / `REDIS_URL` in `apps/api/.env` (copy from `.env.example` at the repo root) to point at them, then run:
+Once either is running, set `DATABASE_URL` / `REDIS_URL` in `apps/api/.env` and `packages/database/.env` (copy from `.env.example` at the repo root — Prisma CLI reads its own `.env` from `packages/database/`, not the repo root) to point at them, then run:
 
 ```
 npm run db:migrate    # applies packages/database/prisma/schema.prisma
@@ -315,7 +315,7 @@ The 11 commits after the audit above (Full Debate View, Datadog metrics, Company
 npm run test           # runs every workspace's Vitest suite
 ```
 
-Tests mock Prisma/Redis/the Anthropic SDK at the module boundary, so the full suite runs without a live database, cache, or API key — useful in CI or on a machine without Postgres/Redis installed. There is currently no integration test suite against a real database; that's the natural next addition once local Postgres is available.
+Tests mock Prisma/Redis/the Anthropic SDK at the module boundary, so the full suite runs without a live database, cache, or API key — useful in CI or on a machine without Postgres/Redis installed. Local Postgres is now available (see "Installing Postgres + Redis" above) and the API has been manually verified to boot and query it live, but there is still no automated integration test suite that runs against a real database — that's the natural next addition.
 
 `apps/extension` got its first test suite in this pass (`lib/analytics.ts`, mocking posthog-js) — its React components (VerdictCard, MessageComposer, etc.) still have none, consistent with this being a Chrome extension where meaningful component tests would need a DOM-and-Chrome-API test harness that doesn't exist yet, rather than something skipped by oversight.
 
