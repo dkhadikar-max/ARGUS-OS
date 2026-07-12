@@ -141,6 +141,28 @@ export function QueueItemCard({ item }: { item: QueueItem }) {
 
       {expanded && decision && (
         <div className="mt-3 space-y-2 border-t border-gray-100 pt-3">
+          {/* ARGUS Unanimous Policy v2.1 L4 Policy Engine (not the Bible) --
+              the "Policy Check" step's own flags, proactively shown here so
+              a rep sees why before clicking Message, not only after a BLOCK
+              flag rejects the action (recordAction's own error already
+              covers that case; this covers FLAG/REQUIRE_APPROVAL too, which
+              don't block anything but shouldn't be invisible either). */}
+          {decision.policyFlags && decision.policyFlags.length > 0 && (
+            <ul className="space-y-1">
+              {decision.policyFlags.map((flag, i) => (
+                <li
+                  key={i}
+                  className={`rounded border-l-2 p-2 text-xs ${
+                    flag.action === "BLOCK"
+                      ? "border-red-400 bg-red-50 text-red-700"
+                      : "border-amber-400 bg-amber-50 text-amber-800"
+                  }`}
+                >
+                  <span className="font-semibold">{flag.action}:</span> {flag.message}
+                </li>
+              ))}
+            </ul>
+          )}
           <p className="text-sm text-gray-700">{decision.reasoning}</p>
           {(decision.message.linkedin ?? decision.message.email) && (
             <p className="whitespace-pre-wrap rounded bg-gray-50 p-2 text-sm text-gray-800">

@@ -173,4 +173,34 @@ describe("QueueItemCard", () => {
 
     expect(await screen.findByText("An action has already been recorded for this decision")).toBeInTheDocument();
   });
+
+  it("shows the Policy Engine's flags when expanded (Policy v2.1 L4, not the Bible)", async () => {
+    const user = userEvent.setup();
+    getFullDecisionAction.mockResolvedValue({
+      ok: true,
+      decision: fullDecision({
+        policyFlags: [
+          { field: "verdict", action: "BLOCK", message: "Do not contact HARD_PASS prospects" },
+          { field: "confidence", action: "FLAG", message: "Very high confidence -- double-check evidence" },
+        ],
+      }),
+    });
+    render(<QueueItemCard item={item} />);
+
+    await user.click(screen.getByRole("button", { name: "View" }));
+
+    expect(await screen.findByText("Do not contact HARD_PASS prospects")).toBeInTheDocument();
+    expect(screen.getByText("Very high confidence -- double-check evidence")).toBeInTheDocument();
+  });
+
+  it("shows no policy-flags section when the decision has none", async () => {
+    const user = userEvent.setup();
+    getFullDecisionAction.mockResolvedValue({ ok: true, decision: fullDecision({ policyFlags: [] }) });
+    render(<QueueItemCard item={item} />);
+
+    await user.click(screen.getByRole("button", { name: "View" }));
+
+    await screen.findByText("Strong fit, hiring SREs.");
+    expect(screen.queryByText(/BLOCK:|FLAG:|REQUIRE_APPROVAL:/)).not.toBeInTheDocument();
+  });
 });
