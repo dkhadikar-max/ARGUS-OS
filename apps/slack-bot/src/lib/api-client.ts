@@ -5,6 +5,8 @@ import type {
   CreateOutcomeRequest,
   CreateOutcomeResponse,
   DecisionResponse,
+  EditMessageDraftRequest,
+  EditMessageDraftResponse,
   OverrideDecisionRequest,
   OverrideDecisionResponse,
   QueueResponse,
@@ -108,6 +110,13 @@ export const argusApi = {
   recordAction: (creds: TeamCredentials, decisionId: string, payload: CreateActionRequest) =>
     request<CreateActionResponse>(`/api/v1/decisions/${decisionId}/action`, {
       method: "POST",
+      headers: authHeaders(creds),
+      body: JSON.stringify(payload),
+    }),
+
+  editMessage: (creds: TeamCredentials, decisionId: string, payload: EditMessageDraftRequest) =>
+    request<EditMessageDraftResponse>(`/api/v1/decisions/${decisionId}/message`, {
+      method: "PATCH",
       headers: authHeaders(creds),
       body: JSON.stringify(payload),
     }),

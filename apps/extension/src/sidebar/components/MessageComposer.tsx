@@ -34,6 +34,8 @@ export function MessageComposer({ decisionId, message, onRegenerate, regeneratin
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message[channel] ?? "");
   const [copied, setCopied] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const original = message[channel] ?? "";
   const body = editing ? draft : original;
@@ -69,7 +71,7 @@ export function MessageComposer({ decisionId, message, onRegenerate, regeneratin
       .catch(() => undefined);
   }
 
-  function handleToggleEdit() {
+  async function handleToggleEdit() {
     if (editing) {
       // Toggling off = "Save". Only a real length change counts as an edit.
       if (draft !== original) {
@@ -82,9 +84,26 @@ export function MessageComposer({ decisionId, message, onRegenerate, regeneratin
           name: "message_edited",
           properties: { decision_id: decisionId, edit_type: editType, original_length: originalLength, new_length: newLength },
         });
+
+        // Bible §9.1 MessageDraft.wasEdited/editDiff, now actually persisted
+        // (apps/api decision.service.ts editMessageDraft) instead of only
+        // living in this component's local state. A save failure doesn't
+        // block anything -- `draft` is still right here to copy -- but it's
+        // surfaced rather than silently swallowed, since the rep otherwise
+        // has no way to know ARGUS never saw their edit.
+        setSaveError(null);
+        setSaving(true);
+        try {
+          await api.editMessage(decisionId, { body: draft });
+        } catch {
+          setSaveError("Couldn't save this edit to ARGUS, but you can still copy it below.");
+        } finally {
+          setSaving(false);
+        }
       }
       setEditing(false);
     } else {
+      setSaveError(null);
       setEditing(true);
     }
   }
@@ -124,9 +143,10 @@ export function MessageComposer({ decisionId, message, onRegenerate, regeneratin
           <button
             type="button"
             onClick={handleToggleEdit}
-            className="rounded border border-gray-300 px-3 py-1.5 text-gray-700 hover:bg-gray-50"
+            disabled={saving}
+            className="rounded border border-gray-300 px-3 py-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-40"
           >
-            {editing ? "Save" : "Edit"}
+            {saving ? "Saving…" : editing ? "Save" : "Edit"}
           </button>
           <button
             type="button"
@@ -145,6 +165,7 @@ export function MessageComposer({ decisionId, message, onRegenerate, regeneratin
             Switch to {otherChannel === "linkedin" ? "LinkedIn" : "Email"}
           </button>
         </div>
+        {saveError && <p className="mt-2 text-xs text-red-600">{saveError}</p>}
       </div>
     </div>
   );

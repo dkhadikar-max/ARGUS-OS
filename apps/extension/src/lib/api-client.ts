@@ -5,6 +5,8 @@ import type {
   CreateOutcomeRequest,
   CreateOutcomeResponse,
   DecisionResponse,
+  EditMessageDraftRequest,
+  EditMessageDraftResponse,
   OverrideDecisionRequest,
   OverrideDecisionResponse,
   ShareDecisionResponse,
@@ -51,4 +53,7 @@ export const api = {
 
   shareDecision: (decisionId: string) =>
     send<ShareDecisionResponse>({ type: "API_SHARE_DECISION", decisionId }),
+
+  editMessage: (decisionId: string, payload: EditMessageDraftRequest) =>
+    send<EditMessageDraftResponse>({ type: "API_EDIT_MESSAGE", decisionId, payload }),
 };

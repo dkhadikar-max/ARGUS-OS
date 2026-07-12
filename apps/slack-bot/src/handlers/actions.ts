@@ -143,14 +143,38 @@ export function registerActionHandlers(app: App): void {
 
   app.view("decision_edit_submit", async ({ ack, view, body, client }) => {
     await ack();
+    const decisionId = view.private_metadata;
     const edited = view.state.values["message_block"]?.["message_input"]?.value ?? "";
     const dm = await client.conversations.open({ users: body.user.id });
-    if (dm.channel?.id) {
-      await client.chat.postMessage({ channel: dm.channel.id, text: `Your edited message:\n${edited}` });
+
+    async function dmText(text: string) {
+      if (dm.channel?.id) {
+        await client.chat.postMessage({ channel: dm.channel.id, text }).catch(() => undefined);
+      }
     }
-    // Bible §10 has no "update message draft" endpoint (the LinkedIn
-    // sidebar's own edit is client-local too, see apps/extension
-    // MessageComposer.tsx) — this edit is likewise not persisted server-side.
+
+    if (!edited.trim()) {
+      await dmText("Message was empty — nothing to save.");
+      return;
+    }
+
+    const slackTeamId = body.team?.id;
+    const argusUserId = slackTeamId ? await resolveUser(slackTeamId, body.user.id) : null;
+    if (!slackTeamId || !argusUserId) {
+      await dmText(
+        `Your edited message (not saved — run \`/argus link\` first so I know which ARGUS account you are):\n${edited}`,
+      );
+      return;
+    }
+
+    try {
+      const team = await resolveTeam(slackTeamId);
+      await argusApi.editMessage({ apiKey: team.apiKey, actingUserId: argusUserId }, decisionId, { body: edited });
+      await dmText(`Your edited message (saved):\n${edited}`);
+    } catch (err) {
+      console.error('ARGUS Slack "decision_edit_submit" failed', err);
+      await dmText(`Your edited message (couldn't be saved — please try again):\n${edited}`);
+    }
   });
 
   app.action("decision_view_more", async ({ ack, body, respond }) => {

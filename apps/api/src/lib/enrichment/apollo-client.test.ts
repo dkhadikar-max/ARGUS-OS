@@ -67,3 +67,71 @@ describe("enrichOrganizationByDomain — configured", () => {
     await expect(enrichOrganizationByDomain("dataflow.io")).rejects.toThrow(/status 500/);
   });
 });
+
+describe("enrichPersonByLinkedInUrl — not configured", () => {
+  it("returns null without making a request when APOLLO_API_KEY is unset", async () => {
+    vi.doMock("../../config/env.js", () => ({ env: { APOLLO_API_KEY: undefined } }));
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { enrichPersonByLinkedInUrl } = await import("./apollo-client.js");
+    const result = await enrichPersonByLinkedInUrl("https://linkedin.com/in/sarahchen");
+
+    expect(result).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("enrichPersonByLinkedInUrl — configured", () => {
+  beforeEach(() => {
+    vi.doMock("../../config/env.js", () => ({ env: { APOLLO_API_KEY: "test-key" } }));
+  });
+
+  it("calls the verified Apollo people/match endpoint with the x-api-key header", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        person: {
+          title: "VP Engineering",
+          seniority: "vp",
+          email: "sarah@dataflow.io",
+          email_status: "verified",
+        },
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { enrichPersonByLinkedInUrl } = await import("./apollo-client.js");
+    const result = await enrichPersonByLinkedInUrl("https://linkedin.com/in/sarahchen");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.apollo.io/api/v1/people/match?linkedin_url=https%3A%2F%2Flinkedin.com%2Fin%2Fsarahchen",
+      expect.objectContaining({ method: "POST", headers: { "x-api-key": "test-key" } }),
+    );
+    expect(result).toEqual({
+      title: "VP Engineering",
+      seniority: "vp",
+      email: "sarah@dataflow.io",
+      emailStatus: "verified",
+    });
+  });
+
+  it("returns null on a 404 (no matching person) instead of throwing", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404 }));
+    const { enrichPersonByLinkedInUrl } = await import("./apollo-client.js");
+    await expect(enrichPersonByLinkedInUrl("https://linkedin.com/in/unknown")).resolves.toBeNull();
+  });
+
+  it("returns null when Apollo has no person object in the response body", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) }));
+    const { enrichPersonByLinkedInUrl } = await import("./apollo-client.js");
+    await expect(enrichPersonByLinkedInUrl("https://linkedin.com/in/sarahchen")).resolves.toBeNull();
+  });
+
+  it("throws on a genuine API failure so the caller can decide how to degrade", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500 }));
+    const { enrichPersonByLinkedInUrl } = await import("./apollo-client.js");
+    await expect(enrichPersonByLinkedInUrl("https://linkedin.com/in/sarahchen")).rejects.toThrow(/status 500/);
+  });
+});

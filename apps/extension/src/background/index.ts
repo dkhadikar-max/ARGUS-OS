@@ -100,6 +100,15 @@ async function handleMessage(message: ExtensionMessage): Promise<ExtensionRespon
           data: await apiFetch(`/api/v1/decisions/${message.decisionId}/share`, { method: "POST" }),
         };
 
+      case "API_EDIT_MESSAGE":
+        return {
+          ok: true,
+          data: await apiFetch(`/api/v1/decisions/${message.decisionId}/message`, {
+            method: "PATCH",
+            body: JSON.stringify(message.payload),
+          }),
+        };
+
       default:
         return { ok: false, error: "Unknown message type" };
     }

@@ -2,7 +2,8 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { Prospect } from "@argus/database";
 
 const enrichOrganizationByDomain = vi.fn();
-vi.mock("./apollo-client.js", () => ({ enrichOrganizationByDomain }));
+const enrichPersonByLinkedInUrl = vi.fn();
+vi.mock("./apollo-client.js", () => ({ enrichOrganizationByDomain, enrichPersonByLinkedInUrl }));
 
 const enrichCompanyByDomain = vi.fn();
 vi.mock("./clearbit-client.js", () => ({ enrichCompanyByDomain }));
@@ -18,6 +19,9 @@ const { enrichProspect } = await import("./enrichment.service.js");
 function prospect(overrides: Partial<Record<string, unknown>> = {}): Prospect {
   return {
     id: "prospect_1",
+    linkedInUrl: "https://linkedin.com/in/sarahchen",
+    title: null,
+    email: null,
     companyDomain: "dataflow.io",
     companySize: null,
     companyIndustry: null,
@@ -29,21 +33,24 @@ function prospect(overrides: Partial<Record<string, unknown>> = {}): Prospect {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  enrichPersonByLinkedInUrl.mockResolvedValue(null);
 });
 
 describe("enrichProspect", () => {
-  it("skips enrichment entirely when the prospect has no companyDomain", async () => {
+  it("skips company-level lookups (but still attempts person lookup) when the prospect has no companyDomain", async () => {
     const p = prospect({ companyDomain: null });
-    const result = await enrichProspect(p);
-    expect(result).toEqual({ prospect: p, apollo: null, clearbit: null });
+    await enrichProspect(p);
     expect(enrichOrganizationByDomain).not.toHaveBeenCalled();
+    expect(enrichCompanyByDomain).not.toHaveBeenCalled();
+    expect(enrichPersonByLinkedInUrl).toHaveBeenCalledWith("https://linkedin.com/in/sarahchen");
   });
 
-  it("skips re-enrichment within the 30-day staleness window (Bible §9.1 lastEnrichedAt)", async () => {
+  it("skips re-enrichment (including person lookup) within the 30-day staleness window (Bible §9.1 lastEnrichedAt)", async () => {
     const recentlyEnriched = prospect({ lastEnrichedAt: new Date(Date.now() - 1000) });
     const result = await enrichProspect(recentlyEnriched);
-    expect(result.apollo).toBeNull();
+    expect(result).toEqual({ prospect: recentlyEnriched, apollo: null, clearbit: null, person: null });
     expect(enrichOrganizationByDomain).not.toHaveBeenCalled();
+    expect(enrichPersonByLinkedInUrl).not.toHaveBeenCalled();
   });
 
   it("re-enriches once the 30-day window has passed", async () => {
@@ -78,6 +85,69 @@ describe("enrichProspect", () => {
     expect(result.apollo?.estimatedNumEmployees).toBe(87);
   });
 
+  it("fills in title and email from Apollo's person match only when the prospect doesn't already have them", async () => {
+    const p = prospect({ title: null, email: null });
+    enrichOrganizationByDomain.mockResolvedValue(null);
+    enrichCompanyByDomain.mockResolvedValue(null);
+    enrichPersonByLinkedInUrl.mockResolvedValue({
+      title: "VP Engineering",
+      seniority: "vp",
+      email: "sarah@dataflow.io",
+      emailStatus: "verified",
+    });
+    prisma.prospect.update.mockResolvedValue({ ...p, title: "VP Engineering", email: "sarah@dataflow.io" });
+
+    const result = await enrichProspect(p);
+
+    expect(prisma.prospect.update).toHaveBeenCalledWith({
+      where: { id: "prospect_1" },
+      data: expect.objectContaining({ title: "VP Engineering", email: "sarah@dataflow.io" }),
+    });
+    expect(result.person?.seniority).toBe("vp");
+  });
+
+  it("never overwrites an already-known title or email with Apollo's person match (live scrape/existing data wins)", async () => {
+    const p = prospect({ title: "Director of Platform", email: "sarah.existing@dataflow.io" });
+    enrichOrganizationByDomain.mockResolvedValue(null);
+    enrichCompanyByDomain.mockResolvedValue(null);
+    enrichPersonByLinkedInUrl.mockResolvedValue({
+      title: "VP Engineering",
+      seniority: "vp",
+      email: "sarah@dataflow.io",
+      emailStatus: "verified",
+    });
+    prisma.prospect.update.mockResolvedValue(p);
+
+    await enrichProspect(p);
+
+    expect(prisma.prospect.update).toHaveBeenCalledWith({
+      where: { id: "prospect_1" },
+      data: expect.objectContaining({ title: "Director of Platform", email: "sarah.existing@dataflow.io" }),
+    });
+  });
+
+  it("degrades gracefully when Apollo person enrichment fails but org enrichment succeeds (Bible §16.1 Risk #4)", async () => {
+    const p = prospect();
+    enrichOrganizationByDomain.mockResolvedValue({
+      industry: "SaaS",
+      estimatedNumEmployees: 50,
+      totalFunding: null,
+      latestFundingRoundDate: null,
+    });
+    enrichCompanyByDomain.mockResolvedValue(null);
+    enrichPersonByLinkedInUrl.mockRejectedValue(new Error("Apollo person match is down"));
+    prisma.prospect.update.mockResolvedValue({ ...p, companyIndustry: "SaaS" });
+
+    const result = await enrichProspect(p);
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ prospectId: "prospect_1" }),
+      expect.stringContaining("Apollo person enrichment failed"),
+    );
+    expect(result.person).toBeNull();
+    expect(result.apollo?.industry).toBe("SaaS");
+  });
+
   it("degrades gracefully when Apollo fails but Clearbit succeeds (Bible §16.1 Risk #4)", async () => {
     const p = prospect();
     enrichOrganizationByDomain.mockRejectedValue(new Error("Apollo is down"));
@@ -94,14 +164,15 @@ describe("enrichProspect", () => {
     expect(prisma.prospect.update).toHaveBeenCalled();
   });
 
-  it("leaves the prospect untouched when both providers fail", async () => {
+  it("leaves the prospect untouched when every provider fails or finds nothing", async () => {
     const p = prospect();
     enrichOrganizationByDomain.mockRejectedValue(new Error("down"));
     enrichCompanyByDomain.mockRejectedValue(new Error("down"));
+    enrichPersonByLinkedInUrl.mockResolvedValue(null);
 
     const result = await enrichProspect(p);
 
-    expect(result).toEqual({ prospect: p, apollo: null, clearbit: null });
+    expect(result).toEqual({ prospect: p, apollo: null, clearbit: null, person: null });
     expect(prisma.prospect.update).not.toHaveBeenCalled();
   });
 });

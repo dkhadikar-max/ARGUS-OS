@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDecisionRequestSchema, decisionResponseSchema, overrideDecisionRequestSchema } from "./decision.js";
+import { createDecisionRequestSchema, decisionResponseSchema, editMessageDraftRequestSchema, overrideDecisionRequestSchema } from "./decision.js";
 
 describe("createDecisionRequestSchema", () => {
   const baseRequest = {
@@ -36,6 +36,20 @@ describe("createDecisionRequestSchema", () => {
   it("rejects an unknown context.source", () => {
     const invalid = { ...baseRequest, context: { ...baseRequest.context, source: "email_client" } };
     expect(createDecisionRequestSchema.safeParse(invalid).success).toBe(false);
+  });
+});
+
+describe("editMessageDraftRequestSchema", () => {
+  it("accepts a non-empty body", () => {
+    expect(editMessageDraftRequestSchema.safeParse({ body: "Hi Sarah, edited version" }).success).toBe(true);
+  });
+
+  it("rejects an empty body", () => {
+    expect(editMessageDraftRequestSchema.safeParse({ body: "" }).success).toBe(false);
+  });
+
+  it("rejects a missing body", () => {
+    expect(editMessageDraftRequestSchema.safeParse({}).success).toBe(false);
   });
 });
 

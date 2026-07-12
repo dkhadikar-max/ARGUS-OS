@@ -161,6 +161,26 @@ export async function createOverride(input: {
   });
 }
 
+/** Bible §9.1 MessageDraft.wasEdited/editDiff -- §10 never contracts an
+ *  endpoint to write these (see decision.service.ts editMessageDraft's
+ *  comment). `editDiff` is passed in already resolved by the caller (the
+ *  original pre-edit text on a first edit, left unchanged on a re-edit),
+ *  not recomputed here. */
+export async function updateMessageDraft(input: {
+  draftId: string;
+  body: string;
+  editDiff: string | null;
+}) {
+  return prisma.messageDraft.update({
+    where: { id: input.draftId },
+    data: {
+      body: input.body,
+      wasEdited: true,
+      editDiff: input.editDiff,
+    },
+  });
+}
+
 export async function createActionTaken(input: {
   decisionId: string;
   actionType: ActionType;

@@ -1,10 +1,11 @@
 import { Router } from "express";
-import { createActionRequestSchema, createDecisionRequestSchema, overrideDecisionRequestSchema } from "@argus/shared";
+import { createActionRequestSchema, createDecisionRequestSchema, editMessageDraftRequestSchema, overrideDecisionRequestSchema } from "@argus/shared";
 import { requireAuth } from "../../middleware/auth.js";
 import { rateLimit } from "../../middleware/rate-limit.js";
 import { validate } from "../../middleware/validate.js";
 import {
   createDecisionHandler,
+  editMessageDraftHandler,
   getDecisionHandler,
   overrideDecisionHandler,
   recordActionHandler,
@@ -45,3 +46,13 @@ decisionRouter.post(
 // contracted by §10 either (see decision.service.ts shareDecision's
 // comment), inferred the same way the action endpoint above was.
 decisionRouter.post("/:id/share", requireAuth, shareDecisionHandler);
+
+// Bible §9.1 MessageDraft.wasEdited/editDiff — not contracted by §10 either
+// (see decision.service.ts editMessageDraft's comment), inferred the same
+// way as the action/share endpoints above.
+decisionRouter.patch(
+  "/:id/message",
+  requireAuth,
+  validate(editMessageDraftRequestSchema),
+  editMessageDraftHandler,
+);

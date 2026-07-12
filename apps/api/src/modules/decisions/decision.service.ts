@@ -1,4 +1,4 @@
-import { agentDebateOutputSchema, AppError, type CreateActionRequest, type CreateActionResponse, type CreateDecisionRequest, type DecisionResponse, type OverrideDecisionRequest, type OverrideDecisionResponse, type ShareDecisionResponse } from "@argus/shared";
+import { agentDebateOutputSchema, AppError, type CreateActionRequest, type CreateActionResponse, type CreateDecisionRequest, type DecisionResponse, type EditMessageDraftRequest, type EditMessageDraftResponse, type OverrideDecisionRequest, type OverrideDecisionResponse, type ShareDecisionResponse } from "@argus/shared";
 import type { AuthContext } from "../../middleware/auth.js";
 import { runAgentDebate } from "../../agents/orchestrator.js";
 import {
@@ -11,6 +11,7 @@ import {
   getProspectDecisionHistory,
   getTeamOutcomeHistory,
   getUserPreferences,
+  updateMessageDraft,
   upsertProspect,
 } from "./decision.repository.js";
 import type { EvidenceType } from "@argus/database";
@@ -54,6 +55,23 @@ function buildEnrichmentEvidence(
   confidence: number;
 }> {
   const evidence: ReturnType<typeof buildEnrichmentEvidence> = [];
+
+  if (enrichment.person) {
+    const { seniority, emailStatus } = enrichment.person;
+    const parts = [
+      seniority ? `Seniority: ${seniority}` : null,
+      emailStatus ? `Email ${emailStatus}` : null,
+    ].filter((part): part is string => Boolean(part));
+
+    if (parts.length > 0) {
+      evidence.push({
+        type: "DEMOGRAPHIC",
+        source: "APOLLO",
+        data: { signal: parts.join(" · "), relevance: "Verified person-level details from Apollo.io" },
+        confidence: ENRICHMENT_EVIDENCE_CONFIDENCE,
+      });
+    }
+  }
 
   if (enrichment.apollo) {
     const { industry, estimatedNumEmployees, totalFunding } = enrichment.apollo;
@@ -490,4 +508,59 @@ export async function shareDecision(
   });
 
   return { shared: true, channelId: slack.alertChannelId };
+}
+
+/** Bible §9.1 models MessageDraft.wasEdited/editDiff, but §10 never
+ *  contracts an endpoint to write them -- until now, both surfaces that
+ *  let a rep edit a message (the LinkedIn sidebar's MessageComposer,
+ *  Slack's "Edit First" modal) tracked the edit locally with nowhere to
+ *  send it. Persists against `messageDrafts[0]`, the one primary draft
+ *  createDecisionRecord ever creates for a decision (the same draft
+ *  toDecisionResponse's `message` field already reflects). */
+export async function editMessageDraft(
+  id: string,
+  request: EditMessageDraftRequest,
+  auth: AuthContext,
+  meta?: RequestMeta,
+): Promise<EditMessageDraftResponse> {
+  if (!auth.userId) {
+    throw new AppError("FORBIDDEN", "Only authenticated users can edit a decision's message");
+  }
+
+  const decision = await findDecisionById(id, auth.teamId);
+  if (!decision) {
+    throw new AppError("NOT_FOUND", "Decision not found");
+  }
+
+  const draft = decision.messageDrafts[0];
+  if (!draft) {
+    throw new AppError("VALIDATION_ERROR", "No message draft exists for this decision");
+  }
+
+  // Capture the original, pre-edit text once on the first edit; a later
+  // re-edit leaves editDiff pointing at that same original rather than the
+  // previous edit, so it always reads as "first-known-good vs current".
+  const editDiff = draft.wasEdited ? draft.editDiff : draft.body;
+
+  const updated = await updateMessageDraft({
+    draftId: draft.id,
+    body: request.body,
+    editDiff,
+  });
+
+  await recordAudit({
+    entityType: "decision",
+    entityId: id,
+    action: "message_edited",
+    actorId: auth.userId,
+    meta,
+  });
+
+  return {
+    id: updated.id,
+    decisionId: id,
+    body: updated.body,
+    wasEdited: updated.wasEdited,
+    editDiff: updated.editDiff,
+  };
 }

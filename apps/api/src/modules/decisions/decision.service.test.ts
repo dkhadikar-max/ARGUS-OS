@@ -13,6 +13,7 @@ const repo = {
   findDecisionById: vi.fn(),
   createOverride: vi.fn(),
   createActionTaken: vi.fn(),
+  updateMessageDraft: vi.fn(),
 };
 
 vi.mock("./decision.repository.js", () => repo);
@@ -42,7 +43,7 @@ vi.mock("../integrations/integration.service.js", () => ({ resolveSlackTeamByArg
 const postSlackMessage = vi.fn();
 vi.mock("../../lib/slack-client.js", () => ({ postSlackMessage }));
 
-const { createDecision, getDecision, overrideDecision, recordAction, shareDecision } = await import(
+const { createDecision, getDecision, overrideDecision, recordAction, shareDecision, editMessageDraft } = await import(
   "./decision.service.js"
 );
 
@@ -238,6 +239,68 @@ describe("createDecision", () => {
             type: "FIRMOGRAPHIC",
             source: "APOLLO",
             data: expect.objectContaining({ relevance: "Company firmographics from Apollo.io" }),
+          }),
+        ]),
+      }),
+    );
+  });
+
+  it("adds a DEMOGRAPHIC evidence entry when Apollo's person match finds seniority/email data (Bible §18 AI-2)", async () => {
+    const enrichedProspect = {
+      id: "prospect_1",
+      name: "Sarah Chen",
+      title: "VP Engineering",
+      companyName: "DataFlow Inc.",
+      companyDomain: "dataflow.io",
+      linkedInUrl: request.prospect.linkedInUrl,
+      companySize: null,
+      companyIndustry: null,
+      companyFunding: null,
+      rawProfile: null,
+      enrichedData: { apollo: null, clearbit: null, person: {} },
+    };
+    repo.upsertProspect.mockResolvedValue(enrichedProspect);
+    enrichProspect.mockResolvedValue({
+      prospect: enrichedProspect,
+      apollo: null,
+      clearbit: null,
+      person: { title: "VP Engineering", seniority: "vp", email: "sarah@dataflow.io", emailStatus: "verified" },
+    });
+    repo.getActiveIcp.mockResolvedValue(null);
+    repo.getCompanyMemory.mockResolvedValue(null);
+    repo.getUserPreferences.mockResolvedValue(null);
+    repo.getProspectDecisionHistory.mockResolvedValue([]);
+    repo.getTeamOutcomeHistory.mockResolvedValue([]);
+    runAgentDebate.mockResolvedValue({ output: agentDebateOutput, processingTimeMs: 3200 });
+    repo.createDecisionRecord.mockResolvedValue({ id: "dec_1" });
+    repo.findDecisionById.mockResolvedValue({
+      id: "dec_1",
+      verdict: "STRONG_YES",
+      confidence: 94,
+      reasoning: "Strong across the board.",
+      recommendedAction: "message_now",
+      processingTimeMs: 3200,
+      createdAt: new Date("2026-07-10T14:32:00Z"),
+      updatedAt: new Date("2026-07-10T14:32:00Z"),
+      evidence: [],
+      messageDrafts: [],
+      outcome: null,
+      override: null,
+      prospect: enrichedProspect,
+    });
+
+    await createDecision(request, auth);
+
+    expect(repo.createDecisionRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        evidence: expect.arrayContaining([
+          expect.objectContaining({
+            type: "DEMOGRAPHIC",
+            source: "APOLLO",
+            data: expect.objectContaining({
+              signal: "Seniority: vp · Email verified",
+              relevance: "Verified person-level details from Apollo.io",
+            }),
           }),
         ]),
       }),
@@ -655,5 +718,82 @@ describe("shareDecision", () => {
 
     await expect(shareDecision("dec_1", auth)).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
     expect(recordAudit).not.toHaveBeenCalled();
+  });
+});
+
+describe("editMessageDraft", () => {
+  it("throws FORBIDDEN for API-key auth with no userId", async () => {
+    const apiKeyAuth: AuthContext = { type: "api_key", teamId: "team_1", planTier: "FREE", apiKeyId: "key_1" };
+    await expect(editMessageDraft("dec_1", { body: "New text" }, apiKeyAuth)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    expect(repo.updateMessageDraft).not.toHaveBeenCalled();
+  });
+
+  it("throws NOT_FOUND when the decision doesn't exist for this team", async () => {
+    repo.findDecisionById.mockResolvedValue(null);
+    await expect(editMessageDraft("dec_missing", { body: "New text" }, auth)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+
+  it("throws VALIDATION_ERROR when the decision has no message draft at all", async () => {
+    repo.findDecisionById.mockResolvedValue({ id: "dec_1", messageDrafts: [] });
+    await expect(editMessageDraft("dec_1", { body: "New text" }, auth)).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+    });
+    expect(repo.updateMessageDraft).not.toHaveBeenCalled();
+  });
+
+  it("captures the original body into editDiff on a first edit", async () => {
+    repo.findDecisionById.mockResolvedValue({
+      id: "dec_1",
+      messageDrafts: [{ id: "draft_1", body: "Hi Sarah — original", wasEdited: false, editDiff: null }],
+    });
+    repo.updateMessageDraft.mockResolvedValue({
+      id: "draft_1",
+      body: "Hi Sarah — edited",
+      wasEdited: true,
+      editDiff: "Hi Sarah — original",
+    });
+
+    const result = await editMessageDraft("dec_1", { body: "Hi Sarah — edited" }, auth);
+
+    expect(repo.updateMessageDraft).toHaveBeenCalledWith({
+      draftId: "draft_1",
+      body: "Hi Sarah — edited",
+      editDiff: "Hi Sarah — original",
+    });
+    expect(result).toEqual({
+      id: "draft_1",
+      decisionId: "dec_1",
+      body: "Hi Sarah — edited",
+      wasEdited: true,
+      editDiff: "Hi Sarah — original",
+    });
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ entityType: "decision", entityId: "dec_1", action: "message_edited", actorId: "user_1" }),
+    );
+  });
+
+  it("keeps editDiff pointing at the ORIGINAL text on a second edit, not the previous edit", async () => {
+    repo.findDecisionById.mockResolvedValue({
+      id: "dec_1",
+      messageDrafts: [{ id: "draft_1", body: "Hi Sarah — first edit", wasEdited: true, editDiff: "Hi Sarah — original" }],
+    });
+    repo.updateMessageDraft.mockResolvedValue({
+      id: "draft_1",
+      body: "Hi Sarah — second edit",
+      wasEdited: true,
+      editDiff: "Hi Sarah — original",
+    });
+
+    await editMessageDraft("dec_1", { body: "Hi Sarah — second edit" }, auth);
+
+    expect(repo.updateMessageDraft).toHaveBeenCalledWith({
+      draftId: "draft_1",
+      body: "Hi Sarah — second edit",
+      editDiff: "Hi Sarah — original",
+    });
   });
 });

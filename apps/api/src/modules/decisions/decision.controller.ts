@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
-import { AppError, type CreateActionRequest, type CreateDecisionRequest, type OverrideDecisionRequest } from "@argus/shared";
+import { AppError, type CreateActionRequest, type CreateDecisionRequest, type EditMessageDraftRequest, type OverrideDecisionRequest } from "@argus/shared";
 import * as decisionService from "./decision.service.js";
 import { requestMeta } from "../../lib/audit.js";
 
@@ -72,6 +72,22 @@ export async function shareDecisionHandler(req: Request, res: Response, next: Ne
   try {
     if (!req.auth) throw new AppError("UNAUTHORIZED", "Authentication required");
     const result = await decisionService.shareDecision(req.params["id"] as string, req.auth, requestMeta(req));
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function editMessageDraftHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.auth) throw new AppError("UNAUTHORIZED", "Authentication required");
+    const body = req.body as EditMessageDraftRequest;
+    const result = await decisionService.editMessageDraft(
+      req.params["id"] as string,
+      body,
+      req.auth,
+      requestMeta(req),
+    );
     res.status(200).json(result);
   } catch (err) {
     next(err);

@@ -153,3 +153,28 @@ export const shareDecisionResponseSchema = z.object({
   channelId: z.string(),
 });
 export type ShareDecisionResponse = z.infer<typeof shareDecisionResponseSchema>;
+
+// Bible §9.1 models MessageDraft.wasEdited/editDiff, and both surfaces that
+// let a rep edit a generated message before sending -- the LinkedIn
+// sidebar's own MessageComposer "Edit"/"Save" toggle, Slack's "Edit First"
+// modal -- already tracked the edit locally, but §10 never contracts an
+// endpoint to persist it (the same category of gap ActionTaken/Share had
+// before they got one: a field §9.1 explicitly models with nothing writing
+// to it, not a deliberately deferred feature). `body` becomes the
+// MessageDraft's new current text; `editDiff` captures the *original*,
+// pre-edit text once, on the first edit only, so it's always
+// "first-known-good vs current" rather than "the previous edit vs this
+// one" -- more useful for reviewing what a rep changed overall.
+export const editMessageDraftRequestSchema = z.object({
+  body: z.string().min(1),
+});
+export type EditMessageDraftRequest = z.infer<typeof editMessageDraftRequestSchema>;
+
+export const editMessageDraftResponseSchema = z.object({
+  id: z.string(),
+  decisionId: z.string(),
+  body: z.string(),
+  wasEdited: z.boolean(),
+  editDiff: z.string().nullable(),
+});
+export type EditMessageDraftResponse = z.infer<typeof editMessageDraftResponseSchema>;
