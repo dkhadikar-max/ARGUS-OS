@@ -61,10 +61,14 @@ beforeEach(() => {
   createMock.mockReset();
 });
 
+function validOutputToolUseBlock() {
+  return { type: "tool_use" as const, id: "toolu_1", name: "submit_decision", input: JSON.parse(validOutputJson()) };
+}
+
 describe("runAgentDebate", () => {
-  it("parses a valid single-call response into AgentDebateOutput", async () => {
+  it("parses a valid single-call tool_use response into AgentDebateOutput", async () => {
     createMock.mockResolvedValueOnce({
-      content: [{ type: "text", text: validOutputJson() }],
+      content: [validOutputToolUseBlock()],
     });
 
     const { output } = await runAgentDebate(sampleInput);
@@ -73,7 +77,7 @@ describe("runAgentDebate", () => {
     expect(createMock).toHaveBeenCalledTimes(1);
   });
 
-  it("strips ```json markdown fences defensively (Bible §8.2 says none should appear)", async () => {
+  it("falls back to parsing a plain-text response if no tool_use block is present", async () => {
     createMock.mockResolvedValueOnce({
       content: [{ type: "text", text: "```json\n" + validOutputJson() + "\n```" }],
     });
@@ -82,10 +86,12 @@ describe("runAgentDebate", () => {
     expect(output.judge.verdict).toBe("YES");
   });
 
-  it("retries once on malformed JSON before succeeding", async () => {
+  it("retries once on a malformed tool_use input before succeeding", async () => {
     createMock
-      .mockResolvedValueOnce({ content: [{ type: "text", text: "not json at all" }] })
-      .mockResolvedValueOnce({ content: [{ type: "text", text: validOutputJson() }] });
+      .mockResolvedValueOnce({
+        content: [{ type: "tool_use", id: "toolu_bad", name: "submit_decision", input: { not: "valid" } }],
+      })
+      .mockResolvedValueOnce({ content: [validOutputToolUseBlock()] });
 
     const { output } = await runAgentDebate(sampleInput);
 
@@ -94,7 +100,9 @@ describe("runAgentDebate", () => {
   });
 
   it("throws AI_UNAVAILABLE after exhausting retries", async () => {
-    createMock.mockResolvedValue({ content: [{ type: "text", text: "still not json" }] });
+    createMock.mockResolvedValue({
+      content: [{ type: "tool_use", id: "toolu_bad", name: "submit_decision", input: { not: "valid" } }],
+    });
 
     await expect(runAgentDebate(sampleInput)).rejects.toMatchObject({
       code: "AI_UNAVAILABLE",

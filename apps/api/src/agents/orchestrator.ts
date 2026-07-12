@@ -80,6 +80,159 @@ function extractJson(text: string): unknown {
   return JSON.parse(stripped);
 }
 
+const TOOL_NAME = "submit_decision";
+
+// Mirrors agentDebateOutputSchema (packages/shared/src/schemas/agents.ts)
+// field-for-field. Live-tested against a real Claude call: asking the model
+// to freeform JSON per the <output_format> blocks in prompts.ts was found to
+// be unreliable in practice (e.g. it renamed risk.risks to risk.flags and
+// dropped judge.weighted_score/agent_consensus/key_evidence entirely, even
+// though the prompt explicitly lists them). Passing this as a forced tool
+// call makes the API enforce the shape at decode time instead of hoping the
+// model follows natural-language instructions.
+const DECISION_TOOL_SCHEMA = {
+  name: TOOL_NAME,
+  description: "Submit the combined 5-agent debate output for this prospect.",
+  input_schema: {
+    type: "object",
+    properties: {
+      research: {
+        type: "object",
+        properties: {
+          summary: { type: "string" },
+          data_points: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                type: { type: "string", enum: ["firmographic", "demographic", "technographic", "intent", "risk"] },
+                signal: { type: "string" },
+                relevance: { type: "string" },
+              },
+              required: ["type", "signal", "relevance"],
+            },
+          },
+          unfair_advantages: { type: "array", items: { type: "string" } },
+          hidden_risks: { type: "array", items: { type: "string" } },
+          confidence: { type: "number" },
+          data_gaps: { type: "array", items: { type: "string" } },
+        },
+        required: ["summary", "data_points", "unfair_advantages", "hidden_risks", "confidence", "data_gaps"],
+      },
+      icp: {
+        type: "object",
+        properties: {
+          score: { type: "number" },
+          criteria_evaluated: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                criterion: { type: "string" },
+                weight: { type: "number" },
+                match: { type: "number", enum: [0, 0.5, 1] },
+                evidence: { type: "string" },
+                reasoning: { type: "string" },
+              },
+              required: ["criterion", "weight", "match", "evidence", "reasoning"],
+            },
+          },
+          overall_assessment: { type: "string" },
+          edge_cases: { type: "array", items: { type: "string" } },
+          confidence: { type: "number" },
+        },
+        required: ["score", "criteria_evaluated", "overall_assessment", "edge_cases", "confidence"],
+      },
+      intent: {
+        type: "object",
+        properties: {
+          score: { type: "number" },
+          signals: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                signal: { type: "string" },
+                raw_score: { type: "number" },
+                weighted_score: { type: "number" },
+                recency_days: { type: "number" },
+                reasoning: { type: "string" },
+              },
+              required: ["signal", "raw_score", "weighted_score", "recency_days", "reasoning"],
+            },
+          },
+          trajectory: { type: "string", enum: ["increasing", "stable", "decreasing", "unknown"] },
+          false_intent_flags: { type: "array", items: { type: "string" } },
+          confidence: { type: "number" },
+        },
+        required: ["score", "signals", "trajectory", "false_intent_flags", "confidence"],
+      },
+      risk: {
+        type: "object",
+        properties: {
+          score: { type: "number" },
+          risks: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                category: { type: "string" },
+                severity: { type: "string", enum: ["dealbreaker", "moderate", "minor"] },
+                description: { type: "string" },
+                evidence: { type: "string" },
+                mitigation: { type: "string" },
+              },
+              required: ["category", "severity", "description", "evidence", "mitigation"],
+            },
+          },
+          red_flags: { type: "array", items: { type: "string" } },
+          time_waste_probability: { type: "number" },
+          mitigation_strategies: { type: "array", items: { type: "string" } },
+          confidence: { type: "number" },
+        },
+        required: ["score", "risks", "red_flags", "time_waste_probability", "mitigation_strategies", "confidence"],
+      },
+      judge: {
+        type: "object",
+        properties: {
+          verdict: { type: "string", enum: ["STRONG_YES", "YES", "WAIT", "PASS", "HARD_PASS"] },
+          confidence: { type: "number" },
+          weighted_score: { type: "number" },
+          agent_consensus: { type: "string", enum: ["high", "medium", "low"] },
+          conflicts: { type: "array", items: { type: "string" } },
+          reasoning: { type: "string" },
+          key_evidence: { type: "array", items: { type: "string" } },
+          message: {
+            type: "object",
+            properties: {
+              linkedin: { type: "string" },
+              email: { type: ["string", "null"] },
+              tone: { type: "string", enum: ["professional", "casual", "bold", "friendly"] },
+              personalization_hooks: { type: "array", items: { type: "string" } },
+            },
+            required: ["linkedin", "email", "tone", "personalization_hooks"],
+          },
+          recommended_action: { type: "string", enum: ["message_now", "research_more", "wait_for_signal", "pass_and_move_on"] },
+          confidence_explanation: { type: "string" },
+        },
+        required: [
+          "verdict",
+          "confidence",
+          "weighted_score",
+          "agent_consensus",
+          "conflicts",
+          "reasoning",
+          "key_evidence",
+          "message",
+          "recommended_action",
+          "confidence_explanation",
+        ],
+      },
+    },
+    required: ["research", "icp", "intent", "risk", "judge"],
+  },
+} as const;
+
 const MAX_ATTEMPTS = 2;
 
 /**
@@ -102,14 +255,25 @@ export async function runAgentDebate(
         max_tokens: 4096,
         system: MASTER_SYSTEM_PROMPT,
         messages: [{ role: "user", content: userPrompt }],
+        tools: [DECISION_TOOL_SCHEMA],
+        tool_choice: { type: "tool", name: TOOL_NAME },
       });
 
-      const textBlock = response.content.find((block) => block.type === "text");
-      if (!textBlock || textBlock.type !== "text") {
-        throw new Error("Claude response contained no text block");
-      }
+      const toolUseBlock = response.content.find((block) => block.type === "tool_use");
+      const parsed =
+        toolUseBlock && toolUseBlock.type === "tool_use"
+          ? toolUseBlock.input
+          : (() => {
+              // Fallback for a plain-text response (shouldn't happen with
+              // tool_choice forcing the tool, but extractJson's ```-fence
+              // stripping is cheap insurance against an unexpected shape).
+              const textBlock = response.content.find((block) => block.type === "text");
+              if (!textBlock || textBlock.type !== "text") {
+                throw new Error("Claude response contained neither a tool_use nor a text block");
+              }
+              return extractJson(textBlock.text);
+            })();
 
-      const parsed = extractJson(textBlock.text);
       const output = agentDebateOutputSchema.parse(parsed);
 
       return { output, processingTimeMs: Date.now() - startedAt };
