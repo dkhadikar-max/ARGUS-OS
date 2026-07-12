@@ -17,7 +17,7 @@ apps/dashboard       Next.js 16 App Router + Clerk + Today Queue (Bible §6.2, �
 
 - Node.js >= 20
 - PostgreSQL 15 and Redis 7, reachable locally (this machine has no Docker, so install them natively — see below)
-- An Anthropic API key
+- An Anthropic API key. **Set on this machine** in `apps/api/.env` (real key, not the earlier local-boot placeholder) — live-verified with a direct `claude-sonnet-4-6` API call (the exact model `agents/claude-client.ts` uses), which returned a real completion, not just a 200 on an unrelated endpoint.
 
 ### Installing Postgres + Redis natively on Windows
 
