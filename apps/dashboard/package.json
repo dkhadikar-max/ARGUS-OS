@@ -13,6 +13,7 @@
     "@argus/shared": "*",
     "@clerk/nextjs": "^7.5.16",
     "@tremor/react": "^3.18.7",
+    "@vercel/speed-insights": "^2.0.0",
     "next": "^16.2.10",
     "posthog-js": "1.399.2",
     "react": "^18.3.1",
