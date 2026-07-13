@@ -23,5 +23,8 @@
   "devDependencies": {
     "typescript": "^5.5.4",
     "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "@vercel/speed-insights": "^2.0.0"
   }
 }
