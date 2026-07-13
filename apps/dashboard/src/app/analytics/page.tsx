@@ -1,5 +1,4 @@
 import {
-  BarChart,
   Card,
   Metric,
   Table,
@@ -14,6 +13,7 @@ import {
 import { api } from "../../lib/api-client";
 import { VerdictBadge } from "../../components/VerdictBadge";
 import { RepFilterSelect } from "../../components/RepFilterSelect";
+import { MeetingRateChart } from "../../components/MeetingRateChart";
 
 const MODE_LABEL: Record<string, string> = {
   learning: "Learning mode",
@@ -108,16 +108,7 @@ export default async function AnalyticsPage({
             </p>
           </div>
         ) : (
-          <Card>
-            <BarChart
-              data={chartData}
-              index="verdict"
-              categories={["Meeting rate"]}
-              colors={["blue"]}
-              valueFormatter={(value: number) => `${value}%`}
-              yAxisWidth={48}
-            />
-          </Card>
+          <MeetingRateChart data={chartData} />
         )}
       </section>
 
