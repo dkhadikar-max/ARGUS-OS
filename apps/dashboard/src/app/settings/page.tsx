@@ -123,17 +123,26 @@ export default async function SettingsPage() {
         </div>
       </section>
 
-      <section className="mt-8">
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-          Policy Engine
-        </h2>
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
-          <PolicyRulesEditor initialRules={policy.rules} />
-          {policy.updatedAt === null && (
-            <p className="mt-3 text-xs text-gray-400">No policy rules configured yet for this team.</p>
-          )}
-        </div>
-      </section>
+      {/* Fully functional (ARGUS Unanimous Policy v2.1 "L4 Policy Engine"),
+          but collapsed by default rather than marked "Coming soon" -- it
+          works today, so hiding it behind a disclosure is honest scope
+          control; claiming it's unbuilt would not be. */}
+      <details className="mt-8 group">
+        <summary className="mb-3 cursor-pointer text-xs font-semibold uppercase tracking-wide text-gray-500 group-open:mb-3">
+          Advanced settings
+        </summary>
+        <section>
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Policy Engine
+          </h2>
+          <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <PolicyRulesEditor initialRules={policy.rules} />
+            {policy.updatedAt === null && (
+              <p className="mt-3 text-xs text-gray-400">No policy rules configured yet for this team.</p>
+            )}
+          </div>
+        </section>
+      </details>
     </main>
   );
 }

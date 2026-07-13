@@ -6,6 +6,29 @@ import { updateIcpAction } from "../app/settings/actions";
 
 const OPERATORS: IcpCriterion["operator"][] = ["equals", "in", "gte", "lte", "between", "contains"];
 
+// icpCriterionSchema's `field` is a free-form string (Claude reads it
+// alongside the prospect JSON in agents/prompts.ts's ICP_AGENT_PROMPT, no
+// server-side field allowlist), but these are the real Prospect model
+// attributes (packages/database/prisma/schema.prisma) an ICP criterion can
+// actually correlate against -- a curated dropdown avoids typos silently
+// producing a criterion the ICP Agent can never match against real data.
+// "Custom field..." keeps the underlying free-text escape hatch instead of
+// hard-restricting what was previously any string.
+const ICP_FIELD_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "companySize", label: "Company Size" },
+  { value: "companyIndustry", label: "Industry" },
+  { value: "companyFunding", label: "Funding Stage" },
+  { value: "companyDomain", label: "Company Domain" },
+  { value: "title", label: "Job Title" },
+  { value: "location", label: "Location" },
+];
+
+const CUSTOM_FIELD_VALUE = "__custom__";
+
+function isKnownField(field: string): boolean {
+  return ICP_FIELD_OPTIONS.some((option) => option.value === field);
+}
+
 // Bible §9.1's icpCriterionSchema allows `value` to be a string[] (e.g. an
 // "in" operator listing multiple industries) -- distinct from a plain
 // string, which a single-value text field could never produce. A
@@ -86,6 +109,9 @@ export function IcpCriteriaEditor({ initialCriteria }: Props) {
 
   return (
     <div>
+      <p className="mb-2 text-xs text-gray-500">
+        Assign a weight (0–1) to each criterion — all weights must sum to 100%.
+      </p>
       {criteria.length > 0 && (
         <p className={`mb-2 text-xs ${Math.abs(weightSum - 1) > 0.02 ? "text-red-600" : "text-gray-500"}`}>
           Weights sum to {weightSum.toFixed(2)} (must be 1.00 to save)
@@ -93,15 +119,36 @@ export function IcpCriteriaEditor({ initialCriteria }: Props) {
       )}
 
       <ul className="space-y-2">
-        {criteria.map((criterion, index) => (
+        {criteria.map((criterion, index) => {
+          const fieldIsCustom = criterion.field !== "" && !isKnownField(criterion.field);
+          return (
           <li key={index} className="flex flex-wrap items-center gap-2 rounded-md border border-gray-200 p-2">
-            <input
-              type="text"
-              placeholder="field (e.g. companySize)"
-              value={criterion.field}
-              onChange={(e) => updateRow(index, { field: e.target.value })}
-              className="w-40 rounded border border-gray-300 px-2 py-1 text-sm"
-            />
+            <select
+              value={fieldIsCustom ? CUSTOM_FIELD_VALUE : criterion.field}
+              onChange={(e) =>
+                updateRow(index, { field: e.target.value === CUSTOM_FIELD_VALUE ? "" : e.target.value })
+              }
+              className="w-36 rounded border border-gray-300 px-2 py-1 text-sm"
+            >
+              <option value="" disabled>
+                Choose a field…
+              </option>
+              {ICP_FIELD_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+              <option value={CUSTOM_FIELD_VALUE}>Custom field…</option>
+            </select>
+            {fieldIsCustom && (
+              <input
+                type="text"
+                placeholder="custom field name"
+                value={criterion.field}
+                onChange={(e) => updateRow(index, { field: e.target.value })}
+                className="w-32 rounded border border-gray-300 px-2 py-1 text-sm"
+              />
+            )}
             <select
               value={criterion.operator}
               onChange={(e) => handleOperatorChange(index, e.target.value as IcpCriterion["operator"])}
@@ -156,7 +203,8 @@ export function IcpCriteriaEditor({ initialCriteria }: Props) {
               Remove
             </button>
           </li>
-        ))}
+          );
+        })}
       </ul>
 
       <div className="mt-3 flex items-center gap-3">

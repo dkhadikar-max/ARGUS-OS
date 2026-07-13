@@ -2,6 +2,19 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+// Bible §5.3/§9.1 ICPDefinition -- a real seeded ICP so the ICP Agent
+// (§8.4) has something to actually score against instead of the `null`
+// {{team_icp}} placeholder every prior seeded/live decision ran with.
+// Field names match apps/dashboard's IcpCriteriaEditor.tsx ICP_FIELD_OPTIONS
+// exactly (real Prospect model attributes, not invented ones). Weights sum
+// to exactly 1.0, matching icpWeightsAreValid's tolerance.
+const DEFAULT_ICP_CRITERIA = [
+  { field: "companySize", operator: "gte" as const, value: 50, weight: 0.3 },
+  { field: "companyIndustry", operator: "in" as const, value: ["SaaS", "Software", "Technology"], weight: 0.3 },
+  { field: "title", operator: "contains" as const, value: "VP", weight: 0.2 },
+  { field: "companyFunding", operator: "in" as const, value: ["Series A", "Series B", "Series C"], weight: 0.2 },
+];
+
 // Bible §19.1 QA Checklist "All 5 verdict states render" -- minimal dev seed
 // covering one Decision per Verdict enum value, attached to the first Team/
 // User found in the DB (whatever local dev account is already signed in),
@@ -132,6 +145,16 @@ async function main() {
   const user = await prisma.user.findFirst({ where: { teamId: team.id }, orderBy: { createdAt: "asc" } });
   if (!user) {
     throw new Error(`Team ${team.id} has no User — this shouldn't be possible given the schema's required relation.`);
+  }
+
+  const existingIcp = await prisma.iCPDefinition.findUnique({ where: { teamId: team.id } });
+  if (existingIcp) {
+    console.log(`ICP already exists for team "${team.name}" — skipping.`);
+  } else {
+    await prisma.iCPDefinition.create({
+      data: { teamId: team.id, criteria: DEFAULT_ICP_CRITERIA as never, version: 1 },
+    });
+    console.log(`Created default ICP for team "${team.name}".`);
   }
 
   console.log(`Seeding 5 decisions (one per verdict) for team "${team.name}" (${team.id}), user ${user.id}...`);

@@ -53,7 +53,7 @@ describe("IcpCriteriaEditor", () => {
     ];
     render(<IcpCriteriaEditor initialCriteria={criteria} />);
 
-    await user.selectOptions(screen.getByRole("combobox"), "equals");
+    await user.selectOptions(screen.getAllByRole("combobox")[1]!, "equals");
 
     expect(screen.queryByPlaceholderText("value1, value2, value3")).not.toBeInTheDocument();
     const input = screen.getByPlaceholderText("value") as HTMLInputElement;
@@ -65,7 +65,7 @@ describe("IcpCriteriaEditor", () => {
     const criteria: IcpCriterion[] = [{ field: "industry", operator: "equals", value: "SaaS", weight: 1 }];
     render(<IcpCriteriaEditor initialCriteria={criteria} />);
 
-    await user.selectOptions(screen.getByRole("combobox"), "in");
+    await user.selectOptions(screen.getAllByRole("combobox")[1]!, "in");
 
     const input = screen.getByPlaceholderText("value1, value2, value3") as HTMLInputElement;
     expect(input.value).toBe("SaaS");
