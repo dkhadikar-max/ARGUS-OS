@@ -4,9 +4,20 @@ import { useAuth, SignOutButton } from '@clerk/nextjs';
 import { useEffect, useState } from 'react';
 import { fetchWithAuth } from '@/lib/api';
 
+interface QueueItem {
+  decisionId: string;
+  prospect: { name: string };
+  verdict: string;
+  reason: string;
+}
+
+interface QueueData {
+  items: QueueItem[];
+}
+
 export default function Dashboard() {
   const { getToken, isLoaded, isSignedIn } = useAuth();
-  const [queue, setQueue] = useState(null);
+  const [queue, setQueue] = useState<QueueData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -49,9 +60,9 @@ export default function Dashboard() {
 
       <section>
         <h2 className="font-mono text-lg mb-4 text-amber">Today's Queue</h2>
-        {queue?.items?.length > 0 ? (
+        {queue && queue.items && queue.items.length > 0 ? (
           <ul className="space-y-4">
-            {queue.items.map((item: any) => (
+            {queue.items.map((item) => (
               <li key={item.decisionId} className="border border-ash p-4">
                 <div className="flex justify-between">
                   <span className="font-mono">{item.prospect.name}</span>
