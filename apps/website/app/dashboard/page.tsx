@@ -16,9 +16,14 @@ export default function Dashboard() {
     async function loadQueue() {
       try {
         const token = await getToken();
+        if (!token) {
+          setError('No authentication token');
+          setLoading(false);
+          return;
+        }
         const data = await fetchWithAuth('/api/v1/queue', token);
         setQueue(data);
-      } catch (err) {
+      } catch (err: any) {
         setError(err.message);
       } finally {
         setLoading(false);
@@ -46,7 +51,7 @@ export default function Dashboard() {
         <h2 className="font-mono text-lg mb-4 text-amber">Today's Queue</h2>
         {queue?.items?.length > 0 ? (
           <ul className="space-y-4">
-            {queue.items.map((item) => (
+            {queue.items.map((item: any) => (
               <li key={item.decisionId} className="border border-ash p-4">
                 <div className="flex justify-between">
                   <span className="font-mono">{item.prospect.name}</span>
