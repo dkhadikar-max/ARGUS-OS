@@ -10,7 +10,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@clerk/nextjs": "^7.5.17",
     "autoprefixer": "^10.4.19",
     "framer-motion": "^11.3.2",
     "lucide-react": "^0.408.0",
