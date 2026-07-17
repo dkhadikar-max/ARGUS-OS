@@ -24,6 +24,9 @@ export async function NavBar() {
         <Link href="/settings" className="text-sm font-medium text-gray-600 hover:text-gray-900">
           Settings
         </Link>
+        <Link href="/billing" className="text-sm font-medium text-gray-600 hover:text-gray-900">
+          Billing
+        </Link>
       </div>
     </nav>
   );

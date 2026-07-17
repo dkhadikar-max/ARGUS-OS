@@ -4,6 +4,8 @@ import type {
   CompleteOnboardingRequest,
   CreateActionRequest,
   CreateActionResponse,
+  CreateCheckoutRequest,
+  CreateCheckoutResponse,
   DecisionResponse,
   IcpResponse,
   ListOutcomesResponse,
@@ -96,6 +98,11 @@ export const api = {
   getTeam: () => apiFetch<TeamResponse>("/api/v1/teams/me"),
   completeOnboarding: (payload: CompleteOnboardingRequest) =>
     apiFetch<TeamResponse>("/api/v1/teams/me/onboarding", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  createCheckout: (payload: CreateCheckoutRequest) =>
+    apiFetch<CreateCheckoutResponse>("/api/v1/billing/checkout", {
       method: "POST",
       body: JSON.stringify(payload),
     }),

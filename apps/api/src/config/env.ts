@@ -69,6 +69,21 @@ const envSchema = z.object({
   // failure) — the dashboard's Today Queue page.
   DASHBOARD_URL: z.string().default("http://localhost:3000"),
 
+  // Bible §5.2 "BillingSubscription" / §13.2 pricing tiers -- Dodo Payments
+  // (not Stripe, unavailable in India), see modules/billing. Optional like
+  // every other third-party credential: billing.service.ts throws a clear
+  // FORBIDDEN error if a checkout is attempted without these configured,
+  // rather than failing boot.
+  DODO_PAYMENTS_API_KEY: z.string().optional(),
+  DODO_PAYMENTS_ENVIRONMENT: z.enum(["test_mode", "live_mode"]).default("test_mode"),
+  DODO_WEBHOOK_KEY: z.string().optional(),
+  // Dodo has no API to create Products (dashboard-only, unlike Stripe) --
+  // these are the 3 paid tiers' product_ids, created once in the Dodo
+  // Dashboard and referenced here. Free ($0) needs no checkout/product.
+  DODO_PRODUCT_STARTER: z.string().optional(),
+  DODO_PRODUCT_PRO: z.string().optional(),
+  DODO_PRODUCT_ENTERPRISE: z.string().optional(),
+
   // Bible §18 INF-4 "Data encryption at rest" (P1). Encrypts Integration.
   // config's secret fields (Slack bot token, generated API key) — see
   // lib/encryption.ts. Optional at the app level (a fresh checkout that

@@ -13,3 +13,4 @@ export * from "./schemas/integration.js";
 export * from "./schemas/analytics.js";
 export * from "./schemas/lead.js";
 export * from "./schemas/team.js";
+export * from "./schemas/billing.js";

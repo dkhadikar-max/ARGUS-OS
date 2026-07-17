@@ -17,6 +17,7 @@ import { icpRouter } from "./modules/icp/icp.routes.js";
 import { policyRouter } from "./modules/policy/policy.routes.js";
 import { leadRouter } from "./modules/leads/lead.routes.js";
 import { teamRouter } from "./modules/teams/team.routes.js";
+import { billingRouter } from "./modules/billing/billing.routes.js";
 
 export function createApp() {
   const app = express();
@@ -67,6 +68,7 @@ export function createApp() {
   app.use("/api/v1/policy", policyRouter);
   app.use("/api/v1/leads", leadRouter);
   app.use("/api/v1/teams", teamRouter);
+  app.use("/api/v1/billing", billingRouter);
 
   app.use(errorHandler);
 

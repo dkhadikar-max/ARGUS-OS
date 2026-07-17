@@ -94,6 +94,12 @@ model Team {
   // dashboard's /onboarding route checks to decide whether to show the
   // wizard again or redirect straight into the app.
   onboardedAt   DateTime?
+  // Bible §5.2 "BillingSubscription" -- Dodo Payments (not Stripe, which
+  // isn't available in India), see apps/api's billing module. Set together
+  // on the same subscription.active/renewed webhook (never independently),
+  // so either both are populated or neither is.
+  dodoCustomerId     String?
+  dodoSubscriptionId String?
 
   // Relations
   users         User[]
