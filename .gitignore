@@ -16,3 +16,6 @@ coverage/
 apps/extension/.output/
 apps/extension/.plasmo/
 packages/database/generated/
+
+.vercel
+.env*

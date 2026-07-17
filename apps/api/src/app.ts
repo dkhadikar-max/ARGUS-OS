@@ -15,6 +15,7 @@ import { memoryRouter } from "./modules/memory/memory.routes.js";
 import { preferencesRouter } from "./modules/preferences/preferences.routes.js";
 import { icpRouter } from "./modules/icp/icp.routes.js";
 import { policyRouter } from "./modules/policy/policy.routes.js";
+import { leadRouter } from "./modules/leads/lead.routes.js";
 
 export function createApp() {
   const app = express();
@@ -63,6 +64,7 @@ export function createApp() {
   app.use("/api/v1/preferences", preferencesRouter);
   app.use("/api/v1/icp", icpRouter);
   app.use("/api/v1/policy", policyRouter);
+  app.use("/api/v1/leads", leadRouter);
 
   app.use(errorHandler);
 

@@ -523,3 +523,32 @@ model AuditLog {
   @@index([actorId])
   @@index([createdAt])
 }
+
+// ───────────────────────────────────────────
+// MARKETING
+// ───────────────────────────────────────────
+
+// Bible §13.2 Pricing Tiers (Free/Starter/Pro/Enterprise) -- supersedes the
+// short-lived "ARGUS Unanimous Policy v2.1" Three Entry Paths, which are
+// deferred until the Phase 3 enterprise motion per explicit instruction
+// (2026-07-17). Records a click on one of apps/website's four CTA buttons
+// before the visitor's mailto: client opens. No email/name/company: the CTA
+// is a single click with no form fields, so this is a click-intent signal
+// for internal visibility (which tier is getting traction), not a full lead
+// record -- the visitor's actual identity only exists in whatever email
+// they send.
+model Lead {
+  id        String   @id @default(cuid())
+  path      LeadPath
+  createdAt DateTime @default(now())
+
+  @@index([path])
+  @@index([createdAt])
+}
+
+enum LeadPath {
+  FREE
+  STARTER
+  PRO
+  ENTERPRISE
+}

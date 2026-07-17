@@ -46,23 +46,25 @@ export function HeroSection() {
               Stop guessing. Start deciding with evidence.
             </p>
 
-            {/* Policy v2.1 Homepage Hierarchy, step 5 "Path" (frozen):
-                Free Assessment (primary) / Intelligence Sprint (secondary).
-                Both scroll to the same CTA section below — "View the
-                Evidence Chain" (→ #evidence) isn't lost, it's still one
-                click away via the Evidence link already in the nav bar. */}
+            {/* Policy v2.1 Homepage Hierarchy, step 5 "Path" (frozen
+                structure, not frozen labels): both buttons scroll to the
+                same CTA section below, now showing Bible §13.2's four SaaS
+                tiers instead of the Policy's GTM entry-path naming (deferred
+                until Phase 3, 2026-07-17 decision) — "View the Evidence
+                Chain" (→ #evidence) isn't lost, it's still one click away
+                via the Evidence link already in the nav bar. */}
             <div className="flex flex-wrap gap-4 mb-12">
               <a
                 href="#start"
                 className="font-mono text-[13px] font-semibold px-8 py-4 bg-amber text-obsidian tracking-[0.05em] hover:bg-amber-glow transition-colors duration-200"
               >
-                Free Assessment
+                Start Free
               </a>
               <a
                 href="#start"
                 className="font-mono text-[13px] px-8 py-4 border border-slate text-ash hover:text-pearl hover:border-ash transition-colors duration-200"
               >
-                Intelligence Sprint
+                View Plans
               </a>
             </div>
 

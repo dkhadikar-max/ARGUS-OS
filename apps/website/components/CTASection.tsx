@@ -2,43 +2,71 @@
 
 import { motion } from "framer-motion";
 
-// ARGUS Unanimous Policy v2.1 §"FINAL GTM" — "Three Entry Paths (Do Not
-// Change)". This supersedes the SaaS-tier Free/Starter/Pro/Enterprise CTA
-// that lived here before: that table (Bible §13.2) is still the real
-// ongoing subscription plan a customer lands on, but it isn't what the
-// Policy's own frozen Homepage Hierarchy calls for at the "Path" step --
-// the entry motion is these three paths, keyed to company size/budget/
-// signal, not the subscription tiers themselves. Reuses the exact same
+// Bible §13.2 Pricing Tiers — the ARGUS Unanimous Policy v2.1 "Three Entry
+// Paths (Do Not Change)" GTM pricing (Free Assessment $0 / Intelligence
+// Sprint $7,500 / Enterprise Engagement $25,000+) is deferred until the
+// Phase 3 enterprise motion (2026-07-17 decision) in favor of showing the
+// Bible's actual subscription tiers here today. Reuses the exact same
 // bordered-grid-of-cards pattern this section (and VerdictSpectrumSection)
-// already established, just 3 columns instead of 4.
-//
-// Unlike the SaaS tiers earlier today, dollar amounts here are shown
-// deliberately: the Policy explicitly prices all three ("Do Not Change")
-// and the earlier instruction to withhold pricing applied to the Bible's
-// subscription tiers specifically, not this separately-frozen GTM policy.
+// already established, 4 columns instead of 3.
 const PATHS = [
   {
-    name: "Free Decision Assessment",
+    name: "Free",
     price: "$0",
-    target: "10-50 employees, no budget yet",
-    signal: "First contact",
-    cta: { label: "Start Free Assessment", subject: "Free Decision Assessment Request" },
+    cadence: "",
+    seats: "1 seat",
+    decisions: "50 decisions/mo",
+    features: "Basic verdict, LinkedIn only, no Slack",
+    leadPath: "FREE" as const,
+    cta: { label: "Start Free", subject: "Free Plan Signup" },
   },
   {
-    name: "Intelligence Sprint",
-    price: "$7,500",
-    target: "50-200 employees, tool budget",
-    signal: "Qualified",
-    cta: { label: "Book the Intelligence Sprint", subject: "Intelligence Sprint Request" },
+    name: "Starter",
+    price: "$49",
+    cadence: "/mo",
+    seats: "3 seats",
+    decisions: "500 decisions/mo",
+    features: "Full verdict, Slack bot, queue, basic memory",
+    leadPath: "STARTER" as const,
+    cta: { label: "Start Starter", subject: "Starter Plan Signup" },
   },
   {
-    name: "Enterprise Engagement",
-    price: "$25,000+",
-    target: "200+ employees, CRO / procurement",
-    signal: "Security review",
-    cta: { label: "Talk to Enterprise Sales", subject: "Enterprise Engagement Inquiry" },
+    name: "Pro",
+    price: "$149",
+    cadence: "/mo",
+    seats: "10 seats",
+    decisions: "2,500 decisions/mo",
+    features: "Full debate view, team analytics, CRM sync",
+    leadPath: "PRO" as const,
+    cta: { label: "Start Pro", subject: "Pro Plan Signup" },
+  },
+  {
+    name: "Enterprise",
+    price: "$499",
+    cadence: "/mo",
+    seats: "Unlimited seats",
+    decisions: "10,000 decisions/mo",
+    features: "Custom ICP, API access, SSO, priority support",
+    leadPath: "ENTERPRISE" as const,
+    cta: { label: "Talk to Sales", subject: "Enterprise Plan Inquiry" },
   },
 ];
+
+// No form fields exist on this single click, so there's no lead identity to
+// send yet -- the visitor's actual identity only exists in whatever email
+// they send next. Best-effort and never blocks the mailto: navigation: a
+// failed request here must not stop someone from actually reaching out.
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+
+function recordLeadClick(path: (typeof PATHS)[number]["leadPath"]) {
+  fetch(`${API_URL}/api/v1/leads`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  }).catch(() => {
+    // Best-effort: the mailto: link below is the real call-to-action.
+  });
+}
 
 export function CTASection() {
   return (
@@ -58,12 +86,12 @@ export function CTASection() {
             Begin with <strong className="font-semibold">evidence.</strong>
           </h2>
           <p className="text-lg text-ash mb-16 max-w-[540px] mx-auto">
-            Three ways in, matched to where your team is today — from a free
-            first look to a full enterprise engagement.
+            Plans that scale with your team — from a free first look to full
+            enterprise control.
           </p>
 
           <div className="border border-default">
-            <div className="grid grid-cols-1 md:grid-cols-3">
+            <div className="grid grid-cols-1 md:grid-cols-4">
               {PATHS.map((path, i) => (
                 <motion.div
                   key={path.name}
@@ -76,17 +104,21 @@ export function CTASection() {
                   <div className="font-mono text-[13px] font-semibold text-pearl uppercase tracking-[0.05em] mb-2">
                     {path.name}
                   </div>
-                  <div className="font-mono text-3xl font-semibold text-amber mb-4">
-                    {path.price}
+                  <div className="mb-4">
+                    <span className="font-mono text-3xl font-semibold text-amber">
+                      {path.price}
+                    </span>
+                    <span className="font-mono text-[13px] text-ash">{path.cadence}</span>
                   </div>
                   <div className="font-mono text-[11px] text-ash mb-1">
-                    {path.target}
+                    {path.seats} · {path.decisions}
                   </div>
                   <div className="font-mono text-[11px] text-signal mb-8">
-                    Signal: {path.signal}
+                    {path.features}
                   </div>
                   <a
-                    href={`mailto:hello@argusos.com?subject=${encodeURIComponent(path.cta.subject)}`}
+                    href={`mailto:${path.name === "Enterprise" ? "sales" : "hello"}@argusos.com?subject=${encodeURIComponent(path.cta.subject)}`}
+                    onClick={() => recordLeadClick(path.leadPath)}
                     className="mt-auto block w-full py-3 border border-amber text-amber text-center font-mono text-[13px] font-semibold tracking-[0.05em] hover:bg-amber/10 transition-colors duration-200"
                   >
                     {path.cta.label}

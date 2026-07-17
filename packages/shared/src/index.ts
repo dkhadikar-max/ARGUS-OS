@@ -11,3 +11,4 @@ export * from "./schemas/policy.js";
 export * from "./schemas/preferences.js";
 export * from "./schemas/integration.js";
 export * from "./schemas/analytics.js";
+export * from "./schemas/lead.js";
