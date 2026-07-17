@@ -77,6 +77,17 @@ npm run build
 # Static export to ./dist
 ```
 
+**Vercel project ("argusos") gotcha, found 2026-07-17**: this project's Root
+Directory is `.` (the monorepo root), not `apps/website` -- so
+`buildCommand`/`installCommand` must NOT `cd ../..` (that escapes the repo
+entirely, causing a "no package-lock.json found" `npm ci` failure) and
+`outputDirectory` must be the full path `apps/website/dist`, not just
+`dist`. Framework Preset is set to "Other" (not "Next.js"): Vercel's actual
+Next.js Runtime always expects a `routes-manifest.json` file (an SSR-only
+artifact) even when Output Directory is overridden, which a static
+`output: 'export'` build never produces -- "Other" serves the exported
+static files directly instead of running that Next-specific check.
+
 ## Structure
 
 ```
