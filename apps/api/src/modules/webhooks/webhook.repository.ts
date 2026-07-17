@@ -37,6 +37,13 @@ export async function createUserWithPersonalTeam(data: ClerkUserData) {
             name: data.name,
             avatarUrl: data.avatarUrl,
             teamId: team.id,
+            // Without this, the User row keeps schema.prisma's UserRole
+            // default (SDR), which middleware/auth.ts's ADMIN_ROLES
+            // excludes -- the sole member of a brand-new personal team
+            // would then be permanently locked out of the ICP/onboarding
+            // endpoints for the one team they own. Matches the Founder Sam
+            // persona (§4.3) this auto-provisioning path is modeled on.
+            role: "FOUNDER",
           },
         });
       });

@@ -88,6 +88,12 @@ model Team {
   billingStatus BillingStatus @default(TRIAL)
   trialEndsAt   DateTime?
   maxSeats      Int           @default(1)
+  // Bible has no onboarding wireframe (see webhook.repository.ts's
+  // createUserWithPersonalTeam comment) -- this is the new field the
+  // company-onboarding wizard writes on completion, and the one the
+  // dashboard's /onboarding route checks to decide whether to show the
+  // wizard again or redirect straight into the app.
+  onboardedAt   DateTime?
 
   // Relations
   users         User[]

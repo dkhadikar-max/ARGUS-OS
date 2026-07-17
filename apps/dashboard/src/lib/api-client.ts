@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import type {
   CompanyMemoryResponse,
+  CompleteOnboardingRequest,
   CreateActionRequest,
   CreateActionResponse,
   DecisionResponse,
@@ -8,6 +9,7 @@ import type {
   ListOutcomesResponse,
   PolicyResponse,
   QueueResponse,
+  TeamResponse,
   UpdateIcpRequest,
   UpdatePolicyRequest,
   UpdateUserPreferencesRequest,
@@ -91,6 +93,12 @@ export const api = {
     if (params?.userId) query.set("userId", params.userId);
     return apiFetch<ListOutcomesResponse>(`/api/v1/outcomes?${query.toString()}`);
   },
+  getTeam: () => apiFetch<TeamResponse>("/api/v1/teams/me"),
+  completeOnboarding: (payload: CompleteOnboardingRequest) =>
+    apiFetch<TeamResponse>("/api/v1/teams/me/onboarding", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   getDecision: (decisionId: string) => apiFetch<DecisionResponse>(`/api/v1/decisions/${decisionId}`),
   recordAction: (decisionId: string, payload: CreateActionRequest) =>
     apiFetch<CreateActionResponse>(`/api/v1/decisions/${decisionId}/action`, {
