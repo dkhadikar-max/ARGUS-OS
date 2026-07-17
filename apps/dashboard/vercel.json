@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "buildCommand": "cd ../.. && npm run build --workspace=@argus/shared --workspace=@argus/dashboard",
-  "installCommand": "cd ../.. && npm ci"
+  "buildCommand": "npm run build --workspace=@argus/shared --workspace=@argus/dashboard",
+  "installCommand": "npm ci",
+  "outputDirectory": "apps/dashboard/.next"
 }
