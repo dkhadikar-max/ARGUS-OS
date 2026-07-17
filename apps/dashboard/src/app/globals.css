@@ -1,5 +1,27 @@
 @import "tailwindcss";
 
+/* ARGUS OS Brand Guidelines v1.0 (2026-07-17) §2 "Light Mode": Background
+   White, Text Navy #0A1628, Accent Teal #00D1C8 -- maps directly onto this
+   app's existing light theme, so only the accent color (previously plain
+   Tailwind blue) and a teal shade scale for it need adding; the light
+   background/dark-gray-text posture itself was already correct. Shades
+   beyond the brand's own two defined teal values (#00D1C8, and #00A896 --
+   the darker gradient stop already used in Logo.tsx) are derived to cover
+   the same roles Tailwind's default blue-50/200/600/700/800 covered. */
+@theme {
+  --color-teal-50: #E6FBFA;
+  --color-teal-200: #99EEE9;
+  --color-teal-600: #00D1C8;
+  --color-teal-700: #00A896;
+  --color-teal-800: #00786F;
+  --color-navy: #0A1628;
+  /* Tailwind v4's own preflight sets body's font via this theme variable,
+     not a plain `body { font-family }` rule -- a bare rule here gets
+     overridden by preflight's own cascade layer regardless of source
+     order. Brand v1.0 §3 Typography stack, same as apps/website. */
+  --font-sans: "Satoshi", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
 :root {
   color-scheme: light;
 }

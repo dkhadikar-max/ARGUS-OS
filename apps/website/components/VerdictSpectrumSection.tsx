@@ -2,13 +2,17 @@
 
 import { motion } from "framer-motion";
 
+// Brand v1.0 §7 "Verdict States" defines STRONG YES and YES as two
+// distinct Teal shades (#00F5E8 vs #00D1C8), not the same hue at different
+// opacities -- teal-glow (the brighter shade) is used here specifically
+// for STRONG YES to keep that distinction faithful.
 const VERDICTS = [
   {
     label: "STRONG YES",
     range: "90-100",
     description: "High ICP fit + strong intent + low risk. Message immediately.",
     badgeClass:
-      "bg-signal/15 text-signal border border-signal/30",
+      "bg-teal-glow/15 text-teal-glow border border-teal-glow/30",
   },
   {
     label: "YES",

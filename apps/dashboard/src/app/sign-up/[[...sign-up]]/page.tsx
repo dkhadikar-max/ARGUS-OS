@@ -1,9 +1,13 @@
 import { SignUp } from "@clerk/nextjs";
+import { Logo } from "../../../components/Logo";
 
 export default function SignUpPage() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-6">
-      <span className="text-sm font-bold text-gray-900">ARGUS</span>
+      <span className="flex items-center gap-2 text-sm font-bold text-navy">
+        <Logo />
+        ARGUS
+      </span>
       {/* Every brand-new signup lands on /onboarding (Bible has no
           onboarding wireframe -- see webhook.repository.ts's
           createUserWithPersonalTeam comment) instead of straight into the

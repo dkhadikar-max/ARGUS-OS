@@ -33,7 +33,7 @@ export function BillingPlanButton({ plan, label }: Props) {
         type="button"
         onClick={handleClick}
         disabled={isPending}
-        className="w-full rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+        className="w-full rounded bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-40"
       >
         {isPending ? "Redirecting…" : label}
       </button>

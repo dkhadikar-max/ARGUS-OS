@@ -1,12 +1,6 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-sans",
-  display: "swap",
-});
 
 const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
@@ -39,7 +33,20 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
+    <html lang="en" className={jetbrainsMono.variable}>
+      <head>
+        {/* Brand v1.0 §3 Typography: Satoshi isn't on Google Fonts, so it
+            can't go through next/font/google like JetBrains Mono below --
+            Fontshare is Satoshi's own free, official CDN (same "link an
+            external stylesheet" pattern as Google Fonts, just a different
+            host). Falls back to the brand doc's own specified stack
+            (system-ui/-apple-system/Segoe UI/sans-serif) if this fails to
+            load. */}
+        <link
+          rel="stylesheet"
+          href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700,900&display=swap"
+        />
+      </head>
       <body className="bg-obsidian text-pearl antialiased">{children}</body>
     </html>
   );

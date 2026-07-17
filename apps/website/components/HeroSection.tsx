@@ -21,8 +21,8 @@ export function HeroSection() {
             transition={{ duration: 0.8, ease: "easeOut" }}
           >
             <div className="flex items-center gap-2 mb-4">
-              <div className="w-1.5 h-1.5 bg-amber rotate-45" />
-              <span className="font-mono text-[11px] text-amber uppercase tracking-[0.15em]">
+              <div className="w-1.5 h-1.5 bg-teal rotate-45" />
+              <span className="font-mono text-[11px] text-teal uppercase tracking-[0.15em]">
                 Decision Operating System v3.0
               </span>
             </div>
@@ -38,7 +38,7 @@ export function HeroSection() {
               Every revenue team has AI.
               <br />
               Nobody has a{" "}
-              <strong className="text-amber font-semibold">
+              <strong className="text-teal font-semibold">
                 Decision OS.
               </strong>
             </h1>
@@ -114,14 +114,14 @@ function SidebarMockup() {
       </div>
 
       {/* Verdict Card */}
-      <div className="m-4 p-4 border border-bright bg-amber/5">
+      <div className="m-4 p-4 border border-bright bg-teal-glow/5">
         <div className="flex justify-between items-center mb-2">
           <span className="font-mono text-[10px] text-ash uppercase tracking-[0.1em]">
             Verdict
           </span>
           <span className="font-mono text-[10px] text-ash">94% conf</span>
         </div>
-        <div className="font-mono text-lg font-semibold text-amber mb-1">
+        <div className="font-mono text-lg font-semibold text-teal-glow mb-1">
           STRONG YES
         </div>
         <div className="font-mono text-[10px] text-ash leading-relaxed">
@@ -151,7 +151,7 @@ function SidebarMockup() {
       {/* Message Preview */}
       <div className="mx-4 p-3 border border-default bg-graphite text-xs leading-relaxed text-pearl mb-3">
         Hi Sarah — saw your recent post on scaling K8s. We helped{" "}
-        <span className="text-amber">[Similar Company]</span> reduce infra
+        <span className="text-teal">[Similar Company]</span> reduce infra
         costs by 40% during their Series B growth phase. Would you be open to a
         brief exchange on how you&apos;re approaching this?
       </div>
@@ -176,7 +176,7 @@ function SidebarMockup() {
             key={v}
             className={`py-2 font-mono text-[9px] text-center border transition-colors ${
               v === "STRONG YES"
-                ? "border-signal text-signal hover:bg-signal/10"
+                ? "border-teal-glow text-teal-glow hover:bg-teal-glow/10"
                 : v === "WAIT"
                 ? "border-wait text-wait hover:bg-wait/10"
                 : v === "PASS"
@@ -202,7 +202,7 @@ function EvidenceItem({
   sub: string;
 }) {
   const borderColor = status === "verified" ? "border-signal" : "border-caution";
-  const iconColor = status === "verified" ? "#059669" : "#D97706";
+  const iconColor = status === "verified" ? "#00D1C8" : "#F5A623";
 
   return (
     <div

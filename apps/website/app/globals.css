@@ -3,21 +3,26 @@
 @tailwind utilities;
 
 @layer base {
+  /* ARGUS OS Brand Guidelines v1.0 (2026-07-17) -- see tailwind.config.ts
+     for the full token-by-token migration rationale from the Bible §1.2
+     palette these variable names originally held. */
   :root {
-    --obsidian: #0A0E17;
-    --graphite: #111827;
-    --slate: #374151;
-    --ash: #6B7280;
-    --pearl: #F3F4F6;
-    --amber: #D97706;
-    --amber-glow: #F59E0B;
-    --signal: #059669;
+    --obsidian: #0A1628;
+    --graphite: #0F1E35;
+    --slate: #2A3A4E;
+    --ash: #8899AA;
+    --pearl: #FFFFFF;
+    --amber: #F5A623;
+    --amber-glow: #FFC15E;
+    --teal: #00D1C8;
+    --teal-glow: #00F5E8;
+    --signal: #00D1C8;
     --alert: #DC2626;
-    --wait: #6366F1;
-    --pass: #6B7280;
-    --hard-pass: #1F2937;
-    --border-default: rgba(55, 65, 81, 0.5);
-    --border-bright: rgba(217, 119, 6, 0.3);
+    --wait: #00A8E8;
+    --pass: #3D4F63;
+    --hard-pass: #2A3A4E;
+    --border-default: rgba(42, 58, 78, 0.5);
+    --border-bright: rgba(0, 209, 200, 0.3);
   }
 
   html {
@@ -25,7 +30,7 @@
   }
 
   body {
-    font-family: var(--font-sans), system-ui, sans-serif;
+    font-family: "Satoshi", system-ui, -apple-system, "Segoe UI", sans-serif;
     background-color: var(--obsidian);
     color: var(--pearl);
     -webkit-font-smoothing: antialiased;
@@ -33,7 +38,7 @@
   }
 
   ::selection {
-    background-color: rgba(217, 119, 6, 0.3);
+    background-color: rgba(0, 209, 200, 0.3);
     color: var(--pearl);
   }
 
@@ -59,7 +64,9 @@
   }
 
   .section-label {
-    @apply font-mono text-[11px] text-amber uppercase tracking-[0.15em] mb-4;
+    /* Brand v1.0: Teal is "primary accent" for section labels/glyphs;
+       Amber is reserved for CTA/verdict-highlight specifically. */
+    @apply font-mono text-[11px] text-teal uppercase tracking-[0.15em] mb-4;
   }
 
   .hairline-border {

@@ -45,7 +45,7 @@ export function IcpCriteriaEditor({ initialCriteria }: Props) {
           type="button"
           onClick={handleSave}
           disabled={isPending || !weightsValid}
-          className="rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+          className="rounded bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-700 disabled:opacity-40"
         >
           {isPending ? "Saving…" : "Save ICP"}
         </button>

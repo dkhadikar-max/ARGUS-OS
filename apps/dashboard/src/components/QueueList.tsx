@@ -77,7 +77,7 @@ export function QueueList({ items }: { items: QueueItem[] }) {
               className={`rounded-full border px-2.5 py-1 text-xs font-medium ${
                 hiddenVerdicts.has(verdict)
                   ? "border-gray-200 text-gray-400"
-                  : "border-blue-200 bg-blue-50 text-blue-700"
+                  : "border-teal-200 bg-teal-50 text-teal-700"
               }`}
             >
               {VERDICT_LABEL[verdict]}

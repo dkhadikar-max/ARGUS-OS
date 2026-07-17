@@ -29,7 +29,7 @@ export function Navigation() {
           <a
             key={link.label}
             href={link.href}
-            className="font-mono text-[13px] text-ash hover:text-amber transition-colors duration-200"
+            className="font-mono text-[13px] text-ash hover:text-teal transition-colors duration-200"
           >
             {link.label}
           </a>

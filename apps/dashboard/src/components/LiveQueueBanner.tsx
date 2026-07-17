@@ -16,7 +16,7 @@ export function LiveQueueBanner() {
       {events.map((event, index) => (
         <li
           key={`${event.type}-${event.data.decisionId}-${index}`}
-          className="rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-800"
+          className="rounded-md bg-teal-50 px-3 py-2 text-sm text-teal-800"
         >
           {event.type === "decision.created" ? (
             <>

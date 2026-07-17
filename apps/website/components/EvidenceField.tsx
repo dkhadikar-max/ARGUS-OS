@@ -22,9 +22,13 @@ const NODES: Node[] = [
 ];
 
 function EvidenceNode({ node }: { node: Node }) {
+  // Brand v1.0: "active" (a lively evidence point) now uses Teal, the
+  // brand's primary accent for evidence/AI -- "signal" already resolves to
+  // Teal too via the token change in tailwind.config.ts (brand has no
+  // separate green), so its shadow color is updated to match.
   const variantClasses = {
-    active: "border-amber shadow-[0_0_12px_rgba(217,119,6,0.4)] bg-amber/10",
-    signal: "border-signal shadow-[0_0_8px_rgba(5,150,105,0.3)]",
+    active: "border-teal shadow-[0_0_12px_rgba(0,209,200,0.4)] bg-teal/10",
+    signal: "border-signal shadow-[0_0_8px_rgba(0,209,200,0.3)]",
     alert: "border-alert shadow-[0_0_8px_rgba(220,38,38,0.3)]",
     default: "border-slate",
   };
@@ -47,8 +51,8 @@ export function EvidenceField() {
         className="absolute inset-0"
         style={{
           backgroundImage: `
-            linear-gradient(rgba(55,65,81,0.1) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(55,65,81,0.1) 1px, transparent 1px)
+            linear-gradient(rgba(42,58,78,0.1) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(42,58,78,0.1) 1px, transparent 1px)
           `,
           backgroundSize: "60px 60px",
         }}
@@ -58,7 +62,7 @@ export function EvidenceField() {
         className="absolute inset-0"
         style={{
           background:
-            "radial-gradient(circle at 50% 50%, transparent 0%, #0A0E17 70%)",
+            "radial-gradient(circle at 50% 50%, transparent 0%, #0A1628 70%)",
         }}
       />
       {/* Evidence Nodes */}

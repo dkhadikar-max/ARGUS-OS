@@ -6,7 +6,7 @@ export function PatternCard({ pattern }: { pattern: CompanyMemoryPattern }) {
     <li className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-4">
         <p className="text-sm font-medium text-gray-900">{pattern.description}</p>
-        <span className="shrink-0 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+        <span className="shrink-0 rounded-full bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700">
           {pattern.confidence}% confidence
         </span>
       </div>

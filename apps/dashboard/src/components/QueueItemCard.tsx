@@ -98,12 +98,12 @@ export function QueueItemCard({ item }: { item: QueueItem }) {
           <p className="mt-1 text-sm text-gray-500">
             {item.reason} · {item.lastActivity}
           </p>
-          <p className="mt-1 text-xs font-medium text-blue-700">{item.suggestedAction}</p>
+          <p className="mt-1 text-xs font-medium text-teal-700">{item.suggestedAction}</p>
           <a
             href={item.prospect.linkedInUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-1 inline-block text-xs font-medium text-blue-700 hover:underline"
+            className="mt-1 inline-block text-xs font-medium text-teal-700 hover:underline"
           >
             View on LinkedIn ↗
           </a>

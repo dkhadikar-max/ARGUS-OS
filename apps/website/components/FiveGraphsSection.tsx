@@ -42,7 +42,7 @@ export function FiveGraphsSection() {
       className="relative z-10 border-t border-default"
       style={{
         background:
-          "linear-gradient(180deg, #0A0E17 0%, rgba(17,24,39,0.8) 100%)",
+          "linear-gradient(180deg, #0A1628 0%, rgba(15,30,53,0.8) 100%)",
       }}
     >
       <div className="max-w-[1200px] mx-auto px-6 lg:px-12 py-32">
@@ -84,9 +84,9 @@ function GraphCard({
   return (
     <div className="group border border-default bg-graphite/40 p-6 relative overflow-hidden hover:border-bright transition-all duration-300">
       {/* Top accent line */}
-      <div className="absolute top-0 left-0 right-0 h-0.5 bg-slate group-hover:bg-amber transition-colors duration-300" />
+      <div className="absolute top-0 left-0 right-0 h-0.5 bg-slate group-hover:bg-teal transition-colors duration-300" />
 
-      <div className="mb-4 text-slate group-hover:text-amber transition-colors duration-300">
+      <div className="mb-4 text-slate group-hover:text-teal transition-colors duration-300">
         <Glyph className="w-8 h-8" />
       </div>
 

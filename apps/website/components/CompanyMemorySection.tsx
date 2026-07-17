@@ -77,13 +77,13 @@ export function CompanyMemorySection() {
                 <span className="font-mono text-[10px] text-ash uppercase tracking-[0.1em]">
                   PATTERNS (last 30 days)
                 </span>
-                <span className="font-mono text-[10px] text-amber">Live</span>
+                <span className="font-mono text-[10px] text-teal">Live</span>
               </div>
 
               {PATTERNS.map((p, i) => (
                 <div
                   key={i}
-                  className="p-3 border-l-2 border-amber bg-amber/5 mb-3"
+                  className="p-3 border-l-2 border-teal bg-teal/5 mb-3"
                 >
                   <div className="font-mono text-[11px] text-pearl font-semibold mb-1">
                     {p.title}

@@ -71,7 +71,7 @@ export default async function BillingPage({
       <div className="rounded-lg border border-gray-200 bg-white p-4">
         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Free</div>
         <p className="text-sm text-gray-600">$0 — 1 seat, 50 decisions/mo. Basic verdict, LinkedIn only, no Slack.</p>
-        {team.plan === "FREE" && <p className="mt-2 text-xs font-medium text-blue-700">Current plan</p>}
+        {team.plan === "FREE" && <p className="mt-2 text-xs font-medium text-teal-700">Current plan</p>}
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -84,7 +84,7 @@ export default async function BillingPage({
             </p>
             <p className="mb-4 text-xs text-gray-600">{p.features}</p>
             {team.plan === p.plan ? (
-              <p className="mt-auto text-xs font-medium text-blue-700">Current plan</p>
+              <p className="mt-auto text-xs font-medium text-teal-700">Current plan</p>
             ) : (
               <div className="mt-auto">
                 <BillingPlanButton plan={p.plan} label={`Upgrade to ${p.name}`} />

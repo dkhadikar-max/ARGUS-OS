@@ -101,7 +101,7 @@ export default async function SettingsPage() {
 
           <button
             type="submit"
-            className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+            className="rounded bg-teal-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-700"
           >
             Save preferences
           </button>
