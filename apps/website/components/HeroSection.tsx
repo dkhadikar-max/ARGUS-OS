@@ -2,6 +2,13 @@
 
 import { motion } from "framer-motion";
 
+// 2026-07-17: "Start Free" now goes straight to the real dashboard's
+// self-serve sign-up (apps/dashboard), same as the pricing cards below --
+// the dashboard didn't exist yet when this was first wired to just scroll
+// to the pricing section. "View Plans" still scrolls in-page, since that's
+// genuinely about seeing pricing, not signing up immediately.
+const DASHBOARD_URL = process.env.NEXT_PUBLIC_DASHBOARD_URL || "http://localhost:3000";
+
 export function HeroSection() {
   return (
     <section className="relative z-10 min-h-screen flex items-center pt-16">
@@ -47,15 +54,17 @@ export function HeroSection() {
             </p>
 
             {/* Policy v2.1 Homepage Hierarchy, step 5 "Path" (frozen
-                structure, not frozen labels): both buttons scroll to the
-                same CTA section below, now showing Bible §13.2's four SaaS
-                tiers instead of the Policy's GTM entry-path naming (deferred
-                until Phase 3, 2026-07-17 decision) — "View the Evidence
-                Chain" (→ #evidence) isn't lost, it's still one click away
-                via the Evidence link already in the nav bar. */}
+                structure, not frozen labels). "Start Free" links straight to
+                the dashboard's sign-up (see DASHBOARD_URL comment above);
+                "View Plans" still scrolls to the pricing section below,
+                showing Bible §13.2's four SaaS tiers instead of the Policy's
+                GTM entry-path naming (deferred until Phase 3, 2026-07-17
+                decision) — "View the Evidence Chain" (→ #evidence) isn't
+                lost, it's still one click away via the Evidence link
+                already in the nav bar. */}
             <div className="flex flex-wrap gap-4 mb-12">
               <a
-                href="#start"
+                href={`${DASHBOARD_URL}/sign-up`}
                 className="font-mono text-[13px] font-semibold px-8 py-4 bg-amber text-obsidian tracking-[0.05em] hover:bg-amber-glow transition-colors duration-200"
               >
                 Start Free

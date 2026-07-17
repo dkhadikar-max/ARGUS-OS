@@ -9,6 +9,11 @@ const NAV_LINKS = [
   { label: "Memory", href: "#memory" },
 ];
 
+// 2026-07-17: links straight to the real dashboard's self-serve sign-up
+// (apps/dashboard), same as HeroSection/CTASection -- previously just
+// scrolled to the pricing section, from before the dashboard existed.
+const DASHBOARD_URL = process.env.NEXT_PUBLIC_DASHBOARD_URL || "http://localhost:3000";
+
 export function Navigation() {
   return (
     <nav className="fixed top-0 left-0 right-0 h-16 border-b border-default bg-obsidian/85 backdrop-blur-xl z-50 flex items-center justify-between px-6 lg:px-12">
@@ -32,7 +37,7 @@ export function Navigation() {
       </div>
 
       <a
-        href="#start"
+        href={`${DASHBOARD_URL}/sign-up`}
         className="font-mono text-xs font-semibold px-5 py-2.5 bg-amber text-obsidian tracking-[0.05em] uppercase hover:bg-amber-glow transition-colors duration-200"
       >
         Start Free

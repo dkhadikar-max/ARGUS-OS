@@ -18,7 +18,7 @@ const PATHS = [
     decisions: "50 decisions/mo",
     features: "Basic verdict, LinkedIn only, no Slack",
     leadPath: "FREE" as const,
-    cta: { label: "Start Free", subject: "Free Plan Signup" },
+    cta: { label: "Start Free" },
   },
   {
     name: "Starter",
@@ -28,7 +28,7 @@ const PATHS = [
     decisions: "500 decisions/mo",
     features: "Full verdict, Slack bot, queue, basic memory",
     leadPath: "STARTER" as const,
-    cta: { label: "Start Starter", subject: "Starter Plan Signup" },
+    cta: { label: "Start Starter" },
   },
   {
     name: "Pro",
@@ -38,7 +38,7 @@ const PATHS = [
     decisions: "2,500 decisions/mo",
     features: "Full debate view, team analytics, CRM sync",
     leadPath: "PRO" as const,
-    cta: { label: "Start Pro", subject: "Pro Plan Signup" },
+    cta: { label: "Start Pro" },
   },
   {
     name: "Enterprise",
@@ -48,23 +48,30 @@ const PATHS = [
     decisions: "10,000 decisions/mo",
     features: "Custom ICP, API access, SSO, priority support",
     leadPath: "ENTERPRISE" as const,
-    cta: { label: "Talk to Sales", subject: "Enterprise Plan Inquiry" },
+    cta: { label: "Start Enterprise" },
   },
 ];
 
-// No form fields exist on this single click, so there's no lead identity to
-// send yet -- the visitor's actual identity only exists in whatever email
-// they send next. Best-effort and never blocks the mailto: navigation: a
-// failed request here must not stop someone from actually reaching out.
+// 2026-07-17: CTAs now go straight to the real dashboard's self-serve
+// sign-up (apps/dashboard), replacing the earlier mailto: placeholder --
+// the dashboard didn't exist yet when these were first wired.
+const DASHBOARD_URL = process.env.NEXT_PUBLIC_DASHBOARD_URL || "http://localhost:3000";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
+// No form fields exist on this single click, so there's no lead identity to
+// send yet -- the visitor's actual identity only exists once they sign up.
+// Best-effort and never blocks the sign-up navigation. `keepalive: true`
+// (unlike the earlier mailto:-based version) matters now: clicking this
+// immediately navigates the whole page to the dashboard's origin, which
+// would otherwise abort an in-flight fetch before it reaches the server.
 function recordLeadClick(path: (typeof PATHS)[number]["leadPath"]) {
   fetch(`${API_URL}/api/v1/leads`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path }),
+    keepalive: true,
   }).catch(() => {
-    // Best-effort: the mailto: link below is the real call-to-action.
+    // Best-effort: the sign-up navigation below is the real call-to-action.
   });
 }
 
@@ -117,7 +124,7 @@ export function CTASection() {
                     {path.features}
                   </div>
                   <a
-                    href={`mailto:${path.name === "Enterprise" ? "sales" : "hello"}@argusos.com?subject=${encodeURIComponent(path.cta.subject)}`}
+                    href={`${DASHBOARD_URL}/sign-up`}
                     onClick={() => recordLeadClick(path.leadPath)}
                     className="mt-auto block w-full py-3 border border-amber text-amber text-center font-mono text-[13px] font-semibold tracking-[0.05em] hover:bg-amber/10 transition-colors duration-200"
                   >
