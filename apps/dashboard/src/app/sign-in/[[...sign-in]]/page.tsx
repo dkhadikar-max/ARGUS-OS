@@ -12,7 +12,7 @@ export default function SignInPage() {
           already set, so this is safe for returning users too -- one route
           decides where a signed-in user lands, not two separate targets
           that could drift out of sync. */}
-      <SignIn fallbackRedirectUrl="/onboarding" />
+      <SignIn signUpUrl="/sign-up" fallbackRedirectUrl="/onboarding" />
     </div>
   );
 }

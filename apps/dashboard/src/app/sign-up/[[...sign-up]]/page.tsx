@@ -13,7 +13,7 @@ export default function SignUpPage() {
           createUserWithPersonalTeam comment) instead of straight into the
           app, so a fresh personal team gets a real name + first ICP before
           the Today Queue. */}
-      <SignUp fallbackRedirectUrl="/onboarding" />
+      <SignUp signInUrl="/sign-in" fallbackRedirectUrl="/onboarding" />
     </div>
   );
 }
