@@ -10,6 +10,11 @@ export function Footer() {
         <div>
           ARGUS AI — Decision Operating System for B2B Revenue Teams
         </div>
+        <div className="mt-4">
+          <a href="mailto:support@argusai.online" className="hover:text-ash">
+            support@argusai.online
+          </a>
+        </div>
       </div>
     </footer>
   );
