@@ -87,6 +87,38 @@ describe("extractProfileFromDom", () => {
     expect(profile.companyName).toBe("Microsoft");
   });
 
+  // Reproduces a second real-world markup variant (observed live on a
+  // non-verified profile): the connection-degree badges ("1st", "2nd") sit
+  // as separate sibling elements next to the name, rather than combined
+  // into one child the way the "3rd" badge was in the fixture above. That
+  // gave the name's own container 3 children by coincidence, which an
+  // earlier version of findProfileCard's plain children.length >= 3 check
+  // returned directly -- producing a title/company of "1st"/"2nd" instead
+  // of the real headline and company.
+  it("skips a name container whose extra children are only connection-degree badges", () => {
+    setUrl("/in/tushar-chouhan/");
+    document.title = "Tushar Chouhan | LinkedIn";
+    document.body.innerHTML = `
+      <main>
+        <div>
+          <div>
+            <div><a href="/in/tushar-chouhan/"><h2>Tushar Chouhan</h2></a></div>
+            <span>· 1st</span>
+            <span>· 2nd</span>
+          </div>
+          <p>Full Stack Developer | MERN Stack | BCA Student</p>
+          <p>Sigma web development</p>
+          <div>Indore, Madhya Pradesh, India</div>
+        </div>
+      </main>
+    `;
+
+    const profile = extractProfileFromDom();
+    expect(profile.name).toBe("Tushar Chouhan");
+    expect(profile.title).toBe("Full Stack Developer | MERN Stack | BCA Student");
+    expect(profile.companyName).toBe("Sigma web development");
+  });
+
   it("does not apply the personal-profile fallback on a company page", () => {
     setUrl("/company/microsoft/");
     document.title = "Microsoft | LinkedIn";
