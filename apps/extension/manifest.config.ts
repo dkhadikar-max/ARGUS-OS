@@ -17,6 +17,7 @@ import pkg from "./package.json" with { type: "json" };
 export default defineManifest(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const apiBaseUrl = env["VITE_API_BASE_URL"] || "http://localhost:4000";
+  const dashboardUrl = env["VITE_DASHBOARD_URL"] || "http://localhost:3000";
 
   return {
     manifest_version: 3,
@@ -52,5 +53,15 @@ export default defineManifest(({ mode }) => {
         run_at: "document_idle",
       },
     ],
+    // Bible §18 EXT-5 "Auth & Sync": lets the dashboard's ExtensionAuthSync
+    // component push a Clerk session token to the extension via
+    // chrome.runtime.sendMessage(extensionId, ...) once a rep signs in there
+    // -- the sidebar itself has no way to run Clerk's OAuth flow inside a
+    // service worker. Just a messaging channel, not a host permission; the
+    // background listener still checks sender.origin itself (see
+    // background/index.ts) as defense in depth.
+    externally_connectable: {
+      matches: [`${dashboardUrl}/*`],
+    },
   };
 });

@@ -18,9 +18,18 @@ const NEXT_PUBLIC_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http:/
 const NEXT_PUBLIC_POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY;
 const NEXT_PUBLIC_POSTHOG_HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://app.posthog.com";
 
+// Bible §18 EXT-5 "Auth & Sync" (components/ExtensionAuthSync.tsx):
+// chrome.runtime.sendMessage(extensionId, ...) needs the extension's ID up
+// front -- there's no page-side way to discover it. Unpacked (pre-Chrome
+// Web Store) installs get a stable ID from chrome://extensions; publishing
+// will assign a permanent one. Left unset, the sync component no-ops
+// instead of sending to a nonexistent extension.
+const NEXT_PUBLIC_EXTENSION_ID = process.env.NEXT_PUBLIC_EXTENSION_ID;
+
 export const env = {
   API_BASE_URL,
   NEXT_PUBLIC_API_BASE_URL,
   NEXT_PUBLIC_POSTHOG_KEY,
   NEXT_PUBLIC_POSTHOG_HOST,
+  NEXT_PUBLIC_EXTENSION_ID,
 };

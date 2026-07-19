@@ -9,6 +9,7 @@ import type { ExtensionMessage, ExtensionResponse, StoredAuth } from "../lib/mes
 // reads the exact same env var to keep host_permissions in sync with
 // whatever URL this actually fetches.
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000";
+const DASHBOARD_URL = import.meta.env.VITE_DASHBOARD_URL ?? "http://localhost:3000";
 const AUTH_STORAGE_KEY = "argus_auth";
 
 async function getAuth(): Promise<StoredAuth | null> {
@@ -29,6 +30,13 @@ async function apiFetch(path: string, init: RequestInit): Promise<unknown> {
 
   const body = await response.json();
   if (!response.ok) {
+    // A 401 here means the cached token expired (Clerk's default session
+    // JWT lives ~60s -- see ExtensionAuthSync.tsx) or was revoked. Clearing
+    // it now means the *next* sidebar open correctly shows the sign-in
+    // prompt instead of retrying a token that will never stop 401ing.
+    if (response.status === 401) {
+      await chrome.storage.local.remove(AUTH_STORAGE_KEY);
+    }
     const message =
       typeof body === "object" && body && "error" in body
         ? (body as { error: { message: string } }).error.message
@@ -120,4 +128,26 @@ async function handleMessage(message: ExtensionMessage): Promise<ExtensionRespon
 chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendResponse) => {
   handleMessage(message).then(sendResponse);
   return true; // keep the message channel open for the async response
+});
+
+// Bible §18 EXT-5 "Auth & Sync": the dashboard (an ordinary web page, not
+// part of this extension) reaches this via chrome.runtime.sendMessage(
+// extensionId, ...), which Chrome routes here instead of onMessage above.
+// manifest.config.ts's externally_connectable already restricts which
+// origins Chrome will deliver these from, but that match is host-only (it
+// can't distinguish app.argusai.online from a same-origin XSS on it) --
+// sender.origin is re-checked here as defense in depth. Only the two auth
+// message types are accepted; a compromised dashboard tab still can't reach
+// the sidebar's actual API surface through this channel.
+chrome.runtime.onMessageExternal.addListener((message: ExtensionMessage, sender, sendResponse) => {
+  if (sender.origin !== DASHBOARD_URL) {
+    sendResponse({ ok: false, error: "Unauthorized origin" });
+    return;
+  }
+  if (message.type !== "AUTH_SET" && message.type !== "AUTH_CLEAR") {
+    sendResponse({ ok: false, error: "Unsupported external message type" });
+    return;
+  }
+  handleMessage(message).then(sendResponse);
+  return true;
 });
