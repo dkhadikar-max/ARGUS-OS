@@ -46,6 +46,61 @@ export function detectProfilePageType(url: string): ProfilePageType {
   return null;
 }
 
+/**
+ * LinkedIn's current personal-profile markup (observed live, 2026-07) has no
+ * `<h1>` at all and every class name is an opaque content hash -- every
+ * selector above misses. What survives a redesign is the *structure*: the
+ * name is the lone heading (`<h1>`/`<h2>`) whose text exactly matches the
+ * page's own title, and its headline/company/location are that heading's
+ * nearest ancestor with 3+ siblings. A profile page is dense with *other*
+ * links back to the same person (their own activity-feed posts, "people
+ * also viewed" cards, etc.), which is why this anchors on the heading
+ * rather than on any `<a href>` pointing at the profile's own URL -- that
+ * matched a random feed item first and silently returned the wrong card.
+ * Only runs when the selector-based attempt above has already failed.
+ */
+function findProfileCard(expectedName: string): Element | null {
+  const headings = document.querySelectorAll("main h1, main h2");
+  for (const heading of headings) {
+    if (heading.textContent?.trim() !== expectedName) continue;
+
+    let el: Element | null = heading;
+    for (let i = 0; i < 8 && el; i++) {
+      const parent: Element | null = el.parentElement;
+      if (parent && parent.children.length >= 3) return parent;
+      el = parent;
+    }
+    return null;
+  }
+  return null;
+}
+
+function extractNameFallback(pageType: ProfilePageType): string | null {
+  if (pageType !== "personal") return null;
+  // LinkedIn reliably titles personal profile tabs "Name | LinkedIn" even on
+  // markup that gives no other stable hook.
+  const [name] = document.title.split(" | ");
+  return name?.trim() || null;
+}
+
+function extractTitleAndCompanyFallback(
+  pageType: ProfilePageType,
+  name: string | null,
+): { title: string | null; companyName: string | null } {
+  if (pageType !== "personal" || !name) return { title: null, companyName: null };
+
+  const card = findProfileCard(name);
+  if (!card) return { title: null, companyName: null };
+
+  // Observed child order: [0] name+connection-degree, [1] headline,
+  // [2] current company (plain text, no longer a /company/ link on this
+  // layout), [3] location. Guarded individually since a profile missing a
+  // headline or company still has the rest.
+  const title = card.children[1]?.textContent?.trim() || null;
+  const companyName = card.children[2]?.textContent?.trim() || null;
+  return { title, companyName };
+}
+
 export interface ExtractedProfile {
   linkedInUrl: string;
   name: string | null;
@@ -54,10 +109,22 @@ export interface ExtractedProfile {
 }
 
 export function extractProfileFromDom(): ExtractedProfile {
+  const linkedInUrl = window.location.href.split("?")[0] ?? window.location.href;
+  const pageType = detectProfilePageType(linkedInUrl);
+
+  const name = firstMatch(NAME_SELECTORS) ?? extractNameFallback(pageType);
+  const title = firstMatch(TITLE_SELECTORS);
+  const companyName = firstMatch(COMPANY_SELECTORS);
+
+  if (title !== null && companyName !== null) {
+    return { linkedInUrl, name, title, companyName };
+  }
+
+  const fallback = extractTitleAndCompanyFallback(pageType, name);
   return {
-    linkedInUrl: window.location.href.split("?")[0] ?? window.location.href,
-    name: firstMatch(NAME_SELECTORS),
-    title: firstMatch(TITLE_SELECTORS),
-    companyName: firstMatch(COMPANY_SELECTORS),
+    linkedInUrl,
+    name,
+    title: title ?? fallback.title,
+    companyName: companyName ?? fallback.companyName,
   };
 }
