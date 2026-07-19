@@ -9,6 +9,27 @@ export interface ActionResult {
   error?: string;
 }
 
+export interface SuggestCompanyContextActionResult {
+  ok: boolean;
+  suggested?: string;
+  error?: string;
+}
+
+// Same website-fetch-and-summarize action as onboarding/actions.ts's
+// suggestCompanyContextAction -- duplicated rather than shared across
+// routes so each route's actions.ts stays self-contained (matches this
+// file's existing pattern of not importing from onboarding/).
+export async function suggestCompanyContextAction(
+  websiteUrl: string,
+): Promise<SuggestCompanyContextActionResult> {
+  try {
+    const { suggested } = await api.suggestCompanyContext({ websiteUrl });
+    return { ok: true, suggested };
+  } catch (err) {
+    return { ok: false, error: err instanceof ApiError ? err.message : "Failed to generate a profile" };
+  }
+}
+
 // Bible §18 DSH-5 "User preferences form" (P1). A plain <form action={...}>
 // submission -- every field is a fixed select/checkbox, so no client-side
 // state is needed beyond what the browser's own form elements already
