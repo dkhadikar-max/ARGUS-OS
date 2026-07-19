@@ -94,6 +94,14 @@ model Team {
   // dashboard's /onboarding route checks to decide whether to show the
   // wizard again or redirect straight into the app.
   onboardedAt   DateTime?
+  // Free-text profile of the SELLER's own company (value prop, product,
+  // tone) -- distinct from ICP (which describes the target customer) and
+  // from CompanyMemory (which stores learned prospect-scoring patterns).
+  // Fed to the debate agents (apps/api/src/agents/orchestrator.ts) so
+  // drafted messages aren't written with zero knowledge of what the team
+  // actually sells. No Bible section defines this; see onboarding.md-style
+  // comment in team.service.ts for the same gap this fills.
+  companyContext String? @db.Text
   // Bible §5.2 "BillingSubscription" -- Dodo Payments (not Stripe, which
   // isn't available in India), see apps/api's billing module. Set together
   // on the same subscription.active/renewed webhook (never independently),

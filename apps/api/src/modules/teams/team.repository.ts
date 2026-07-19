@@ -16,12 +16,16 @@ export function getTeam(teamId: string) {
  */
 export async function completeTeamOnboarding(
   teamId: string,
-  data: { name: string; criteria: IcpCriterion[] },
+  data: { name: string; criteria: IcpCriterion[]; companyContext?: string },
 ) {
   return prisma.$transaction(async (tx) => {
     const team = await tx.team.update({
       where: { id: teamId },
-      data: { name: data.name, onboardedAt: new Date() },
+      data: {
+        name: data.name,
+        onboardedAt: new Date(),
+        companyContext: data.companyContext ?? undefined,
+      },
     });
     await tx.iCPDefinition.upsert({
       where: { teamId },
@@ -29,5 +33,12 @@ export async function completeTeamOnboarding(
       update: { criteria: data.criteria as never, version: { increment: 1 } },
     });
     return team;
+  });
+}
+
+export function updateCompanyContext(teamId: string, companyContext: string | undefined) {
+  return prisma.team.update({
+    where: { id: teamId },
+    data: { companyContext: companyContext ?? null },
   });
 }

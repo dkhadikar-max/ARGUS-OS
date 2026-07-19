@@ -26,6 +26,7 @@ import { getPolicy } from "../policy/policy.repository.js";
 import { evaluatePolicyRules } from "../policy/policy.service.js";
 import { getRecentOverrideCounts } from "../outcomes/outcome.repository.js";
 import { logger } from "../../lib/logger.js";
+import { getTeam } from "../teams/team.repository.js";
 
 // Bible §8.3 classifies research data points as one of five lowercase
 // strings ("firmographic, demographic, technographic, intent, or risk"),
@@ -194,7 +195,7 @@ export async function createDecision(
   // so the Research Agent gets real firmographics, not just whatever the
   // LinkedIn content script scraped. No-ops (and stays cheap) once a
   // prospect was enriched within the last 30 days — see enrichment.service.ts.
-  const [enrichment, icp, companyMemory, userPreferences, prospectHistory, teamHistory, policy] =
+  const [enrichment, icp, companyMemory, userPreferences, prospectHistory, teamHistory, policy, team] =
     await Promise.all([
       enrichProspect(upsertedProspect),
       getActiveIcp(request.context.teamId),
@@ -206,6 +207,11 @@ export async function createDecision(
       // -- fetched alongside everything else this decision needs, evaluated
       // once the debate's verdict/confidence are known below.
       getPolicy(request.context.teamId),
+      // Team.companyContext (not the Bible -- see schema.prisma's comment):
+      // the judge agent's drafted messages need to know what the seller's
+      // company actually sells, same reasoning as everything else in this
+      // Promise.all.
+      getTeam(request.context.teamId),
     ]);
   const prospect = enrichment.prospect;
 
@@ -247,6 +253,7 @@ export async function createDecision(
       teamHistory: teamHistory.map((d) => ({ verdict: d.verdict, outcome: d.outcome?.type })),
       userPreferences: userPreferences ?? null,
       teamPatterns: companyMemory?.patterns ?? null,
+      companyContext: team?.companyContext ?? null,
     });
     output = debate.output;
     processingTimeMs = debate.processingTimeMs;

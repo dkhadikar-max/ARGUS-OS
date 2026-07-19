@@ -55,6 +55,7 @@ const sampleInput = {
   teamHistory: [],
   userPreferences: null,
   teamPatterns: null,
+  companyContext: null,
 };
 
 beforeEach(() => {

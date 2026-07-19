@@ -1,8 +1,17 @@
 import { Router } from "express";
-import { completeOnboardingRequestSchema } from "@argus/shared";
+import {
+  completeOnboardingRequestSchema,
+  suggestCompanyContextRequestSchema,
+  updateCompanyContextRequestSchema,
+} from "@argus/shared";
 import { requireAuth } from "../../middleware/auth.js";
 import { validate } from "../../middleware/validate.js";
-import { completeOnboardingHandler, getTeamHandler } from "./team.controller.js";
+import {
+  completeOnboardingHandler,
+  getTeamHandler,
+  suggestCompanyContextHandler,
+  updateCompanyContextHandler,
+} from "./team.controller.js";
 
 export const teamRouter = Router();
 
@@ -14,4 +23,16 @@ teamRouter.post(
   requireAuth,
   validate(completeOnboardingRequestSchema),
   completeOnboardingHandler,
+);
+teamRouter.post(
+  "/me/company-context/suggest",
+  requireAuth,
+  validate(suggestCompanyContextRequestSchema),
+  suggestCompanyContextHandler,
+);
+teamRouter.patch(
+  "/me/company-context",
+  requireAuth,
+  validate(updateCompanyContextRequestSchema),
+  updateCompanyContextHandler,
 );

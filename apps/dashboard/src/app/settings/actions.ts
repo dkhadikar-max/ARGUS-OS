@@ -47,6 +47,22 @@ export async function updateIcpAction(criteria: IcpCriterion[]): Promise<ActionR
   return { ok: true };
 }
 
+// Company context (not the Bible -- see schema.prisma's Team.companyContext
+// comment). Same "Client Component calls the action directly" pattern as
+// updateIcpAction above, for consistency -- a single free-text field could
+// use <form action> instead, but this keeps every settings save the same
+// shape.
+export async function updateCompanyContextAction(companyContext: string): Promise<ActionResult> {
+  try {
+    await api.updateCompanyContext({ companyContext: companyContext.trim() || undefined });
+  } catch (err) {
+    return { ok: false, error: err instanceof ApiError ? err.message : "Failed to save company context" };
+  }
+
+  revalidatePath("/settings");
+  return { ok: true };
+}
+
 // Policy v2.1 L4 Policy Engine (not the Bible) -- same "Client Component
 // calls the action directly" pattern as updateIcpAction above, for the
 // same reason (a dynamic add/remove rule list needs real client state).

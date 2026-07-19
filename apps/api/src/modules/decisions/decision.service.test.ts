@@ -49,6 +49,9 @@ vi.mock("../policy/policy.repository.js", () => ({ getPolicy }));
 const getRecentOverrideCounts = vi.fn();
 vi.mock("../outcomes/outcome.repository.js", () => ({ getRecentOverrideCounts }));
 
+const getTeam = vi.fn();
+vi.mock("../teams/team.repository.js", () => ({ getTeam }));
+
 const { createDecision, getDecision, overrideDecision, recordAction, shareDecision, editMessageDraft } = await import(
   "./decision.service.js"
 );
@@ -108,6 +111,7 @@ beforeEach(() => {
   // default: below the guardrail's own minimum sample size, so it never
   // fires unless a test explicitly sets a larger window.
   getRecentOverrideCounts.mockResolvedValue({ total: 0, overridden: 0 });
+  getTeam.mockResolvedValue({ companyContext: null }); // default: no company context set
 });
 
 describe("createDecision", () => {

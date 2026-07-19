@@ -20,6 +20,12 @@ export interface DecisionAgentInput {
   teamHistory: unknown;
   userPreferences: unknown;
   teamPatterns: unknown;
+  /** Free-text profile of the SELLER's own company (Team.companyContext) --
+   *  not a Bible §8 placeholder, so it's appended to the system prompt at
+   *  call time (see runAgentDebate) rather than injected into the
+   *  verbatim §8.2-§8.7 templates in prompts.ts. Only affects the judge
+   *  agent's drafted messages; nothing else in the debate needs it. */
+  companyContext: string | null;
 }
 
 const PLACEHOLDER_MAP: Record<string, keyof DecisionAgentInput> = {
@@ -245,6 +251,13 @@ export async function runAgentDebate(
 ): Promise<{ output: AgentDebateOutput; processingTimeMs: number }> {
   const startedAt = Date.now();
   const userPrompt = buildUserPrompt(input);
+  // Appended rather than spliced into MASTER_SYSTEM_PROMPT itself, which
+  // stays verbatim Bible §8.2 text -- this addendum only exists so the judge
+  // agent's drafted messages (§8.7) reflect what the seller's company
+  // actually sells, since no §8 placeholder covers that input.
+  const system = input.companyContext
+    ? `${MASTER_SYSTEM_PROMPT}\n\nABOUT THE SELLER'S COMPANY (use this to make drafted messages specific, not generic):\n${input.companyContext}`
+    : MASTER_SYSTEM_PROMPT;
 
   let lastError: unknown;
 
@@ -253,7 +266,7 @@ export async function runAgentDebate(
       const response = await anthropic.messages.create({
         model: CLAUDE_MODEL,
         max_tokens: 4096,
-        system: MASTER_SYSTEM_PROMPT,
+        system,
         messages: [{ role: "user", content: userPrompt }],
         tools: [DECISION_TOOL_SCHEMA],
         tool_choice: { type: "tool", name: TOOL_NAME },

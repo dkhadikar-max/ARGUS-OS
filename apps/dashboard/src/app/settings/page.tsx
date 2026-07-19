@@ -1,18 +1,20 @@
 import { api } from "../../lib/api-client";
 import { IcpCriteriaEditor } from "../../components/IcpCriteriaEditor";
 import { PolicyRulesEditor } from "../../components/PolicyRulesEditor";
+import { CompanyContextEditor } from "../../components/CompanyContextEditor";
 import { updatePreferencesAction } from "./actions";
 
 // Bible §18 DSH-5 "Settings" (P1 items only -- "Integration connections" and
 // "Billing page (Stripe)" are P2 and out of scope here; Slack connect
 // already lives on the Queue page's "Connect Slack" button).
 export default async function SettingsPage() {
-  const [preferences, icp, policy] = await Promise.all([
+  const [preferences, icp, policy, team] = await Promise.all([
     api.getPreferences(),
     api.getIcp(),
     // ARGUS Unanimous Policy v2.1 "L4 Policy Engine" -- not the Bible, see
     // packages/shared/schemas/policy.ts.
     api.getPolicy(),
+    api.getTeam(),
   ]);
 
   return (
@@ -109,6 +111,15 @@ export default async function SettingsPage() {
             <p className="text-xs text-gray-400">Showing defaults — not saved yet.</p>
           )}
         </form>
+      </section>
+
+      <section className="mb-8">
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Company context
+        </h2>
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <CompanyContextEditor initialCompanyContext={team.companyContext} />
+        </div>
       </section>
 
       <section>

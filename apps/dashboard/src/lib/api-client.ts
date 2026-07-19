@@ -11,7 +11,10 @@ import type {
   ListOutcomesResponse,
   PolicyResponse,
   QueueResponse,
+  SuggestCompanyContextRequest,
+  SuggestCompanyContextResponse,
   TeamResponse,
+  UpdateCompanyContextRequest,
   UpdateIcpRequest,
   UpdatePolicyRequest,
   UpdateUserPreferencesRequest,
@@ -99,6 +102,16 @@ export const api = {
   completeOnboarding: (payload: CompleteOnboardingRequest) =>
     apiFetch<TeamResponse>("/api/v1/teams/me/onboarding", {
       method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  suggestCompanyContext: (payload: SuggestCompanyContextRequest) =>
+    apiFetch<SuggestCompanyContextResponse>("/api/v1/teams/me/company-context/suggest", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateCompanyContext: (payload: UpdateCompanyContextRequest) =>
+    apiFetch<TeamResponse>("/api/v1/teams/me/company-context", {
+      method: "PATCH",
       body: JSON.stringify(payload),
     }),
   createCheckout: (payload: CreateCheckoutRequest) =>
