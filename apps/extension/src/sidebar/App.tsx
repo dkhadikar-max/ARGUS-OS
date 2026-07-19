@@ -12,10 +12,13 @@ import { FullDebateView } from "./components/FullDebateView.js";
 import { OutcomeButtons } from "./components/OutcomeButtons.js";
 
 // Bible §7.2 EXT-5: full Clerk OAuth handshake lives in the web dashboard
-// (Epic 5, not yet built in this pass) — the sidebar only consumes a token
-// already issued there. Until that flow exists, an unauthenticated rep is
-// pointed at the dashboard rather than the sidebar silently failing.
-const DASHBOARD_SIGN_IN_URL = "http://localhost:3000/sign-in";
+// (Epic 5) — the sidebar only consumes a token already issued there. An
+// unauthenticated rep is pointed at the dashboard rather than the sidebar
+// silently failing. Same "env var, not a hardcoded localhost string"
+// pattern as API_BASE_URL in background/index.ts, and for the same reason
+// -- a Chrome Web Store build shipped with this still pointed at localhost
+// would send every real user's browser to their own dev machine.
+const DASHBOARD_SIGN_IN_URL = `${import.meta.env.VITE_DASHBOARD_URL ?? "http://localhost:3000"}/sign-in`;
 
 type Status = "checking_auth" | "unauthenticated" | "loading" | "success" | "error";
 
