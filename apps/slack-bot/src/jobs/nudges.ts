@@ -7,8 +7,11 @@ import { argusApi } from "../lib/api-client.js";
 // Bible §9.2 Redis schema names this queue `queue:notifications`; §16.2
 // Risk #5 mitigation: "Slack bot sends outcome nudges at T+1 day, T+3
 // days, T+7 days" so the Decision Graph's learning loop doesn't stall on
-// missing outcomes.
-const QUEUE_NAME = "queue:notifications";
+// missing outcomes. BullMQ's Queue constructor rejects colons in the name
+// (they collide with its own internal `bull:<name>:...` Redis key scheme),
+// so the literal Bible string can't be used as-is -- same namespace intent,
+// hyphen instead of colon.
+const QUEUE_NAME = "queue-notifications";
 
 export interface OutcomeNudgeJobData {
   decisionId: string;
