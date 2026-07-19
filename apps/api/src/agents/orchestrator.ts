@@ -211,7 +211,7 @@ const DECISION_TOOL_SCHEMA = {
           message: {
             type: "object",
             properties: {
-              linkedin: { type: "string" },
+              linkedin: { type: ["string", "null"] },
               email: { type: ["string", "null"] },
               tone: { type: "string", enum: ["professional", "casual", "bold", "friendly"] },
               personalization_hooks: { type: "array", items: { type: "string" } },

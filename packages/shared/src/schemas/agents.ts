@@ -92,7 +92,12 @@ export const judgeAgentOutputSchema = z.object({
   reasoning: z.string(),
   key_evidence: z.array(z.string()),
   message: z.object({
-    linkedin: z.string(),
+    // Claude legitimately omits a LinkedIn draft when recommended_action is
+    // "pass_and_move_on" -- there's nothing worth sending. email already
+    // anticipated this; linkedin didn't, so a HARD_PASS/PASS verdict failed
+    // schema validation on the first attempt every time (silently absorbed
+    // by orchestrator.ts's retry, at the cost of ~90s per occurrence).
+    linkedin: z.string().nullable(),
     email: z.string().nullable(),
     tone: messageToneSchema,
     personalization_hooks: z.array(z.string()),

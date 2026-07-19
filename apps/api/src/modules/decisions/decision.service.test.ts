@@ -200,6 +200,131 @@ describe("createDecision", () => {
     );
   });
 
+  // Judge legitimately drafts no message at all (recommended_action:
+  // "pass_and_move_on") -- MessageDraft.body is a non-nullable DB column,
+  // so this must resolve to `message: null` rather than passing a null body
+  // through to createDecisionRecord.
+  it("omits the message draft entirely when the judge recommends no outreach", async () => {
+    repo.upsertProspect.mockResolvedValue({
+      id: "prospect_1",
+      name: "Sarah Chen",
+      title: "VP Engineering",
+      companyName: "DataFlow Inc.",
+      companyDomain: "dataflow.io",
+      linkedInUrl: request.prospect.linkedInUrl,
+      companySize: null,
+      companyIndustry: null,
+      companyFunding: null,
+      rawProfile: null,
+      enrichedData: null,
+    });
+    repo.getActiveIcp.mockResolvedValue(null);
+    repo.getCompanyMemory.mockResolvedValue(null);
+    repo.getUserPreferences.mockResolvedValue(null);
+    repo.getProspectDecisionHistory.mockResolvedValue([]);
+    repo.getTeamOutcomeHistory.mockResolvedValue([]);
+    runAgentDebate.mockResolvedValue({
+      output: {
+        ...agentDebateOutput,
+        judge: {
+          ...agentDebateOutput.judge,
+          verdict: "HARD_PASS",
+          recommended_action: "pass_and_move_on",
+          message: { linkedin: null, email: null, tone: "professional", personalization_hooks: [] },
+        },
+      },
+      processingTimeMs: 3200,
+    });
+    repo.createDecisionRecord.mockResolvedValue({ id: "dec_1" });
+    repo.findDecisionById.mockResolvedValue({
+      id: "dec_1",
+      verdict: "HARD_PASS",
+      confidence: 94,
+      reasoning: "Not a fit.",
+      recommendedAction: "pass_and_move_on",
+      processingTimeMs: 3200,
+      createdAt: new Date("2026-07-10T14:32:00Z"),
+      updatedAt: new Date("2026-07-10T14:32:00Z"),
+      evidence: [],
+      messageDrafts: [],
+      outcome: null,
+      override: null,
+      prospect: {
+        id: "prospect_1",
+        name: "Sarah Chen",
+        title: "VP Engineering",
+        companyName: "DataFlow Inc.",
+        linkedInUrl: "https://linkedin.com/in/sarahchen",
+      },
+    });
+
+    await createDecision(request, auth);
+
+    expect(repo.createDecisionRecord).toHaveBeenCalledWith(expect.objectContaining({ message: null }));
+  });
+
+  // The judge omits a linkedin draft but still has an email one -- falls
+  // back to it (and labels the channel EMAIL, not the originally-requested
+  // LINKEDIN) rather than treating "no linkedin" as "no message at all".
+  it("falls back to the other channel's draft when the requested one is null", async () => {
+    repo.upsertProspect.mockResolvedValue({
+      id: "prospect_1",
+      name: "Sarah Chen",
+      title: "VP Engineering",
+      companyName: "DataFlow Inc.",
+      companyDomain: "dataflow.io",
+      linkedInUrl: request.prospect.linkedInUrl,
+      companySize: null,
+      companyIndustry: null,
+      companyFunding: null,
+      rawProfile: null,
+      enrichedData: null,
+    });
+    repo.getActiveIcp.mockResolvedValue(null);
+    repo.getCompanyMemory.mockResolvedValue(null);
+    repo.getUserPreferences.mockResolvedValue(null);
+    repo.getProspectDecisionHistory.mockResolvedValue([]);
+    repo.getTeamOutcomeHistory.mockResolvedValue([]);
+    runAgentDebate.mockResolvedValue({
+      output: {
+        ...agentDebateOutput,
+        judge: {
+          ...agentDebateOutput.judge,
+          message: { linkedin: null, email: "Hi Sarah,", tone: "professional", personalization_hooks: [] },
+        },
+      },
+      processingTimeMs: 3200,
+    });
+    repo.createDecisionRecord.mockResolvedValue({ id: "dec_1" });
+    repo.findDecisionById.mockResolvedValue({
+      id: "dec_1",
+      verdict: "STRONG_YES",
+      confidence: 94,
+      reasoning: "Strong across the board.",
+      recommendedAction: "message_now",
+      processingTimeMs: 3200,
+      createdAt: new Date("2026-07-10T14:32:00Z"),
+      updatedAt: new Date("2026-07-10T14:32:00Z"),
+      evidence: [],
+      messageDrafts: [{ channel: "EMAIL", body: "Hi Sarah,", tone: "professional", personalizationHooks: [] }],
+      outcome: null,
+      override: null,
+      prospect: {
+        id: "prospect_1",
+        name: "Sarah Chen",
+        title: "VP Engineering",
+        companyName: "DataFlow Inc.",
+        linkedInUrl: "https://linkedin.com/in/sarahchen",
+      },
+    });
+
+    await createDecision(request, auth);
+
+    expect(repo.createDecisionRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ message: { channel: "EMAIL", body: "Hi Sarah,", tone: "professional", personalizationHooks: [] } }),
+    );
+  });
+
   it("evaluates the team's policy rules against the verdict/confidence and surfaces the resulting flags (Policy v2.1 L4 Policy Engine)", async () => {
     repo.upsertProspect.mockResolvedValue({
       id: "prospect_1",

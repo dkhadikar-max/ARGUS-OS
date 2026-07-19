@@ -1,4 +1,4 @@
-import { agentDebateOutputSchema, AppError, scoreToVerdict, type CreateActionRequest, type CreateActionResponse, type CreateDecisionRequest, type DecisionResponse, type EditMessageDraftRequest, type EditMessageDraftResponse, type OverrideDecisionRequest, type OverrideDecisionResponse, type PolicyFlag, type ShareDecisionResponse } from "@argus/shared";
+import { agentDebateOutputSchema, AppError, scoreToVerdict, type AgentDebateOutput, type CreateActionRequest, type CreateActionResponse, type CreateDecisionRequest, type DecisionResponse, type EditMessageDraftRequest, type EditMessageDraftResponse, type OverrideDecisionRequest, type OverrideDecisionResponse, type PolicyFlag, type ShareDecisionResponse } from "@argus/shared";
 import type { AuthContext } from "../../middleware/auth.js";
 import { runAgentDebate } from "../../agents/orchestrator.js";
 import {
@@ -115,6 +115,30 @@ function buildEnrichmentEvidence(
   }
 
   return evidence;
+}
+
+// The judge legitimately returns a null linkedin (and/or email) draft when
+// recommended_action is "pass_and_move_on" -- there's nothing worth sending.
+// MessageDraft.body is a non-nullable DB column, so this falls back to
+// whichever channel actually has content, and returns null (same as
+// generateMessage: false) only when neither does, rather than ever handing
+// createDecisionRecord a null body.
+function buildMessageDraft(
+  request: CreateDecisionRequest,
+  output: AgentDebateOutput,
+): { channel: "LINKEDIN" | "EMAIL"; body: string; tone: string; personalizationHooks: unknown } | null {
+  if (!request.options.generateMessage) return null;
+
+  const { linkedin, email, tone, personalization_hooks: personalizationHooks } = output.judge.message;
+  const preferredChannel: Array<["LINKEDIN" | "EMAIL", string | null]> =
+    request.options.messageChannel === "EMAIL"
+      ? [["EMAIL", email], ["LINKEDIN", linkedin]]
+      : [["LINKEDIN", linkedin], ["EMAIL", email]];
+
+  for (const [channel, body] of preferredChannel) {
+    if (body) return { channel, body, tone, personalizationHooks };
+  }
+  return null;
 }
 
 // `agentOutputs` is a `Json?` column (schema.prisma: "Full agent outputs for
@@ -299,17 +323,7 @@ export async function createDecision(
       })),
       ...buildEnrichmentEvidence(enrichment),
     ],
-    message: request.options.generateMessage
-      ? {
-          channel: request.options.messageChannel,
-          body:
-            request.options.messageChannel === "EMAIL"
-              ? output.judge.message.email ?? output.judge.message.linkedin
-              : output.judge.message.linkedin,
-          tone: output.judge.message.tone,
-          personalizationHooks: output.judge.message.personalization_hooks,
-        }
-      : null,
+    message: buildMessageDraft(request, output),
   });
 
   const full = await findDecisionById(decision.id, request.context.teamId);

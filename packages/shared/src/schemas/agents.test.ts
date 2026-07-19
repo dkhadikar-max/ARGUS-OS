@@ -109,4 +109,19 @@ describe("agentDebateOutputSchema", () => {
     delete invalid.risk;
     expect(agentDebateOutputSchema.safeParse(invalid).success).toBe(false);
   });
+
+  // recommended_action: "pass_and_move_on" legitimately has nothing worth
+  // drafting -- a null linkedin message must not fail validation the way it
+  // used to (silently absorbed by orchestrator.ts's retry at ~90s a time).
+  it("accepts a null linkedin message alongside pass_and_move_on", () => {
+    const valid = validDebateOutput();
+    valid.judge.recommended_action = "pass_and_move_on";
+    valid.judge.message = {
+      linkedin: null as unknown as string,
+      email: null,
+      tone: "professional",
+      personalization_hooks: [],
+    };
+    expect(agentDebateOutputSchema.safeParse(valid).success).toBe(true);
+  });
 });
