@@ -32,8 +32,14 @@ export type CompleteOnboardingRequest = z.infer<typeof completeOnboardingRequest
 // profile -- returned to the client for the user to edit/confirm, never
 // saved directly (Bible has no wireframe for this; matches the "user
 // confirms before save" pattern chosen for onboarding's AI-suggested text).
+// z.url() requires a scheme, but people naturally type a bare domain
+// ("acme.com") -- preprocessed to add https:// rather than rejecting that.
 export const suggestCompanyContextRequestSchema = z.object({
-  websiteUrl: z.string().trim().url("Enter a valid URL"),
+  websiteUrl: z.preprocess((val) => {
+    if (typeof val !== "string") return val;
+    const trimmed = val.trim();
+    return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  }, z.string().url("Enter a valid URL")),
 });
 export type SuggestCompanyContextRequest = z.infer<typeof suggestCompanyContextRequestSchema>;
 
