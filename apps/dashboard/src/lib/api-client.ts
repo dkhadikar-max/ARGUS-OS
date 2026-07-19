@@ -11,6 +11,7 @@ import type {
   ListOutcomesResponse,
   PolicyResponse,
   QueueResponse,
+  SlackIntegrationStatusResponse,
   SuggestCompanyContextRequest,
   SuggestCompanyContextResponse,
   TeamResponse,
@@ -72,6 +73,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   getQueue: () => apiFetch<QueueResponse>("/api/v1/queue"),
+  getSlackStatus: () => apiFetch<SlackIntegrationStatusResponse>("/api/v1/integrations/slack/status"),
   getCompanyMemory: () => apiFetch<CompanyMemoryResponse>("/api/v1/memory"),
   getPreferences: () => apiFetch<UserPreferencesResponse>("/api/v1/preferences"),
   updatePreferences: (payload: UpdateUserPreferencesRequest) =>

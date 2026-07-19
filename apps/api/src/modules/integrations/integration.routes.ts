@@ -11,6 +11,7 @@ import {
   resolveSlackTeamHandler,
   resolveSlackUserHandler,
   slackOAuthCallbackHandler,
+  slackStatusHandler,
 } from "./integration.controller.js";
 
 export const integrationRouter = Router();
@@ -33,6 +34,9 @@ integrationRouter.post(
 // security mechanism there instead (see oauth-state.ts).
 integrationRouter.get("/slack/install", requireAuth, installSlackHandler);
 integrationRouter.get("/slack/oauth/callback", slackOAuthCallbackHandler);
+// Not in the Bible -- lets the Queue page show connected state instead of
+// always rendering "Connect Slack" regardless of whether it already is.
+integrationRouter.get("/slack/status", requireAuth, slackStatusHandler);
 
 // Server-to-server only: called by apps/slack-bot, never by end users.
 integrationRouter.get("/slack/team/:slackTeamId", requireInternalService, resolveSlackTeamHandler);

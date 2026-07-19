@@ -1,4 +1,4 @@
-import { AppError, type ConnectSlackRequest, type ConnectSlackResponse, type LinkSlackUserRequest, type LinkSlackUserResponse, type SlackTeamResolution, type SlackUserResolution } from "@argus/shared";
+import { AppError, type ConnectSlackRequest, type ConnectSlackResponse, type LinkSlackUserRequest, type LinkSlackUserResponse, type SlackIntegrationStatusResponse, type SlackTeamResolution, type SlackUserResolution } from "@argus/shared";
 import { ADMIN_ROLES, type AuthContext } from "../../middleware/auth.js";
 import {
   connectSlackIntegration,
@@ -129,6 +129,17 @@ export async function resolveSlackUser(
   const resolution = await resolveSlackTeam(slackTeamId);
   const user = await findUserBySlackId(resolution.argusTeamId, slackUserId);
   return { userId: user?.id ?? null };
+}
+
+/** Not in the Bible -- backs the Queue page's "Connect Slack" button so it
+ *  can show connected state instead of always rendering as if nothing were
+ *  connected. Any team member can check (not admin-gated, unlike connect/
+ *  install below), since it's read-only. */
+export async function getSlackIntegrationStatus(
+  auth: AuthContext,
+): Promise<SlackIntegrationStatusResponse> {
+  const integration = await findSlackIntegrationByTeamId(auth.teamId);
+  return { connected: integration?.status === "CONNECTED" };
 }
 
 /** Bible §18 SLK-1 — step 1 of the self-serve "Add to Slack" flow: an

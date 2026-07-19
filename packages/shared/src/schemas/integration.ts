@@ -51,3 +51,11 @@ export const slackInstallResponseSchema = z.object({
   url: z.string().url(),
 });
 export type SlackInstallResponse = z.infer<typeof slackInstallResponseSchema>;
+
+// Not in the Bible -- the Queue page's "Connect Slack" button had no way to
+// reflect an already-connected team (it rendered unconditionally regardless
+// of integration state), so this backs a status check the page can use.
+export const slackIntegrationStatusResponseSchema = z.object({
+  connected: z.boolean(),
+});
+export type SlackIntegrationStatusResponse = z.infer<typeof slackIntegrationStatusResponseSchema>;

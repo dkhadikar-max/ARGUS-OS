@@ -9,7 +9,7 @@ export default async function QueuePage({
 }: {
   searchParams: Promise<{ slack?: string }>;
 }) {
-  const queue = await api.getQueue();
+  const [queue, slackStatus] = await Promise.all([api.getQueue(), api.getSlackStatus()]);
   const { slack } = await searchParams;
 
   return (
@@ -35,12 +35,18 @@ export default async function QueuePage({
             {queue.stats.pass} pass · {queue.stats.newSinceYesterday} new since yesterday
           </p>
         </div>
-        <a
-          href="/api/slack/install"
-          className="shrink-0 rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-700"
-        >
-          Connect Slack
-        </a>
+        {slackStatus.connected ? (
+          <span className="shrink-0 rounded-md bg-green-50 px-3 py-1.5 text-sm font-medium text-green-800">
+            ✓ Slack connected
+          </span>
+        ) : (
+          <a
+            href="/api/slack/install"
+            className="shrink-0 rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-700"
+          >
+            Connect Slack
+          </a>
+        )}
       </header>
 
       <LiveQueueBanner />

@@ -65,6 +65,16 @@ export async function resolveSlackUserHandler(req: Request, res: Response, next:
   }
 }
 
+export async function slackStatusHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.auth) throw new AppError("UNAUTHORIZED", "Authentication required");
+    const result = await integrationService.getSlackIntegrationStatus(req.auth);
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // Returns the authorize URL as JSON rather than a 302: this endpoint is
 // authenticated via requireAuth's Bearer/x-api-key scheme (Bible §10.1),
 // which only a same-origin fetch() with the dashboard's Clerk JWT can
