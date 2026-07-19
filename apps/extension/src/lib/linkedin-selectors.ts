@@ -46,12 +46,21 @@ export function detectProfilePageType(url: string): ProfilePageType {
   return null;
 }
 
-// A connection-degree badge ("1st", "· 2nd", "500th+") next to the name --
-// LinkedIn sometimes renders it as a sibling of the name (not combined into
-// one child), which used to fool the ancestor walk below into stopping one
-// level too early: a name+badge+badge container already has 3 children, but
-// none of them are the headline/company/location this function is after.
-const CONNECTION_BADGE = /^[·•]?\s*\d+(st|nd|rd|th)\+?$/i;
+// Short badge-like text next to the name -- connection degree ("· 1st",
+// "3rd+"), pronouns ("He/Him"), verification checkmarks, etc. -- sometimes
+// renders as a sibling of the name rather than combined into one child,
+// which used to fool the ancestor walk below into stopping one level too
+// early (a name+badge+badge container already "looks" content-bearing).
+// Rather than list every badge LinkedIn might ever render, this asks the
+// opposite question: does this child read like actual prose (long enough,
+// multiple words)? A real headline/company/location always does; a badge
+// never does, even ones not seen yet. A short single-word real value (e.g.
+// company name "Microsoft") can still fail this check on its own -- fine,
+// since only one sibling needs to pass it for the container to qualify.
+function looksLikeProse(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed.length > 10 && /\s/.test(trimmed);
+}
 
 /**
  * LinkedIn's current personal-profile markup (observed live, 2026-07) has no
@@ -59,14 +68,14 @@ const CONNECTION_BADGE = /^[·•]?\s*\d+(st|nd|rd|th)\+?$/i;
  * selector above misses. What survives a redesign is the *structure*: the
  * name is the lone heading (`<h1>`/`<h2>`) whose text exactly matches the
  * page's own title, and its headline/company/location are that heading's
- * nearest ancestor with 2+ *non-badge* children (the name's own container
- * counts as one; a real headline/location/etc. as the other). A profile
- * page is dense with *other* links back to the same person (their own
- * activity-feed posts, "people also viewed" cards, etc.), which is why this
- * anchors on the heading rather than on any `<a href>` pointing at the
- * profile's own URL -- that matched a random feed item first and silently
- * returned the wrong card. Only runs when the selector-based attempt above
- * has already failed.
+ * nearest ancestor with 2+ prose-like children (the name's own container
+ * usually qualifies as one, since most names contain a space; a real
+ * headline/location/etc. as the other). A profile page is dense with
+ * *other* links back to the same person (their own activity-feed posts,
+ * "people also viewed" cards, etc.), which is why this anchors on the
+ * heading rather than on any `<a href>` pointing at the profile's own URL
+ * -- that matched a random feed item first and silently returned the wrong
+ * card. Only runs when the selector-based attempt above has already failed.
  */
 function findProfileCard(expectedName: string): Element | null {
   const headings = document.querySelectorAll("main h1, main h2");
@@ -77,11 +86,10 @@ function findProfileCard(expectedName: string): Element | null {
     for (let i = 0; i < 8 && el; i++) {
       const parent: Element | null = el.parentElement;
       if (parent) {
-        const contentSiblings = Array.from(parent.children).filter((child) => {
-          const text = child.textContent?.trim();
-          return Boolean(text) && !CONNECTION_BADGE.test(text ?? "");
-        });
-        if (contentSiblings.length >= 2) return parent;
+        const proseSiblings = Array.from(parent.children).filter((child) =>
+          looksLikeProse(child.textContent ?? ""),
+        );
+        if (proseSiblings.length >= 2) return parent;
       }
       el = parent;
     }

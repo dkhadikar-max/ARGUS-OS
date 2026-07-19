@@ -119,6 +119,37 @@ describe("extractProfileFromDom", () => {
     expect(profile.companyName).toBe("Sigma web development");
   });
 
+  // Reproduces a third real-world markup variant (observed live): a pronoun
+  // badge ("He/Him") sits alongside the connection-degree badge as another
+  // sibling of the name. A pronoun isn't caught by a connection-degree-only
+  // filter, so a name container with [name, pronoun, degree] still looked
+  // like it had 2+ "real" children under an earlier version of this check
+  // -- this is why findProfileCard asks "does it look like prose" instead
+  // of trying to enumerate every kind of badge LinkedIn might render.
+  it("skips a name container whose extra children are a pronoun and a connection-degree badge", () => {
+    setUrl("/in/aman-shukla/");
+    document.title = "Aman shukla | LinkedIn";
+    document.body.innerHTML = `
+      <main>
+        <div>
+          <div>
+            <div><a href="/in/aman-shukla/"><h2>Aman shukla</h2></a></div>
+            <p>He/Him</p>
+            <p>· 3rd</p>
+          </div>
+          <p>Backend / Full-Stack Developer | Java · Spring Boot · React</p>
+          <p>Blue Sapphire Infrastructure LLP</p>
+          <div>Noida, Uttar Pradesh, India</div>
+        </div>
+      </main>
+    `;
+
+    const profile = extractProfileFromDom();
+    expect(profile.name).toBe("Aman shukla");
+    expect(profile.title).toBe("Backend / Full-Stack Developer | Java · Spring Boot · React");
+    expect(profile.companyName).toBe("Blue Sapphire Infrastructure LLP");
+  });
+
   it("does not apply the personal-profile fallback on a company page", () => {
     setUrl("/company/microsoft/");
     document.title = "Microsoft | LinkedIn";
