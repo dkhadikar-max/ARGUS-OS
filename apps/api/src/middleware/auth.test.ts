@@ -157,4 +157,19 @@ describe("requireAuth — Bearer JWT", () => {
 
     expect(next.mock.calls[0]?.[0]).toMatchObject({ code: "UNAUTHORIZED" });
   });
+
+  // Clerk's default session token expires in ~60s, making this the single
+  // most common real-world failure -- jose throws its own JWTExpired class
+  // here, which must become a 401 AppError rather than an unhandled 500
+  // (callers like apps/extension's background worker specifically check
+  // for 401 to clear a stale cached token).
+  it("rejects an expired/invalid JWT with UNAUTHORIZED instead of throwing raw", async () => {
+    jwtVerify.mockRejectedValue(new Error('"exp" claim timestamp check failed'));
+
+    const req = mockReq({ authorization: "Bearer expired.jwt.token" });
+    const next = vi.fn();
+    await requireAuth(req, {} as Response, next);
+
+    expect(next.mock.calls[0]?.[0]).toMatchObject({ code: "UNAUTHORIZED" });
+  });
 });

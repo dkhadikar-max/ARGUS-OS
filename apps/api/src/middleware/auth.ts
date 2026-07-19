@@ -97,9 +97,20 @@ export async function authenticateWithJwt(token: string): Promise<AuthContext> {
     );
   }
 
-  const { payload } = await jwtVerify(token, jwks, {
-    issuer: env.CLERK_JWT_ISSUER,
-  });
+  let payload;
+  try {
+    ({ payload } = await jwtVerify(token, jwks, { issuer: env.CLERK_JWT_ISSUER }));
+  } catch {
+    // jose throws its own error classes here (JWTExpired,
+    // JWSSignatureVerificationFailed, JWTClaimValidationFailed, ...) --
+    // Clerk's default session token expires in ~60s, so an expired token is
+    // the single most common failure mode a real client will hit. Left
+    // unwrapped, this fell through to the generic error handler's 500
+    // "unexpected error" instead of a 401, which broke every caller
+    // (the extension's background worker included) that specifically
+    // checks for 401 to clear a stale cached token.
+    throw new AppError("UNAUTHORIZED", "Invalid or expired token");
+  }
 
   const userId = payload.sub;
   if (!userId) {
