@@ -365,22 +365,30 @@ export async function runAgentDebate(
     return parts.join("");
   }
 
+  // Live-tested against a real prospect: 1024/800-token budgets (a rough
+  // even split of the old combined call's 4096 across 5 sections) truncated
+  // Research's response mid-`data_points` array before it reached
+  // `confidence`/`data_gaps`, failing schema validation on both attempts and
+  // exhausting the stage's retries -- Research is explicitly asked for
+  // "8-12 specific data points" (Bible §8.3), the most content-heavy
+  // specialist stage. max_tokens is a ceiling, not a target, so being more
+  // generous here costs nothing when a stage doesn't need it.
   const research = await callAgent(
     systemPromptFor("research"),
     fillPlaceholders(RESEARCH_AGENT_PROMPT, input, {}),
     RESEARCH_TOOL,
     researchAgentOutputSchema,
-    1024,
+    2048,
   );
 
   const [icp, intent] = await Promise.all([
-    callAgent(systemPromptFor("icp"), fillPlaceholders(ICP_AGENT_PROMPT, input, { research }), ICP_TOOL, icpAgentOutputSchema, 800),
+    callAgent(systemPromptFor("icp"), fillPlaceholders(ICP_AGENT_PROMPT, input, { research }), ICP_TOOL, icpAgentOutputSchema, 1536),
     callAgent(
       systemPromptFor("intent"),
       fillPlaceholders(INTENT_AGENT_PROMPT, input, { research }),
       INTENT_TOOL,
       intentAgentOutputSchema,
-      800,
+      1536,
     ),
   ]);
 
@@ -389,7 +397,7 @@ export async function runAgentDebate(
     fillPlaceholders(RISK_AGENT_PROMPT, input, { research, icp, intent }),
     RISK_TOOL,
     riskAgentOutputSchema,
-    800,
+    1536,
   );
 
   const judge = await callAgent(
@@ -397,7 +405,7 @@ export async function runAgentDebate(
     fillPlaceholders(JUDGE_AGENT_PROMPT, input, { research, icp, intent, risk }),
     JUDGE_TOOL,
     judgeAgentOutputSchema,
-    2048,
+    2560,
   );
 
   const output = agentDebateOutputSchema.parse({ research, icp, intent, risk, judge });
