@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { createHash } from "node:crypto";
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { createRemoteJWKSet, errors, jwtVerify } from "jose";
 import { AppError } from "@argus/shared";
 import { prisma } from "@argus/database";
 import type { PlanTier, UserRole } from "@argus/database";
@@ -100,15 +100,29 @@ export async function authenticateWithJwt(token: string): Promise<AuthContext> {
   let payload;
   try {
     ({ payload } = await jwtVerify(token, jwks, { issuer: env.CLERK_JWT_ISSUER }));
-  } catch {
-    // jose throws its own error classes here (JWTExpired,
-    // JWSSignatureVerificationFailed, JWTClaimValidationFailed, ...) --
-    // Clerk's default session token expires in ~60s, so an expired token is
-    // the single most common failure mode a real client will hit. Left
-    // unwrapped, this fell through to the generic error handler's 500
-    // "unexpected error" instead of a 401, which broke every caller
-    // (the extension's background worker included) that specifically
-    // checks for 401 to clear a stale cached token.
+  } catch (err) {
+    // jose throws its own error classes here. The token-invalid ones
+    // (JWTExpired, JWSSignatureVerificationFailed, JWTClaimValidationFailed,
+    // ...) are Clerk's ~60s session token expiring -- the single most common
+    // failure mode a real client will hit -- and must become a 401 so
+    // callers (the extension's background worker included) that specifically
+    // check for 401 to clear a stale cached token actually see it. But
+    // createRemoteJWKSet fetches Clerk's signing keys lazily over the
+    // network on every call, and a genuine infra failure there (JWKS
+    // endpoint down/timing out, or a plain network error) throws too --
+    // converting *that* to the same 401 would make every request during a
+    // Clerk outage look like "your session expired" and wrongly clear every
+    // active user's still-valid token. Only the token-content error classes
+    // below are treated as an auth failure; anything else re-throws as-is,
+    // surfacing correctly as a 500.
+    const isTokenInvalid =
+      err instanceof errors.JWTExpired ||
+      err instanceof errors.JWTClaimValidationFailed ||
+      err instanceof errors.JWTInvalid ||
+      err instanceof errors.JWSSignatureVerificationFailed ||
+      err instanceof errors.JWSInvalid ||
+      err instanceof errors.JOSEAlgNotAllowed;
+    if (!isTokenInvalid) throw err;
     throw new AppError("UNAUTHORIZED", "Invalid or expired token");
   }
 

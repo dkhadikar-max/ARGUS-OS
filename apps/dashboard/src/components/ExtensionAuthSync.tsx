@@ -48,9 +48,14 @@ function sendToExtension(message: ExtensionAuthMessage): void {
 // the stale token on the first 401 so the sidebar re-prompts sign-in rather
 // than looping on an expired token.
 export function ExtensionAuthSync() {
-  const { isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn } = useAuth();
 
   useEffect(() => {
+    // Clerk reports isSignedIn as undefined until the SDK finishes its own
+    // load -- treating that as "signed out" fired a spurious AUTH_CLEAR on
+    // every mount/navigation, wiping a perfectly valid cached token in the
+    // extension for the brief window before Clerk resolves the real state.
+    if (!isLoaded) return;
     if (!env.NEXT_PUBLIC_EXTENSION_ID) return;
 
     if (!isSignedIn) {
@@ -67,7 +72,7 @@ export function ExtensionAuthSync() {
         // Best-effort -- no extension installed, or this origin isn't (yet)
         // in its externally_connectable list, is the common case.
       });
-  }, [isSignedIn]);
+  }, [isLoaded, isSignedIn]);
 
   return null;
 }

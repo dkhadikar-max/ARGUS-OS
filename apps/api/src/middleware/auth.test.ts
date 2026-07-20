@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { Request, Response } from "express";
 import { createHash } from "node:crypto";
+import { errors as joseErrors } from "jose";
 
 const prisma = {
   apiKey: { findUnique: vi.fn(), update: vi.fn() },
@@ -8,11 +9,20 @@ const prisma = {
 };
 vi.mock("@argus/database", () => ({ prisma }));
 
-const jwtVerify = vi.fn();
-vi.mock("jose", () => ({
-  createRemoteJWKSet: vi.fn(() => "jwks-instance"),
-  jwtVerify,
-}));
+const { jwtVerify } = vi.hoisted(() => ({ jwtVerify: vi.fn() }));
+vi.mock("jose", async (importOriginal) => {
+  // Keeps jose's real `errors` classes (JWTExpired, JWKSTimeout, ...) intact
+  // -- auth.ts checks `instanceof errors.JWTExpired` etc. to decide whether
+  // a jwtVerify failure is a real invalid-token 401 or a JWKS-fetch/infra
+  // failure that should surface as a genuine 500, so the tests need real
+  // error instances, not plain Errors, to exercise that branch correctly.
+  const actual = await importOriginal<typeof import("jose")>();
+  return {
+    ...actual,
+    createRemoteJWKSet: vi.fn(() => "jwks-instance"),
+    jwtVerify,
+  };
+});
 
 const { requireAuth } = await import("./auth.js");
 
@@ -163,13 +173,39 @@ describe("requireAuth — Bearer JWT", () => {
   // here, which must become a 401 AppError rather than an unhandled 500
   // (callers like apps/extension's background worker specifically check
   // for 401 to clear a stale cached token).
-  it("rejects an expired/invalid JWT with UNAUTHORIZED instead of throwing raw", async () => {
-    jwtVerify.mockRejectedValue(new Error('"exp" claim timestamp check failed'));
+  it("rejects an expired JWT with UNAUTHORIZED instead of throwing raw", async () => {
+    jwtVerify.mockRejectedValue(new joseErrors.JWTExpired('"exp" claim timestamp check failed', {}));
 
     const req = mockReq({ authorization: "Bearer expired.jwt.token" });
     const next = vi.fn();
     await requireAuth(req, {} as Response, next);
 
     expect(next.mock.calls[0]?.[0]).toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
+  it("rejects a JWT with a bad signature with UNAUTHORIZED", async () => {
+    jwtVerify.mockRejectedValue(new joseErrors.JWSSignatureVerificationFailed());
+
+    const req = mockReq({ authorization: "Bearer tampered.jwt.token" });
+    const next = vi.fn();
+    await requireAuth(req, {} as Response, next);
+
+    expect(next.mock.calls[0]?.[0]).toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
+  // A JWKS-fetch failure (Clerk's signing-key endpoint down/timing out) is
+  // an infra problem, not proof the token itself is bad -- it must NOT be
+  // rewritten into the same 401 as an expired token, or every request
+  // during a Clerk outage looks like "your session expired" and the
+  // extension wrongly clears every active user's still-valid token.
+  it("does not convert a JWKS-fetch failure into UNAUTHORIZED", async () => {
+    jwtVerify.mockRejectedValue(new joseErrors.JWKSTimeout());
+
+    const req = mockReq({ authorization: "Bearer valid.jwt.token" });
+    const next = vi.fn();
+    await requireAuth(req, {} as Response, next);
+
+    expect(next.mock.calls[0]?.[0]).not.toMatchObject({ code: "UNAUTHORIZED" });
+    expect(next.mock.calls[0]?.[0]).toBeInstanceOf(joseErrors.JWKSTimeout);
   });
 });

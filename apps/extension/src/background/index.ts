@@ -30,12 +30,19 @@ async function apiFetch(path: string, init: RequestInit): Promise<unknown> {
 
   const body = await response.json();
   if (!response.ok) {
-    // A 401 here means the cached token expired (Clerk's default session
-    // JWT lives ~60s -- see ExtensionAuthSync.tsx) or was revoked. Clearing
-    // it now means the *next* sidebar open correctly shows the sign-in
-    // prompt instead of retrying a token that will never stop 401ing.
+    // A 401 here means the token this specific request used (captured in
+    // `auth` above, before the fetch) expired or was revoked. Clearing it
+    // means the *next* sidebar open correctly shows the sign-in prompt
+    // instead of retrying a token that will never stop 401ing -- but only
+    // if that's still the token in storage. The dashboard's auth-sync can
+    // push a fresh one (AUTH_SET) while this request was in flight; blindly
+    // clearing here would delete that newer, perfectly valid token instead
+    // of the stale one that actually failed.
     if (response.status === 401) {
-      await chrome.storage.local.remove(AUTH_STORAGE_KEY);
+      const current = await getAuth();
+      if (current?.token === auth?.token) {
+        await chrome.storage.local.remove(AUTH_STORAGE_KEY);
+      }
     }
     const message =
       typeof body === "object" && body && "error" in body
