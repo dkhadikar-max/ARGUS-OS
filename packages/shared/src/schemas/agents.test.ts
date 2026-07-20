@@ -124,4 +124,21 @@ describe("agentDebateOutputSchema", () => {
     };
     expect(agentDebateOutputSchema.safeParse(valid).success).toBe(true);
   });
+
+  // A fully-null message is only legitimate alongside pass_and_move_on --
+  // for any other recommended_action, both channels null means the model
+  // genuinely failed to draft anything, not that it made an honest "nothing
+  // worth sending" call. Loosening linkedin to nullable (above) must not
+  // have quietly dropped this as a validation failure worth retrying.
+  it("rejects a fully-null message when recommended_action isn't pass_and_move_on", () => {
+    const invalid = validDebateOutput();
+    invalid.judge.recommended_action = "message_now";
+    invalid.judge.message = {
+      linkedin: null as unknown as string,
+      email: null,
+      tone: "professional",
+      personalization_hooks: [],
+    };
+    expect(agentDebateOutputSchema.safeParse(invalid).success).toBe(false);
+  });
 });

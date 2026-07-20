@@ -143,7 +143,13 @@ export function MessageComposer({ decisionId, message, onRegenerate, regeneratin
           <button
             type="button"
             onClick={handleToggleEdit}
-            disabled={saving}
+            // Gated on `original`, not the live `draft` -- a decision whose
+            // judge produced no message at all (recommended_action
+            // "pass_and_move_on") has no MessageDraft row to edit server-side,
+            // so entering edit mode here would always fail on Save with a
+            // generic error. Once editing has actually started, the rep can
+            // still clear the textarea and save an intentionally-empty edit.
+            disabled={saving || !original}
             className="rounded border border-gray-300 px-3 py-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-40"
           >
             {saving ? "Saving…" : editing ? "Save" : "Edit"}

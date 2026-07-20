@@ -83,33 +83,53 @@ export const riskAgentOutputSchema = z.object({
 export type RiskAgentOutput = z.infer<typeof riskAgentOutputSchema>;
 
 // Bible §8.7 — Judge Agent output_format
-export const judgeAgentOutputSchema = z.object({
-  verdict: verdictSchema,
-  confidence,
-  weighted_score: score100,
-  agent_consensus: z.enum(["high", "medium", "low"]),
-  conflicts: z.array(z.string()),
-  reasoning: z.string(),
-  key_evidence: z.array(z.string()),
-  message: z.object({
-    // Claude legitimately omits a LinkedIn draft when recommended_action is
-    // "pass_and_move_on" -- there's nothing worth sending. email already
-    // anticipated this; linkedin didn't, so a HARD_PASS/PASS verdict failed
-    // schema validation on the first attempt every time (silently absorbed
-    // by orchestrator.ts's retry, at the cost of ~90s per occurrence).
-    linkedin: z.string().nullable(),
-    email: z.string().nullable(),
-    tone: messageToneSchema,
-    personalization_hooks: z.array(z.string()),
-  }),
-  recommended_action: z.enum([
-    "message_now",
-    "research_more",
-    "wait_for_signal",
-    "pass_and_move_on",
-  ]),
-  confidence_explanation: z.string(),
-});
+export const judgeAgentOutputSchema = z
+  .object({
+    verdict: verdictSchema,
+    confidence,
+    weighted_score: score100,
+    agent_consensus: z.enum(["high", "medium", "low"]),
+    conflicts: z.array(z.string()),
+    reasoning: z.string(),
+    key_evidence: z.array(z.string()),
+    message: z.object({
+      // Claude legitimately omits a LinkedIn draft when recommended_action is
+      // "pass_and_move_on" -- there's nothing worth sending. email already
+      // anticipated this; linkedin didn't, so a HARD_PASS/PASS verdict failed
+      // schema validation on the first attempt every time (silently absorbed
+      // by orchestrator.ts's retry, at the cost of ~90s per occurrence).
+      linkedin: z.string().nullable(),
+      email: z.string().nullable(),
+      tone: messageToneSchema,
+      personalization_hooks: z.array(z.string()),
+    }),
+    recommended_action: z.enum([
+      "message_now",
+      "research_more",
+      "wait_for_signal",
+      "pass_and_move_on",
+    ]),
+    confidence_explanation: z.string(),
+  })
+  // Loosening `message.linkedin` to nullable above removed the only signal
+  // that used to catch a genuine model failure to draft a message: before
+  // that change, a fully-null message failed validation regardless of
+  // verdict. Restoring that safety net narrowly -- only recommended_action
+  // "pass_and_move_on" is allowed to have nothing worth sending; any other
+  // action with both channels null is a real generation defect, not a
+  // legitimate pass, and should fail validation (triggering orchestrator.ts's
+  // existing retry) rather than silently reaching the UI as an empty
+  // "No message generated" state.
+  .refine(
+    (output) =>
+      output.recommended_action === "pass_and_move_on" ||
+      output.message.linkedin !== null ||
+      output.message.email !== null,
+    {
+      message: "message.linkedin and message.email cannot both be null unless recommended_action is pass_and_move_on",
+      path: ["message"],
+    },
+  );
 export type JudgeAgentOutput = z.infer<typeof judgeAgentOutputSchema>;
 
 // Bible §8.2 — Master Orchestrator combined JSON object returned by the
