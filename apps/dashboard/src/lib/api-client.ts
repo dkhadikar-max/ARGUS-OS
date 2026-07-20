@@ -32,9 +32,12 @@ export class ApiError extends Error {}
  * extension (Bible §10.1), so the dashboard needs no separate service
  * credential.
  */
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const { getToken } = await auth();
-  const token = await getToken();
+async function apiFetch<T>(path: string, init?: RequestInit, presetToken?: string): Promise<T> {
+  let token = presetToken;
+  if (!token) {
+    const { getToken } = await auth();
+    token = (await getToken()) ?? undefined;
+  }
   if (!token) {
     throw new ApiError("Not authenticated");
   }
@@ -101,6 +104,11 @@ export const api = {
     return apiFetch<ListOutcomesResponse>(`/api/v1/outcomes?${query.toString()}`);
   },
   getTeam: () => apiFetch<TeamResponse>("/api/v1/teams/me"),
+  // Accepts an already-minted Clerk token instead of minting its own -- used
+  // by /api/extension/session, which already has one from resolving its own
+  // caller's identity and would otherwise mint a second token for the same
+  // logical request on every dashboard page's auth-sync.
+  getTeamWithToken: (token: string) => apiFetch<TeamResponse>("/api/v1/teams/me", undefined, token),
   completeOnboarding: (payload: CompleteOnboardingRequest) =>
     apiFetch<TeamResponse>("/api/v1/teams/me/onboarding", {
       method: "POST",

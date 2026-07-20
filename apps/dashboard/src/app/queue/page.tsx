@@ -36,9 +36,21 @@ export default async function QueuePage({
           </p>
         </div>
         {slackStatus.connected ? (
-          <span className="shrink-0 rounded-md bg-green-50 px-3 py-1.5 text-sm font-medium text-green-800">
+          // getSlackIntegrationStatus only reads the stored DB flag -- it
+          // never confirms the Slack-side installation is still live, so a
+          // workspace admin uninstalling the app or revoking the token
+          // leaves this stuck at "connected" with no way to recover. Kept
+          // clickable (re-running /api/slack/install is an idempotent
+          // upsert, per connectSlackIntegration) so there's always a path
+          // to redo the handshake, the same way the unconnected state below
+          // always had one.
+          <a
+            href="/api/slack/install"
+            title="Reconnect Slack"
+            className="shrink-0 rounded-md bg-green-50 px-3 py-1.5 text-sm font-medium text-green-800 hover:bg-green-100"
+          >
             ✓ Slack connected
-          </span>
+          </a>
         ) : (
           <a
             href="/api/slack/install"

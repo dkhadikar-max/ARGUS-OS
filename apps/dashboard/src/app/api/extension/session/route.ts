@@ -16,6 +16,6 @@ export async function GET() {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const team = await api.getTeam();
+  const team = await api.getTeamWithToken(token);
   return NextResponse.json({ token, userId, teamId: team.id });
 }
