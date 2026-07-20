@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { DecisionResponse, Verdict } from "@argus/shared";
 import { api, auth } from "../lib/api-client.js";
-import { extractProfileFromDom, detectProfilePageType } from "../lib/linkedin-selectors.js";
+import { extractProfileFromDom, detectProfilePageType, type ExtractedProfile } from "../lib/linkedin-selectors.js";
 import { identify, track } from "../lib/analytics.js";
 import { LoadingSkeleton } from "./components/LoadingSkeleton.js";
 import { VerdictCard } from "./components/VerdictCard.js";
@@ -38,14 +38,21 @@ export function App({ onClose, mountStartedAt }: Props) {
   const [fullDebate, setFullDebate] = useState<DecisionResponse | null>(null);
   const [loadingDebate, setLoadingDebate] = useState(false);
 
+  // Populated once per mount by the effect below (extractProfileFromDom's
+  // fallback path -- the common case on current LinkedIn markup, not a rare
+  // one -- walks a chunk of the DOM tree; re-deriving it a second time on
+  // every request, including every "Regenerate" click for the same still-
+  // open profile, was pure repeated work for an answer that can't change).
+  const profileRef = useRef<ExtractedProfile | null>(null);
+
   const requestDecision = useCallback(async (userId: string, teamId: string) => {
     setStatus("loading");
     setError(null);
     setSelectedVerdict(null);
     setFullDebate(null);
 
-    const profile = extractProfileFromDom();
-    if (!profile.name) {
+    const profile = profileRef.current;
+    if (!profile?.name) {
       setStatus("error");
       setError("Couldn't read this profile. LinkedIn's layout may have changed.");
       return;
@@ -95,6 +102,7 @@ export function App({ onClose, mountStartedAt }: Props) {
       // stands in for prospect_id, since Prospect is itself uniquely keyed
       // on that field (Bible §9.1 @unique).
       const profile = extractProfileFromDom();
+      profileRef.current = profile;
       const pageType = detectProfilePageType(window.location.href);
       track({
         name: "sidebar_opened",

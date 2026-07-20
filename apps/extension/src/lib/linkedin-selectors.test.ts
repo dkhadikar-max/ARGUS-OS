@@ -173,4 +173,32 @@ describe("extractProfileFromDom", () => {
     expect(profile.title).toBeNull();
     expect(profile.companyName).toBeNull();
   });
+
+  // LinkedIn can render more than one heading with the identical profile
+  // name (e.g. a responsive/collapsed-vs-expanded layout variant) -- the
+  // first one's ancestor climb dead-ends with no qualifying card, and
+  // findProfileCard must move on to the second match instead of giving up
+  // on the whole page the moment the first one fails.
+  it("tries the next matching heading when the first one's climb finds no card", () => {
+    setUrl("/in/dupe-heading/");
+    document.title = "Dupe Person | LinkedIn";
+    document.body.innerHTML = `
+      <main>
+        <div><div><div><div><div><div><div><div><div><h2>Dupe Person</h2></div></div></div></div></div></div></div></div></div>
+        <div>
+          <div>
+            <div><a href="/in/dupe-heading/"><h2>Dupe Person</h2></a></div>
+            <p>Real Headline Text Here</p>
+            <p>Real Company Name Inc</p>
+            <div>Somewhere, Some State</div>
+          </div>
+        </div>
+      </main>
+    `;
+
+    const profile = extractProfileFromDom();
+    expect(profile.name).toBe("Dupe Person");
+    expect(profile.title).toBe("Real Headline Text Here");
+    expect(profile.companyName).toBe("Real Company Name Inc");
+  });
 });

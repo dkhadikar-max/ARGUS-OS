@@ -93,7 +93,10 @@ function findProfileCard(expectedName: string): Element | null {
       }
       el = parent;
     }
-    return null;
+    // This heading's own climb didn't land on a card -- LinkedIn can render
+    // more than one heading with the same profile name (a responsive/
+    // collapsed-vs-expanded layout variant), so try the next matching
+    // heading instead of giving up on the whole page.
   }
   return null;
 }
