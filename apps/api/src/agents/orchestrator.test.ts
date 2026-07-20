@@ -39,7 +39,11 @@ function judgeOutput() {
 }
 
 function toolUseResponse(toolName: string, input: unknown) {
-  return { content: [{ type: "tool_use" as const, id: "toolu_1", name: toolName, input }] };
+  return {
+    content: [{ type: "tool_use" as const, id: "toolu_1", name: toolName, input }],
+    stop_reason: "tool_use" as const,
+    usage: { input_tokens: 100, output_tokens: 100 },
+  };
 }
 
 interface CreateParams {
@@ -119,7 +123,11 @@ describe("runAgentDebate", () => {
     createMock.mockImplementation(async (params: CreateParams) => {
       const toolName = params.tools[0].name;
       if (toolName === "submit_research") {
-        return { content: [{ type: "text", text: "```json\n" + JSON.stringify(researchOutput()) + "\n```" }] };
+        return {
+          content: [{ type: "text", text: "```json\n" + JSON.stringify(researchOutput()) + "\n```" }],
+          stop_reason: "end_turn" as const,
+          usage: { input_tokens: 100, output_tokens: 100 },
+        };
       }
       return toolUseResponse(toolName, OUTPUT_BY_TOOL[toolName]);
     });

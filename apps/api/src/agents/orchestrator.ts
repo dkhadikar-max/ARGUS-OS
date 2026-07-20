@@ -134,6 +134,14 @@ async function callAgent<T>(
   maxTokens: number,
 ): Promise<T> {
   let lastError: unknown;
+  // Live tests found the pipeline's total decision latency (112-116s) came in
+  // *slower* than the original single-call design (62-70s) it was meant to
+  // beat -- unexpected, since only Research/ICP+Intent/Risk/Judge's own
+  // generation time was assumed to matter. Logging each stage's wall time
+  // here (not just failures, as before) is what turns "the pipeline is
+  // somehow slower" into an actual per-stage breakdown on the next live call,
+  // instead of another guess.
+  const callStartedAt = Date.now();
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     // Hoisted so the catch block below can report stop_reason/usage even when
@@ -169,7 +177,19 @@ async function callAgent<T>(
               return extractJson(textBlock.text);
             })();
 
-      return schema.parse(parsed);
+      const result = schema.parse(parsed);
+      logger.info(
+        {
+          agent: tool.name,
+          attempt,
+          durationMs: Date.now() - callStartedAt,
+          maxTokens,
+          outputTokens: response.usage.output_tokens,
+          inputTokens: response.usage.input_tokens,
+        },
+        "Agent stage succeeded",
+      );
+      return result;
     } catch (err) {
       lastError = err;
       logger.warn(
