@@ -120,6 +120,7 @@ describe("updateIcpForTeam", () => {
     repo.getDecisionsSince.mockResolvedValue([
       { verdict: "STRONG_YES", outcome: { type: "MEETING_BOOKED" } },
       { verdict: "YES", outcome: { type: "NO_RESPONSE" } },
+      { verdict: "YES", outcome: { type: "MEETING_BOOKED" } },
     ]);
 
     await updateIcpForTeam(adminAuth, validRequest);
@@ -130,9 +131,30 @@ describe("updateIcpForTeam", () => {
       expect.objectContaining({
         version: 3,
         criteria: outgoingCriteria,
-        accuracy: 0.5, // 1 of 2 STRONG_YES/YES-with-outcome decisions converted to a meeting
+        accuracy: 2 / 3, // 2 of 3 STRONG_YES/YES-with-outcome decisions converted to a meeting
+        sampleSize: 3,
         activatedAt: activatedAt.toISOString(),
       }),
+    );
+  });
+
+  // Below the minimum sample size, the retired version's accuracy is
+  // recorded as null (not a misleading 100%/0%) -- same floor applied to
+  // the live `current` accuracy, applied here too so a version retired
+  // after only 1-2 scored decisions doesn't permanently bake a fake
+  // "definitive" number into icpHistory.
+  it("snapshots a null accuracy when the outgoing version never reached the minimum sample size", async () => {
+    const outgoingCriteria = [{ field: "companySize", operator: "gte" as const, value: 50, weight: 1 }];
+    const activatedAt = new Date("2026-07-01T00:00:00Z");
+    repo.getIcp.mockResolvedValue({ version: 3, criteria: outgoingCriteria, updatedAt: activatedAt });
+    repo.upsertIcp.mockResolvedValue({ criteria: validRequest.criteria, version: 4, updatedAt: new Date() });
+    repo.getDecisionsSince.mockResolvedValue([{ verdict: "STRONG_YES", outcome: { type: "MEETING_BOOKED" } }]);
+
+    await updateIcpForTeam(adminAuth, validRequest);
+
+    expect(repo.appendIcpHistoryEntry).toHaveBeenCalledWith(
+      "team_1",
+      expect.objectContaining({ accuracy: null, sampleSize: 0 }),
     );
   });
 });
@@ -147,13 +169,26 @@ describe("computeVersionAccuracy", () => {
     ).toBeNull();
   });
 
-  it("computes the fraction of STRONG_YES/YES-with-outcome decisions that converted to a meeting", () => {
-    const accuracy = computeVersionAccuracy([
+  // A single (or double) scored decision reads as a definitive 100%/0%
+  // accuracy with nothing distinguishing it from a mature, well-sampled
+  // version -- withheld entirely below this floor rather than shown.
+  it("returns null below the minimum sample size, even with a real scoreable decision", () => {
+    expect(
+      computeVersionAccuracy([
+        { verdict: "STRONG_YES", outcome: { type: "MEETING_BOOKED" } },
+        { verdict: "YES", outcome: { type: "OPPORTUNITY_CREATED" } },
+      ]),
+    ).toBeNull();
+  });
+
+  it("computes the fraction of STRONG_YES/YES-with-outcome decisions that converted to a meeting, once at the minimum sample size", () => {
+    const result = computeVersionAccuracy([
       { verdict: "STRONG_YES", outcome: { type: "MEETING_BOOKED" } },
       { verdict: "YES", outcome: { type: "OPPORTUNITY_CREATED" } },
       { verdict: "YES", outcome: { type: "NO_RESPONSE" } },
       { verdict: "PASS", outcome: { type: "CLOSED_WON" } }, // not a positive prediction -- excluded
     ]);
-    expect(accuracy).toBeCloseTo(2 / 3);
+    expect(result?.accuracy).toBeCloseTo(2 / 3);
+    expect(result?.sampleSize).toBe(3);
   });
 });

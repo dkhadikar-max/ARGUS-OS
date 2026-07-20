@@ -14,19 +14,26 @@ import { appendIcpHistoryEntry, getDecisionsSince, getIcp, upsertIcp } from "./i
 const MEETING_OUTCOME_TYPES = new Set<OutcomeType>(["MEETING_BOOKED", "OPPORTUNITY_CREATED", "CLOSED_WON"]);
 const POSITIVE_PREDICTION_VERDICTS = new Set<Verdict>(["STRONG_YES", "YES"]);
 
+// Same floor memory.service.ts's patterns/riskFlags/topPerformingMessages
+// already enforce (MIN_SAMPLE_SIZE = 3 there too) -- without it, a version
+// that converted its one and only scored decision reads as an unqualified
+// "100% accurate," indistinguishable from a version backed by 150 decisions.
+const MIN_SAMPLE_SIZE = 3;
+
 export function computeVersionAccuracy(
   decisions: Array<{ verdict: Verdict; outcome: { type: OutcomeType } | null }>,
-): number | null {
+): { accuracy: number; sampleSize: number } | null {
   const positivePredictions = decisions.filter(
     (d): d is { verdict: Verdict; outcome: { type: OutcomeType } } =>
       POSITIVE_PREDICTION_VERDICTS.has(d.verdict) && d.outcome !== null,
   );
-  // Null (not a fabricated 0) when this version never got a single
-  // STRONG_YES/YES decision with a logged outcome -- an honestly
-  // un-scoreable version, same reasoning the team-wide accuracy.score uses.
-  if (positivePredictions.length === 0) return null;
+  // Null (not a fabricated 0, and not a misleadingly definitive-looking
+  // 100%/0% from a single sample) below MIN_SAMPLE_SIZE -- an honestly
+  // un-scoreable-yet version, same reasoning the team-wide accuracy.score
+  // uses for its own null case.
+  if (positivePredictions.length < MIN_SAMPLE_SIZE) return null;
   const meetings = positivePredictions.filter((d) => MEETING_OUTCOME_TYPES.has(d.outcome.type)).length;
-  return meetings / positivePredictions.length;
+  return { accuracy: meetings / positivePredictions.length, sampleSize: positivePredictions.length };
 }
 
 // Criteria weights should sum to ~1 (Bible §5.2/§9.1's ICPDefinition.criteria
@@ -83,10 +90,12 @@ export async function updateIcpForTeam(
     // the row's own creation, so this works whether outgoing is version 1
     // or a later one).
     const decisionsDuringOutgoingVersion = await getDecisionsSince(auth.teamId, outgoing.updatedAt);
+    const outgoingAccuracy = computeVersionAccuracy(decisionsDuringOutgoingVersion);
     await appendIcpHistoryEntry(auth.teamId, {
       version: outgoing.version,
       criteria: outgoing.criteria,
-      accuracy: computeVersionAccuracy(decisionsDuringOutgoingVersion),
+      accuracy: outgoingAccuracy?.accuracy ?? null,
+      sampleSize: outgoingAccuracy?.sampleSize ?? 0,
       activatedAt: outgoing.updatedAt.toISOString(),
       replacedAt: new Date().toISOString(),
     });

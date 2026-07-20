@@ -73,13 +73,15 @@ export default async function CompanyMemoryPage() {
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">ICP accuracy</h2>
         {memory.icpAccuracy ? (
           <p className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700">
-            {Math.round(memory.icpAccuracy.current * 100)}% ({memory.icpAccuracy.trend})
+            {Math.round(memory.icpAccuracy.current * 100)}% ({memory.icpAccuracy.trend}) — based on{" "}
+            {memory.icpAccuracy.sampleSize} decision{memory.icpAccuracy.sampleSize === 1 ? "" : "s"}
           </p>
         ) : (
           <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">
             <p className="text-sm font-medium text-gray-900">Not enough data yet</p>
             <p className="mt-1 text-sm text-gray-500">
-              This fills in once your current ICP has at least one STRONG YES or YES decision with a logged outcome.
+              This fills in once your current ICP has at least 3 STRONG YES or YES decisions with a logged outcome —
+              enough that one lucky (or unlucky) call doesn&apos;t read as a definitive accuracy score.
             </p>
           </div>
         )}

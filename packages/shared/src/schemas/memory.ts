@@ -35,6 +35,12 @@ export const companyMemoryResponseSchema = z.object({
   icpAccuracy: z
     .object({
       current: z.number().min(0).max(1),
+      // How many STRONG_YES/YES-with-logged-outcome decisions `current` is
+      // based on -- surfaced so a rep can tell a 100% from 3 decisions apart
+      // from a 100% from 150 (this endpoint already withholds `current`
+      // entirely below a minimum sample size, but a UI can still choose to
+      // caveat a small-but-qualifying sample using this).
+      sampleSize: z.number().int().nonnegative(),
       trend: z.string(),
       lastUpdated: z.string().datetime(),
     })

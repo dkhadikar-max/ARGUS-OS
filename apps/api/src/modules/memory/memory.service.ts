@@ -249,8 +249,9 @@ function computeIcpAccuracy(
 ): CompanyMemoryResponse["icpAccuracy"] {
   if (!icp) return null;
 
-  const current = computeVersionAccuracy(decisionsSinceActivation);
-  if (current === null) return null; // active version hasn't earned a scoreable outcome yet
+  const result = computeVersionAccuracy(decisionsSinceActivation);
+  if (result === null) return null; // active version hasn't earned enough scoreable outcomes yet
+  const { accuracy: current, sampleSize } = result;
 
   const history = Array.isArray(icpHistory) ? (icpHistory as IcpHistoryEntry[]) : [];
   const lastClosedVersion = history[history.length - 1];
@@ -259,7 +260,7 @@ function computeIcpAccuracy(
       ? `${current - lastClosedVersion.accuracy >= 0 ? "+" : ""}${(current - lastClosedVersion.accuracy).toFixed(2)}`
       : "not enough history yet";
 
-  return { current, trend, lastUpdated: new Date().toISOString() };
+  return { current, sampleSize, trend, lastUpdated: new Date().toISOString() };
 }
 
 const learningInsightsSchema = learningAgentOutputSchema.extend({ generatedAt: z.string().datetime() });
