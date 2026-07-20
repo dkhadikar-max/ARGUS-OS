@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { DecisionResponse, Verdict } from "@argus/shared";
 import { api, auth } from "../lib/api-client.js";
 import { extractProfileFromDom, detectProfilePageType, type ExtractedProfile } from "../lib/linkedin-selectors.js";
@@ -10,6 +10,7 @@ import { MessageComposer } from "./components/MessageComposer.js";
 import { VerdictActions } from "./components/VerdictActions.js";
 import { FullDebateView } from "./components/FullDebateView.js";
 import { OutcomeButtons } from "./components/OutcomeButtons.js";
+import { ProfileConfirmation, type ProfileCorrection } from "./components/ProfileConfirmation.js";
 
 // Bible §7.2 EXT-5: full Clerk OAuth handshake lives in the web dashboard
 // (Epic 5) — the sidebar only consumes a token already issued there. An
@@ -43,16 +44,19 @@ export function App({ onClose, mountStartedAt }: Props) {
   // one -- walks a chunk of the DOM tree; re-deriving it a second time on
   // every request, including every "Regenerate" click for the same still-
   // open profile, was pure repeated work for an answer that can't change).
-  const profileRef = useRef<ExtractedProfile | null>(null);
+  // Kept in state, not a ref, so ProfileConfirmation below can display and
+  // let the rep correct it (Bible §16.1 Risk #4 "allow manual data entry",
+  // never built until now) -- a wrong extraction previously fed straight
+  // into the decision with no way to notice or fix it before this.
+  const [profile, setProfile] = useState<ExtractedProfile | null>(null);
 
-  const requestDecision = useCallback(async (userId: string, teamId: string) => {
+  const requestDecision = useCallback(async (userId: string, teamId: string, profileToUse: ExtractedProfile) => {
     setStatus("loading");
     setError(null);
     setSelectedVerdict(null);
     setFullDebate(null);
 
-    const profile = profileRef.current;
-    if (!profile?.name) {
+    if (!profileToUse.name) {
       setStatus("error");
       setError("Couldn't read this profile. LinkedIn's layout may have changed.");
       return;
@@ -61,10 +65,10 @@ export function App({ onClose, mountStartedAt }: Props) {
     try {
       const result = await api.createDecision({
         prospect: {
-          linkedInUrl: profile.linkedInUrl,
-          name: profile.name,
-          title: profile.title ?? undefined,
-          companyName: profile.companyName ?? undefined,
+          linkedInUrl: profileToUse.linkedInUrl,
+          name: profileToUse.name,
+          title: profileToUse.title ?? undefined,
+          companyName: profileToUse.companyName ?? undefined,
         },
         context: {
           source: "linkedin_sidebar",
@@ -101,21 +105,25 @@ export function App({ onClose, mountStartedAt }: Props) {
       // upsert happens server-side inside createDecision — so linkedInUrl
       // stands in for prospect_id, since Prospect is itself uniquely keyed
       // on that field (Bible §9.1 @unique).
-      const profile = extractProfileFromDom();
-      profileRef.current = profile;
+      const extracted = extractProfileFromDom();
+      setProfile(extracted);
       const pageType = detectProfilePageType(window.location.href);
       track({
         name: "sidebar_opened",
         properties: {
-          prospect_id: profile.linkedInUrl,
+          prospect_id: extracted.linkedInUrl,
           source: pageType === "company" ? "company" : "profile",
           load_time_ms: Math.round(performance.now() - mountStartedAt),
         },
       });
 
-      void requestDecision(stored.userId, stored.teamId);
+      void requestDecision(stored.userId, stored.teamId, extracted);
     });
-  }, [requestDecision, mountStartedAt]);
+    // Only re-run on identity change (a genuinely new mount) -- requestDecision
+    // itself never changes (empty dep array), and re-extracting on every
+    // render would defeat the whole point of this being a one-time effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mountStartedAt]);
 
   async function handleOverride(newVerdict: Verdict, reason?: string) {
     if (!decision) return;
@@ -137,9 +145,25 @@ export function App({ onClose, mountStartedAt }: Props) {
 
   async function handleRegenerate() {
     const stored = await auth.get();
+    if (!stored || !profile) return;
+    setRegenerating(true);
+    await requestDecision(stored.userId, stored.teamId, profile);
+    setRegenerating(false);
+  }
+
+  // Bible §16.1 Risk #4 "allow manual data entry": a rep noticing a wrong
+  // extracted name/title/company can correct it here, and the decision is
+  // regenerated against the corrected values -- the one mitigation that
+  // survives a LinkedIn layout change linkedin-selectors.ts's own heuristic
+  // hasn't seen yet, since it doesn't depend on the DOM at all.
+  async function handleCorrectProfile(correction: ProfileCorrection) {
+    if (!profile) return;
+    const corrected: ExtractedProfile = { ...profile, ...correction };
+    setProfile(corrected);
+    const stored = await auth.get();
     if (!stored) return;
     setRegenerating(true);
-    await requestDecision(stored.userId, stored.teamId);
+    await requestDecision(stored.userId, stored.teamId, corrected);
     setRegenerating(false);
   }
 
@@ -174,6 +198,10 @@ export function App({ onClose, mountStartedAt }: Props) {
           ×
         </button>
       </header>
+
+      {profile && (
+        <ProfileConfirmation profile={profile} onCorrect={handleCorrectProfile} disabled={status === "loading" || regenerating} />
+      )}
 
       <div className="flex-1 overflow-y-auto">
         {status === "checking_auth" && <LoadingSkeleton />}
