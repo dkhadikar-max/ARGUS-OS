@@ -136,6 +136,13 @@ async function callAgent<T>(
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    // Hoisted so the catch block below can report stop_reason/usage even when
+    // the failure is a schema-validation error thrown after the API call
+    // succeeded -- this is exactly what would have made the two live Risk-
+    // stage truncation failures (1536 tokens still too tight, twice in a
+    // row) instantly diagnosable from the log line instead of requiring a
+    // guess-and-redeploy cycle to confirm truncation was the actual cause.
+    let stopReason: string | null = null;
     try {
       const response = await anthropic.messages.create({
         model: CLAUDE_MODEL,
@@ -145,6 +152,7 @@ async function callAgent<T>(
         tools: [tool],
         tool_choice: { type: "tool", name: tool.name },
       });
+      stopReason = response.stop_reason;
 
       const toolUseBlock = response.content.find((block) => block.type === "tool_use");
       const parsed =
@@ -164,7 +172,10 @@ async function callAgent<T>(
       return schema.parse(parsed);
     } catch (err) {
       lastError = err;
-      logger.warn({ err, attempt, agent: tool.name }, "Agent stage failed; retrying if attempts remain");
+      logger.warn(
+        { err, attempt, agent: tool.name, maxTokens, stopReason, truncated: stopReason === "max_tokens" },
+        "Agent stage failed; retrying if attempts remain",
+      );
     }
   }
 
@@ -392,12 +403,19 @@ export async function runAgentDebate(
     ),
   ]);
 
+  // Live-tested twice against a real prospect: 1536 tokens (Risk's share of
+  // the original even split) truncated mid-response on BOTH attempts, always
+  // losing the same trailing fields (time_waste_probability/
+  // mitigation_strategies/confidence) -- Risk asks for 3-5 risk objects, each
+  // with 5 text fields (category/severity/description/evidence/mitigation),
+  // which is easily as verbose as Judge's own output. Matching Judge's 2560
+  // budget rather than guessing at another intermediate number.
   const risk = await callAgent(
     systemPromptFor("risk"),
     fillPlaceholders(RISK_AGENT_PROMPT, input, { research, icp, intent }),
     RISK_TOOL,
     riskAgentOutputSchema,
-    1536,
+    2560,
   );
 
   const judge = await callAgent(
