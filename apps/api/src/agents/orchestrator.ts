@@ -393,6 +393,20 @@ export async function runAgentDebate(
     parts.push(
       `\n\nNOTE: This call is one stage of a multi-stage pipeline. Complete only the "${stageName}" agent below and submit it via the tool provided -- the other agents run as separate calls, not in this same response.`,
     );
+    // Live-timed per-stage breakdown (real prospect, isolated request): every
+    // stage decodes at the same ~46-52 tokens/sec, so there's no fixed
+    // per-call tax to blame -- the pipeline's 5,361 combined output tokens on
+    // the critical path (vs. ~3,000-3,360 for equivalent content in the old
+    // single call) is why total latency (111s) came in slower than the
+    // original design (62-70s) it replaced. Each stage, freed from sharing
+    // one 4096-token ceiling across all 5 sections, writes a fuller
+    // standalone response with no collective budget pressure to compress --
+    // this instruction targets that directly (prose density per field, not
+    // the Bible-mandated item counts like "8-12 data points" or "3-5 risks",
+    // which stay untouched).
+    parts.push(
+      `\n\nCONCISENESS: Keep every text field (summary, description, evidence, reasoning, etc.) to one tight sentence -- no restating facts already established by an earlier agent's output provided above, reference them briefly instead of re-explaining them. Do not pad toward the token limit; stop once the required fields are complete.`,
+    );
     return parts.join("");
   }
 
