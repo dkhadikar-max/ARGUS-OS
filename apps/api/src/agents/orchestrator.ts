@@ -13,7 +13,7 @@ import {
   type RiskAgentOutput,
 } from "@argus/shared";
 import type { ZodType } from "zod";
-import { anthropic, CLAUDE_MODEL } from "./claude-client.js";
+import { CLAUDE_MODEL } from "./claude-client.js";
 import { logger } from "../lib/logger.js";
 import {
   MASTER_SYSTEM_PROMPT,
@@ -23,6 +23,15 @@ import {
   RISK_AGENT_PROMPT,
   JUDGE_AGENT_PROMPT,
 } from "./prompts.js";
+import type { ToolSchema } from "./providers/types.js";
+import type { LLMProvider } from "./providers/llm-provider.interface.js";
+import { ClaudeProvider } from "./providers/claude-provider.js";
+
+// v4 roadmap Phase 1: the only LLM call site in the pipeline goes through
+// this interface now, not a direct Anthropic SDK call -- see
+// providers/llm-provider.interface.ts for why (and why there's still only
+// one implementation).
+const llmProvider: LLMProvider = new ClaudeProvider();
 
 /** Inputs referenced by the `{{placeholder}}` tokens across §8.3-§8.7. */
 export interface DecisionAgentInput {
@@ -120,12 +129,6 @@ function extractJson(text: string): unknown {
 // first attempt failed).
 const MAX_ATTEMPTS = 2;
 
-type ToolSchema = {
-  name: string;
-  description: string;
-  input_schema: { type: "object"; properties: Record<string, unknown>; required: string[] };
-};
-
 async function callAgent<T>(
   system: string,
   userPrompt: string,
@@ -152,29 +155,20 @@ async function callAgent<T>(
     // guess-and-redeploy cycle to confirm truncation was the actual cause.
     let stopReason: string | null = null;
     try {
-      const response = await anthropic.messages.create({
-        model: CLAUDE_MODEL,
-        max_tokens: maxTokens,
-        system,
-        messages: [{ role: "user", content: userPrompt }],
-        tools: [tool],
-        tool_choice: { type: "tool", name: tool.name },
-      });
-      stopReason = response.stop_reason;
+      const providerResponse = await llmProvider.call({ model: CLAUDE_MODEL, maxTokens, system, userPrompt, tool });
+      stopReason = providerResponse.stopReason;
 
-      const toolUseBlock = response.content.find((block) => block.type === "tool_use");
       const parsed =
-        toolUseBlock && toolUseBlock.type === "tool_use"
-          ? toolUseBlock.input
+        providerResponse.toolInput !== null
+          ? providerResponse.toolInput
           : (() => {
               // Fallback for a plain-text response (shouldn't happen with
               // tool_choice forcing the tool, but extractJson's ```-fence
               // stripping is cheap insurance against an unexpected shape).
-              const textBlock = response.content.find((block) => block.type === "text");
-              if (!textBlock || textBlock.type !== "text") {
+              if (providerResponse.textContent === null) {
                 throw new Error(`${tool.name}: Claude response contained neither a tool_use nor a text block`);
               }
-              return extractJson(textBlock.text);
+              return extractJson(providerResponse.textContent);
             })();
 
       const result = schema.parse(parsed);
@@ -184,8 +178,8 @@ async function callAgent<T>(
           attempt,
           durationMs: Date.now() - callStartedAt,
           maxTokens,
-          outputTokens: response.usage.output_tokens,
-          inputTokens: response.usage.input_tokens,
+          outputTokens: providerResponse.outputTokens,
+          inputTokens: providerResponse.inputTokens,
         },
         "Agent stage succeeded",
       );
