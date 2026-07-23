@@ -1,0 +1,52 @@
+{
+  "name": "moderate-fit-steady-growth",
+  "input": {
+    "prospectData": {
+      "profile": {
+        "name": "Marcus Webb",
+        "title": "Director of Sales",
+        "linkedInUrl": "https://www.linkedin.com/in/eval-marcus-webb/"
+      },
+      "company": {
+        "name": "Fieldstone Logistics",
+        "domain": "fieldstonelogistics.com",
+        "size": 120,
+        "industry": "Logistics",
+        "funding": null
+      },
+      "rawProfile": {
+        "headline": "Director of Sales at Fieldstone Logistics",
+        "about": "Running the sales org for a mid-market logistics provider.",
+        "recentActivity": []
+      },
+      "enrichedData": {
+        "employeeCount": 120,
+        "industry": "Logistics",
+        "fundingStage": null,
+        "headcountGrowth6mo": 0.08
+      }
+    },
+    "teamIcp": [
+      { "field": "companySize", "operator": "gte", "value": 50, "weight": 0.3 },
+      { "field": "companyIndustry", "operator": "in", "value": ["SaaS", "Software", "Technology"], "weight": 0.3 },
+      { "field": "title", "operator": "contains", "value": "VP", "weight": 0.2 },
+      { "field": "companyFunding", "operator": "in", "value": ["Series A", "Series B", "Series C"], "weight": 0.2 }
+    ],
+    "companyMemory": {
+      "patterns": [{ "verdict": "YES", "meetingRate": 0.34, "sampleSize": 14 }],
+      "riskFlags": []
+    },
+    "intentSignals": {
+      "headline": "Director of Sales at Fieldstone Logistics",
+      "recentActivity": []
+    },
+    "historicalEngagement": [],
+    "teamHistory": [
+      { "verdict": "YES", "outcome": "MEETING_BOOKED" },
+      { "verdict": "WAIT", "outcome": "NO_RESPONSE" }
+    ],
+    "userPreferences": { "messageTone": "professional", "messageLength": "concise" },
+    "teamPatterns": [{ "verdict": "YES", "meetingRate": 0.34, "sampleSize": 14 }],
+    "companyContext": "We sell an AI-powered sales prioritization tool to B2B revenue teams, helping SDRs and AEs stop wasting time on low-probability prospects."
+  }
+}

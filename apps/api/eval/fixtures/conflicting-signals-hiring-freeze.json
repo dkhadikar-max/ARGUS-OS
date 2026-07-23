@@ -1,0 +1,52 @@
+{
+  "name": "conflicting-signals-hiring-freeze",
+  "input": {
+    "prospectData": {
+      "profile": {
+        "name": "Dana Kowalski",
+        "title": "Head of Growth",
+        "linkedInUrl": "https://www.linkedin.com/in/eval-dana-kowalski/"
+      },
+      "company": {
+        "name": "Ledger & Loom",
+        "domain": "ledgerandloom.com",
+        "size": 65,
+        "industry": "FinTech",
+        "funding": "Series A"
+      },
+      "rawProfile": {
+        "headline": "Head of Growth at Ledger & Loom",
+        "about": "Building the growth function at a Series A fintech.",
+        "recentActivity": ["Company announced a hiring freeze 3 weeks ago in an all-hands memo leaked to press"]
+      },
+      "enrichedData": {
+        "employeeCount": 65,
+        "industry": "FinTech",
+        "fundingStage": "Series A",
+        "riskSignal": "hiring_freeze_reported"
+      }
+    },
+    "teamIcp": [
+      { "field": "companySize", "operator": "gte", "value": 50, "weight": 0.3 },
+      { "field": "companyIndustry", "operator": "in", "value": ["SaaS", "Software", "Technology"], "weight": 0.3 },
+      { "field": "title", "operator": "contains", "value": "VP", "weight": 0.2 },
+      { "field": "companyFunding", "operator": "in", "value": ["Series A", "Series B", "Series C"], "weight": 0.2 }
+    ],
+    "companyMemory": {
+      "patterns": [{ "verdict": "WAIT", "meetingRate": 0.18, "sampleSize": 8 }],
+      "riskFlags": [{ "category": "Budget", "occurrenceRate": 0.22, "falsePositiveRate": 0.35 }]
+    },
+    "intentSignals": {
+      "headline": "Head of Growth at Ledger & Loom",
+      "recentActivity": ["Company announced a hiring freeze 3 weeks ago in an all-hands memo leaked to press"]
+    },
+    "historicalEngagement": [],
+    "teamHistory": [
+      { "verdict": "WAIT", "outcome": "NO_RESPONSE" },
+      { "verdict": "PASS", "outcome": null }
+    ],
+    "userPreferences": { "messageTone": "professional", "messageLength": "concise" },
+    "teamPatterns": [{ "verdict": "WAIT", "meetingRate": 0.18, "sampleSize": 8 }],
+    "companyContext": "We sell an AI-powered sales prioritization tool to B2B revenue teams, helping SDRs and AEs stop wasting time on low-probability prospects."
+  }
+}

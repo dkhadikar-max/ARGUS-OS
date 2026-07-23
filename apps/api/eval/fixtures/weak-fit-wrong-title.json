@@ -1,0 +1,51 @@
+{
+  "name": "weak-fit-wrong-title",
+  "input": {
+    "prospectData": {
+      "profile": {
+        "name": "Ellis Tran",
+        "title": "Marketing Coordinator",
+        "linkedInUrl": "https://www.linkedin.com/in/eval-ellis-tran/"
+      },
+      "company": {
+        "name": "Bright Path Media",
+        "domain": "brightpathmedia.com",
+        "size": 12,
+        "industry": "Marketing Agency",
+        "funding": null
+      },
+      "rawProfile": {
+        "headline": "Marketing Coordinator at Bright Path Media",
+        "about": "Junior marketing role at a small agency.",
+        "recentActivity": []
+      },
+      "enrichedData": {
+        "employeeCount": 12,
+        "industry": "Marketing Agency",
+        "fundingStage": null
+      }
+    },
+    "teamIcp": [
+      { "field": "companySize", "operator": "gte", "value": 50, "weight": 0.3 },
+      { "field": "companyIndustry", "operator": "in", "value": ["SaaS", "Software", "Technology"], "weight": 0.3 },
+      { "field": "title", "operator": "contains", "value": "VP", "weight": 0.2 },
+      { "field": "companyFunding", "operator": "in", "value": ["Series A", "Series B", "Series C"], "weight": 0.2 }
+    ],
+    "companyMemory": {
+      "patterns": [{ "verdict": "PASS", "meetingRate": 0.04, "sampleSize": 30 }],
+      "riskFlags": []
+    },
+    "intentSignals": {
+      "headline": "Marketing Coordinator at Bright Path Media",
+      "recentActivity": []
+    },
+    "historicalEngagement": [],
+    "teamHistory": [
+      { "verdict": "PASS", "outcome": null },
+      { "verdict": "HARD_PASS", "outcome": null }
+    ],
+    "userPreferences": { "messageTone": "professional", "messageLength": "concise" },
+    "teamPatterns": [{ "verdict": "PASS", "meetingRate": 0.04, "sampleSize": 30 }],
+    "companyContext": "We sell an AI-powered sales prioritization tool to B2B revenue teams, helping SDRs and AEs stop wasting time on low-probability prospects."
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "name": "sparse-data-placeholder",
+  "input": {
+    "prospectData": {
+      "profile": {
+        "name": "Test Bot Account",
+        "title": "N/A",
+        "linkedInUrl": "https://www.linkedin.com/in/eval-qa-sandbox/"
+      },
+      "company": {
+        "name": "QA Sandbox Corp",
+        "domain": "example.com",
+        "size": null,
+        "industry": null,
+        "funding": null
+      },
+      "rawProfile": {
+        "headline": "N/A",
+        "about": null,
+        "recentActivity": []
+      },
+      "enrichedData": null
+    },
+    "teamIcp": [
+      { "field": "companySize", "operator": "gte", "value": 50, "weight": 0.3 },
+      { "field": "companyIndustry", "operator": "in", "value": ["SaaS", "Software", "Technology"], "weight": 0.3 },
+      { "field": "title", "operator": "contains", "value": "VP", "weight": 0.2 },
+      { "field": "companyFunding", "operator": "in", "value": ["Series A", "Series B", "Series C"], "weight": 0.2 }
+    ],
+    "companyMemory": null,
+    "intentSignals": {
+      "headline": "N/A",
+      "recentActivity": []
+    },
+    "historicalEngagement": [],
+    "teamHistory": [],
+    "userPreferences": null,
+    "teamPatterns": null,
+    "companyContext": "We sell an AI-powered sales prioritization tool to B2B revenue teams, helping SDRs and AEs stop wasting time on low-probability prospects."
+  }
+}

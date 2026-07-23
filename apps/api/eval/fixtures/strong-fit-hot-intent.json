@@ -1,0 +1,52 @@
+{
+  "name": "strong-fit-hot-intent",
+  "input": {
+    "prospectData": {
+      "profile": {
+        "name": "Priya Nair",
+        "title": "VP of Revenue Operations",
+        "linkedInUrl": "https://www.linkedin.com/in/eval-priya-nair/"
+      },
+      "company": {
+        "name": "Northwind Analytics",
+        "domain": "northwindanalytics.com",
+        "size": 180,
+        "industry": "SaaS",
+        "funding": "Series B"
+      },
+      "rawProfile": {
+        "headline": "VP of Revenue Operations at Northwind Analytics",
+        "about": "Leading RevOps for a fast-growing Series B analytics platform.",
+        "recentActivity": ["Posted about scaling a RevOps team from 3 to 12 in 8 months"]
+      },
+      "enrichedData": {
+        "employeeCount": 180,
+        "industry": "SaaS",
+        "fundingStage": "Series B",
+        "openJobPostings": ["RevOps Manager", "Sales Operations Analyst", "RevOps Systems Lead"]
+      }
+    },
+    "teamIcp": [
+      { "field": "companySize", "operator": "gte", "value": 50, "weight": 0.3 },
+      { "field": "companyIndustry", "operator": "in", "value": ["SaaS", "Software", "Technology"], "weight": 0.3 },
+      { "field": "title", "operator": "contains", "value": "VP", "weight": 0.2 },
+      { "field": "companyFunding", "operator": "in", "value": ["Series A", "Series B", "Series C"], "weight": 0.2 }
+    ],
+    "companyMemory": {
+      "patterns": [{ "verdict": "STRONG_YES", "meetingRate": 0.62, "sampleSize": 21 }],
+      "riskFlags": []
+    },
+    "intentSignals": {
+      "headline": "VP of Revenue Operations at Northwind Analytics",
+      "recentActivity": ["Posted about scaling a RevOps team from 3 to 12 in 8 months"]
+    },
+    "historicalEngagement": [],
+    "teamHistory": [
+      { "verdict": "STRONG_YES", "outcome": "CLOSED_WON" },
+      { "verdict": "STRONG_YES", "outcome": "MEETING_BOOKED" }
+    ],
+    "userPreferences": { "messageTone": "professional", "messageLength": "concise" },
+    "teamPatterns": [{ "verdict": "STRONG_YES", "meetingRate": 0.62, "sampleSize": 21 }],
+    "companyContext": "We sell an AI-powered sales prioritization tool to B2B revenue teams, helping SDRs and AEs stop wasting time on low-probability prospects."
+  }
+}
