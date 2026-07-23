@@ -15,3 +15,4 @@ export * from "./schemas/lead.js";
 export * from "./schemas/team.js";
 export * from "./schemas/billing.js";
 export * from "./schemas/routing.js";
+export * from "./schemas/learning-recommendation.js";

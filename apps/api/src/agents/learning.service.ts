@@ -4,6 +4,7 @@ import { LEARNING_AGENT_PROMPT } from "./prompts.js";
 import { getTeamOutcomeHistory } from "../modules/decisions/decision.repository.js";
 import { getIcp } from "../modules/icp/icp.repository.js";
 import { upsertLearningInsights } from "../modules/memory/memory.repository.js";
+import { createLearningRecommendation } from "../modules/learning-recommendations/learning-recommendation.repository.js";
 import { logger } from "../lib/logger.js";
 
 const TOOL_NAME = "submit_learning_report";
@@ -77,6 +78,37 @@ function fillLearningPlaceholders(
 const MAX_ATTEMPTS = 2;
 
 /**
+ * v4 roadmap Phase 8 (Learning Wiring) -- surfaces this report's own
+ * icp_recommendations/prompt_adjustments as individually actionable
+ * LearningRecommendation rows, in addition to (not instead of) the
+ * existing upsertLearningInsights call below. Best-effort: mirrors
+ * outcome.service.ts's maybeRunLearningAgent pattern -- a failure here
+ * must never fail the learning run that's already succeeded and already
+ * stored its report.
+ *
+ * Does NOT create ROUTING_THRESHOLD or RETRIEVER_WEIGHT recommendations --
+ * learningAgentOutputSchema has no field for either (only
+ * icp_recommendations and prompt_adjustments exist), and parsing free text
+ * into structured threshold/weight numbers would be a guess, not a real
+ * recommendation.
+ */
+async function createRecommendationsFromReport(teamId: string, output: LearningAgentOutput): Promise<void> {
+  await Promise.all([
+    ...output.icp_recommendations.map((recommendation) =>
+      createLearningRecommendation({ teamId, targetSubsystem: "ICP", rationale: recommendation }),
+    ),
+    ...output.prompt_adjustments.map((adjustment) =>
+      createLearningRecommendation({
+        teamId,
+        targetSubsystem: "PROMPTS",
+        rationale: adjustment.reason,
+        suggestedChange: adjustment,
+      }),
+    ),
+  ]);
+}
+
+/**
  * Bible §8.8 Learning Agent: analyzes a team's recent decisions/outcomes and
  * produces a report of accuracy, systematic errors, and recommendations.
  * Never auto-applies anything -- prompt_adjustments and icp_recommendations
@@ -117,6 +149,11 @@ export async function runLearningAgent(teamId: string): Promise<LearningAgentOut
 
       const output = learningAgentOutputSchema.parse(toolUseBlock.input);
       await upsertLearningInsights(teamId, { ...output, generatedAt: new Date().toISOString() });
+
+      await createRecommendationsFromReport(teamId, output).catch((err) => {
+        logger.warn({ err, teamId }, "Learning recommendation creation failed; report itself still stored");
+      });
+
       return output;
     } catch (err) {
       lastError = err;
