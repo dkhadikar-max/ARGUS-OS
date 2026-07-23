@@ -110,15 +110,16 @@ model Team {
   dodoSubscriptionId String?
 
   // Relations
-  users          User[]
-  icp            ICPDefinition?
-  companyMemory  CompanyMemory?
-  policy         PolicyDefinition?
-  policyVersions PolicyVersion[]
-  decisions      Decision[]
-  apiKeys        ApiKey[]
-  webhooks       Webhook[]
-  integrations   Integration[]
+  users                   User[]
+  icp                     ICPDefinition?
+  companyMemory           CompanyMemory?
+  policy                  PolicyDefinition?
+  policyVersions          PolicyVersion[]
+  routingThresholdVersions RoutingThresholdVersion[]
+  decisions               Decision[]
+  apiKeys                 ApiKey[]
+  webhooks                Webhook[]
+  integrations            Integration[]
 
   @@index([slug])
 }
@@ -233,6 +234,40 @@ model PolicyVersion {
 
   @@unique([teamId, version])
   @@index([teamId])
+}
+
+// v4 roadmap Phase 6 -- Routing Optimizer thresholds, reusing the same
+// versioned-append-only pattern as PolicyVersion above, plus an explicit
+// approval state PolicyVersion didn't need: Decision 3 requires the
+// Learning Agent (Phase 8) be able to *propose* threshold changes without
+// ever auto-applying them, so a version can sit PENDING until a human
+// approves or rejects it -- exactly the "Recommendation -> Approval ->
+// Version" flow this phase's own roadmap entry called for. Only one row
+// per team may be ACTIVE at a time; approving a PENDING version atomically
+// supersedes whichever version was ACTIVE before it.
+model RoutingThresholdVersion {
+  id         String                @id @default(cuid())
+  version    Int
+  thresholds Json // { cvThreshold: 0-1, maxSurpriseThreshold: 0-1 }
+  status     RoutingThresholdStatus @default(PENDING)
+  createdAt  DateTime              @default(now())
+  createdBy  String // userId, or "learning_agent" once Phase 8 wires suggestions in
+  approvedAt DateTime?
+  approvedBy String?
+
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  teamId String
+
+  @@unique([teamId, version])
+  @@index([teamId])
+  @@index([teamId, status])
+}
+
+enum RoutingThresholdStatus {
+  ACTIVE
+  PENDING
+  REJECTED
+  SUPERSEDED
 }
 
 // ───────────────────────────────────────────

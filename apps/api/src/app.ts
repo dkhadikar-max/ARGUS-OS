@@ -18,6 +18,7 @@ import { policyRouter } from "./modules/policy/policy.routes.js";
 import { leadRouter } from "./modules/leads/lead.routes.js";
 import { teamRouter } from "./modules/teams/team.routes.js";
 import { billingRouter } from "./modules/billing/billing.routes.js";
+import { routingRouter } from "./modules/routing/routing.routes.js";
 
 export function createApp() {
   const app = express();
@@ -69,6 +70,7 @@ export function createApp() {
   app.use("/api/v1/leads", leadRouter);
   app.use("/api/v1/teams", teamRouter);
   app.use("/api/v1/billing", billingRouter);
+  app.use("/api/v1/routing", routingRouter);
 
   app.use(errorHandler);
 
