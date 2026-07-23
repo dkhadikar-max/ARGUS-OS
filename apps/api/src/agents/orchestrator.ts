@@ -72,7 +72,7 @@ const PLACEHOLDER_MAP: Record<string, keyof DecisionAgentInput> = {
  *  latent self-consistency gap: e.g. the Judge agent now reviews the Risk
  *  agent's actual finalized assessment, not its own not-yet-written draft of
  *  what it expected Risk to say. */
-interface StageOutputs {
+export interface StageOutputs {
   research?: ResearchAgentOutput;
   icp?: IcpAgentOutput;
   intent?: IntentAgentOutput;
@@ -86,7 +86,7 @@ const STAGE_OUTPUT_MAP: Record<string, keyof StageOutputs> = {
   "{{risk_output}}": "risk",
 };
 
-function fillPlaceholders(template: string, input: DecisionAgentInput, priorOutputs: StageOutputs): string {
+export function fillPlaceholders(template: string, input: DecisionAgentInput, priorOutputs: StageOutputs): string {
   return template.replace(/\{\{[a-z_]+\}\}/g, (token) => {
     const stageKey = STAGE_OUTPUT_MAP[token];
     if (stageKey) {
@@ -135,12 +135,18 @@ const MAX_ATTEMPTS = 2;
 // not estimated. Passed in and mutated rather than returned, so callAgent's
 // own return type (Promise<T>, unchanged) doesn't need to become a tuple at
 // all 5 call sites in runAgentDebate.
-interface TokenUsageAccumulator {
+export interface TokenUsageAccumulator {
   inputTokens: number;
   outputTokens: number;
 }
 
-async function callAgent<T>(
+// v4 roadmap Phase 9 (architecture benchmark) -- exported so the single-call
+// and pipeline-with-conflict-detector candidates (both standalone, unwired
+// alternatives for comparison purposes only) can call real stages the exact
+// same way this file's own runAgentDebate does, instead of duplicating the
+// retry/validation/logging logic in a second copy that could silently drift
+// out of sync with this one.
+export async function callAgent<T>(
   system: string,
   userPrompt: string,
   tool: ToolSchema,
@@ -217,7 +223,10 @@ async function callAgent<T>(
   );
 }
 
-const RESEARCH_TOOL: ToolSchema = {
+// v4 roadmap Phase 9 -- exported for the same reason callAgent is: the
+// benchmark candidates need the real tool schemas, not reconstructed
+// duplicates that could drift from these.
+export const RESEARCH_TOOL: ToolSchema = {
   name: "submit_research",
   description: "Submit the Research Agent's analysis of this prospect (Bible §8.3).",
   input_schema: {
@@ -245,7 +254,7 @@ const RESEARCH_TOOL: ToolSchema = {
   },
 };
 
-const ICP_TOOL: ToolSchema = {
+export const ICP_TOOL: ToolSchema = {
   name: "submit_icp",
   description: "Submit the ICP Agent's fit assessment of this prospect (Bible §8.4).",
   input_schema: {
@@ -274,7 +283,7 @@ const ICP_TOOL: ToolSchema = {
   },
 };
 
-const INTENT_TOOL: ToolSchema = {
+export const INTENT_TOOL: ToolSchema = {
   name: "submit_intent",
   description: "Submit the Intent Agent's buying-signal assessment of this prospect (Bible §8.5).",
   input_schema: {
@@ -303,7 +312,7 @@ const INTENT_TOOL: ToolSchema = {
   },
 };
 
-const RISK_TOOL: ToolSchema = {
+export const RISK_TOOL: ToolSchema = {
   name: "submit_risk",
   description: "Submit the Risk Agent's assessment of this prospect (Bible §8.6).",
   input_schema: {
@@ -333,7 +342,7 @@ const RISK_TOOL: ToolSchema = {
   },
 };
 
-const JUDGE_TOOL: ToolSchema = {
+export const JUDGE_TOOL: ToolSchema = {
   name: "submit_judge",
   description: "Submit the Judge Agent's final verdict and message drafts for this prospect (Bible §8.7).",
   input_schema: {
@@ -374,52 +383,61 @@ const JUDGE_TOOL: ToolSchema = {
   },
 };
 
-/**
- * Runs the 5-agent + judge debate as a real pipeline (Research → ICP+Intent
- * in parallel → Risk → Judge), each stage independently validated against
- * its own Bible §8.3-§8.7 schema, and returns the combined, Zod-validated
- * output. See the MAX_ATTEMPTS comment above for why this replaced the
- * original single-call design.
- */
-export async function runAgentDebate(
-  input: DecisionAgentInput,
-): Promise<{ output: AgentDebateOutput; processingTimeMs: number; usage: { inputTokens: number; outputTokens: number } }> {
-  const startedAt = Date.now();
-
-  // Appended rather than spliced into MASTER_SYSTEM_PROMPT itself, which
-  // stays verbatim Bible §8.2 text. companyContext existed as an addendum
-  // before this pipeline split; the pipeline note is new but same pattern --
-  // MASTER_SYSTEM_PROMPT's own "OUTPUT FORMAT" section still describes the
-  // old combined 5-section shape (accurate context, just no longer this
-  // call's actual task), so each stage is told what it's actually being
-  // asked for this time instead of leaving that stale text uncontradicted.
-  function systemPromptFor(stageName: string): string {
-    const parts = [MASTER_SYSTEM_PROMPT];
-    if (input.companyContext) {
-      parts.push(
-        `\n\nABOUT THE SELLER'S COMPANY (use this to make drafted messages specific, not generic):\n${input.companyContext}`,
-      );
-    }
+// Appended rather than spliced into MASTER_SYSTEM_PROMPT itself, which stays
+// verbatim Bible §8.2 text. companyContext existed as an addendum before
+// this pipeline split; the pipeline note is new but same pattern --
+// MASTER_SYSTEM_PROMPT's own "OUTPUT FORMAT" section still describes the
+// old combined 5-section shape (accurate context, just no longer this
+// call's actual task), so each stage is told what it's actually being asked
+// for this time instead of leaving that stale text uncontradicted.
+//
+// v4 roadmap Phase 9 -- hoisted out of runAgentDebate (was a closure over
+// `input`) and exported so the benchmark candidates build prompts the exact
+// same way. Takes companyContext as a parameter instead of closing over the
+// enclosing call's input; behavior is identical.
+export function systemPromptFor(stageName: string, companyContext: string | null): string {
+  const parts = [MASTER_SYSTEM_PROMPT];
+  if (companyContext) {
     parts.push(
-      `\n\nNOTE: This call is one stage of a multi-stage pipeline. Complete only the "${stageName}" agent below and submit it via the tool provided -- the other agents run as separate calls, not in this same response.`,
+      `\n\nABOUT THE SELLER'S COMPANY (use this to make drafted messages specific, not generic):\n${companyContext}`,
     );
-    // Live-timed per-stage breakdown (real prospect, isolated request): every
-    // stage decodes at the same ~46-52 tokens/sec, so there's no fixed
-    // per-call tax to blame -- the pipeline's 5,361 combined output tokens on
-    // the critical path (vs. ~3,000-3,360 for equivalent content in the old
-    // single call) is why total latency (111s) came in slower than the
-    // original design (62-70s) it replaced. Each stage, freed from sharing
-    // one 4096-token ceiling across all 5 sections, writes a fuller
-    // standalone response with no collective budget pressure to compress --
-    // this instruction targets that directly (prose density per field, not
-    // the Bible-mandated item counts like "8-12 data points" or "3-5 risks",
-    // which stay untouched).
-    parts.push(
-      `\n\nCONCISENESS: Keep every text field (summary, description, evidence, reasoning, etc.) to one tight sentence -- no restating facts already established by an earlier agent's output provided above, reference them briefly instead of re-explaining them. Do not pad toward the token limit; stop once the required fields are complete.`,
-    );
-    return parts.join("");
   }
+  parts.push(
+    `\n\nNOTE: This call is one stage of a multi-stage pipeline. Complete only the "${stageName}" agent below and submit it via the tool provided -- the other agents run as separate calls, not in this same response.`,
+  );
+  // Live-timed per-stage breakdown (real prospect, isolated request): every
+  // stage decodes at the same ~46-52 tokens/sec, so there's no fixed
+  // per-call tax to blame -- the pipeline's 5,361 combined output tokens on
+  // the critical path (vs. ~3,000-3,360 for equivalent content in the old
+  // single call) is why total latency (111s) came in slower than the
+  // original design (62-70s) it replaced. Each stage, freed from sharing
+  // one 4096-token ceiling across all 5 sections, writes a fuller
+  // standalone response with no collective budget pressure to compress --
+  // this instruction targets that directly (prose density per field, not
+  // the Bible-mandated item counts like "8-12 data points" or "3-5 risks",
+  // which stay untouched).
+  parts.push(
+    `\n\nCONCISENESS: Keep every text field (summary, description, evidence, reasoning, etc.) to one tight sentence -- no restating facts already established by an earlier agent's output provided above, reference them briefly instead of re-explaining them. Do not pad toward the token limit; stop once the required fields are complete.`,
+  );
+  return parts.join("");
+}
 
+/**
+ * v4 roadmap Phase 9 -- extracted from runAgentDebate so the pipeline-with-
+ * conflict-detector benchmark candidate can reuse the exact same Research/
+ * ICP/Intent/Risk stages (unchanged) and only replace what happens at
+ * Judge. No behavior change to runAgentDebate itself: this is the same code
+ * that used to be inline, just callable from a second place.
+ */
+export async function runStagesResearchThroughRisk(
+  input: DecisionAgentInput,
+): Promise<{
+  research: ResearchAgentOutput;
+  icp: IcpAgentOutput;
+  intent: IntentAgentOutput;
+  risk: RiskAgentOutput;
+  usage: TokenUsageAccumulator;
+}> {
   const usage: TokenUsageAccumulator = { inputTokens: 0, outputTokens: 0 };
 
   // Live-tested against a real prospect: 1024/800-token budgets (a rough
@@ -431,7 +449,7 @@ export async function runAgentDebate(
   // specialist stage. max_tokens is a ceiling, not a target, so being more
   // generous here costs nothing when a stage doesn't need it.
   const research = await callAgent(
-    systemPromptFor("research"),
+    systemPromptFor("research", input.companyContext),
     fillPlaceholders(RESEARCH_AGENT_PROMPT, input, {}),
     RESEARCH_TOOL,
     researchAgentOutputSchema,
@@ -441,7 +459,7 @@ export async function runAgentDebate(
 
   const [icp, intent] = await Promise.all([
     callAgent(
-      systemPromptFor("icp"),
+      systemPromptFor("icp", input.companyContext),
       fillPlaceholders(ICP_AGENT_PROMPT, input, { research }),
       ICP_TOOL,
       icpAgentOutputSchema,
@@ -449,7 +467,7 @@ export async function runAgentDebate(
       usage,
     ),
     callAgent(
-      systemPromptFor("intent"),
+      systemPromptFor("intent", input.companyContext),
       fillPlaceholders(INTENT_AGENT_PROMPT, input, { research }),
       INTENT_TOOL,
       intentAgentOutputSchema,
@@ -466,7 +484,7 @@ export async function runAgentDebate(
   // which is easily as verbose as Judge's own output. Matching Judge's 2560
   // budget rather than guessing at another intermediate number.
   const risk = await callAgent(
-    systemPromptFor("risk"),
+    systemPromptFor("risk", input.companyContext),
     fillPlaceholders(RISK_AGENT_PROMPT, input, { research, icp, intent }),
     RISK_TOOL,
     riskAgentOutputSchema,
@@ -474,8 +492,25 @@ export async function runAgentDebate(
     usage,
   );
 
+  return { research, icp, intent, risk, usage };
+}
+
+/**
+ * Runs the 5-agent + judge debate as a real pipeline (Research → ICP+Intent
+ * in parallel → Risk → Judge), each stage independently validated against
+ * its own Bible §8.3-§8.7 schema, and returns the combined, Zod-validated
+ * output. See the MAX_ATTEMPTS comment above for why this replaced the
+ * original single-call design.
+ */
+export async function runAgentDebate(
+  input: DecisionAgentInput,
+): Promise<{ output: AgentDebateOutput; processingTimeMs: number; usage: { inputTokens: number; outputTokens: number } }> {
+  const startedAt = Date.now();
+
+  const { research, icp, intent, risk, usage } = await runStagesResearchThroughRisk(input);
+
   const judge = await callAgent(
-    systemPromptFor("judge"),
+    systemPromptFor("judge", input.companyContext),
     fillPlaceholders(JUDGE_AGENT_PROMPT, input, { research, icp, intent, risk }),
     JUDGE_TOOL,
     judgeAgentOutputSchema,
