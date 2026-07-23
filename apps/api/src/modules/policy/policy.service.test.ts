@@ -5,13 +5,22 @@ import type { PolicyRule, UpdatePolicyRequest } from "@argus/shared";
 const repo = {
   getPolicy: vi.fn(),
   upsertPolicy: vi.fn(),
+  recordPolicyVersion: vi.fn(),
+  getPolicyVersionHistory: vi.fn(),
+  getPolicyVersion: vi.fn(),
 };
 vi.mock("./policy.repository.js", () => repo);
 
 const recordAudit = vi.fn();
 vi.mock("../../lib/audit.js", () => ({ recordAudit }));
 
-const { getPolicyForTeam, updatePolicyForTeam, evaluatePolicyRules } = await import("./policy.service.js");
+const {
+  getPolicyForTeam,
+  updatePolicyForTeam,
+  evaluatePolicyRules,
+  getPolicyVersionHistoryForTeam,
+  rollbackPolicyForTeam,
+} = await import("./policy.service.js");
 
 const adminAuth: AuthContext = { type: "user", userId: "user_1", role: "ADMIN", teamId: "team_1", planTier: "PRO" };
 const sdrAuth: AuthContext = { type: "user", userId: "user_2", role: "SDR", teamId: "team_1", planTier: "PRO" };
@@ -57,6 +66,7 @@ describe("updatePolicyForTeam", () => {
       version: 2,
       updatedAt: new Date("2026-07-12T09:00:00Z"),
     });
+    repo.recordPolicyVersion.mockResolvedValue({ id: "v1" });
 
     const result = await updatePolicyForTeam(adminAuth, request);
 
@@ -70,6 +80,71 @@ describe("updatePolicyForTeam", () => {
     expect(recordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ entityType: "policy", entityId: "team_1", action: "updated", actorId: "user_1" }),
     );
+  });
+
+  it("snapshots the new version into PolicyVersion alongside the upsert", async () => {
+    repo.upsertPolicy.mockResolvedValue({ rules: request.rules, version: 3, updatedAt: new Date() });
+    repo.recordPolicyVersion.mockResolvedValue({ id: "v1" });
+
+    await updatePolicyForTeam(adminAuth, request);
+
+    expect(repo.recordPolicyVersion).toHaveBeenCalledWith("team_1", 3, request.rules, "user_1");
+  });
+
+  it("does not fail the request if the version snapshot insert fails (best-effort)", async () => {
+    repo.upsertPolicy.mockResolvedValue({ rules: request.rules, version: 2, updatedAt: new Date() });
+    repo.recordPolicyVersion.mockRejectedValue(new Error("db hiccup"));
+
+    const result = await updatePolicyForTeam(adminAuth, request);
+
+    expect(result.version).toBe(2);
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "version_snapshot_failed" }),
+    );
+    // The real "updated" audit entry still fires too -- the failure is
+    // additive information, not a replacement for the normal audit trail.
+    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ action: "updated" }));
+  });
+});
+
+describe("getPolicyVersionHistoryForTeam", () => {
+  it("rejects non-admin roles with FORBIDDEN", async () => {
+    await expect(getPolicyVersionHistoryForTeam(sdrAuth)).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("maps repository rows into the response shape, newest first (as returned by the repository)", async () => {
+    repo.getPolicyVersionHistory.mockResolvedValue([
+      { version: 2, rules: [], createdAt: new Date("2026-07-13T00:00:00Z"), createdBy: "user_1" },
+      { version: 1, rules: [], createdAt: new Date("2026-07-12T00:00:00Z"), createdBy: "user_1" },
+    ]);
+
+    const result = await getPolicyVersionHistoryForTeam(adminAuth);
+
+    expect(result.teamId).toBe("team_1");
+    expect(result.versions.map((v) => v.version)).toEqual([2, 1]);
+  });
+});
+
+describe("rollbackPolicyForTeam", () => {
+  it("throws NOT_FOUND when the requested version doesn't exist for this team", async () => {
+    repo.getPolicyVersion.mockResolvedValue(null);
+
+    await expect(rollbackPolicyForTeam(adminAuth, 99)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(repo.upsertPolicy).not.toHaveBeenCalled();
+  });
+
+  it("re-saves the historical version's rules through the normal update path (new version number, old rules)", async () => {
+    const historicalRules = [
+      { field: "verdict" as const, operator: "equals" as const, value: "PASS", action: "FLAG" as const, message: "old rule" },
+    ];
+    repo.getPolicyVersion.mockResolvedValue({ version: 1, rules: historicalRules, createdAt: new Date(), createdBy: "user_1" });
+    repo.upsertPolicy.mockResolvedValue({ rules: historicalRules, version: 4, updatedAt: new Date() });
+    repo.recordPolicyVersion.mockResolvedValue({ id: "v4" });
+
+    const result = await rollbackPolicyForTeam(adminAuth, 1);
+
+    expect(repo.upsertPolicy).toHaveBeenCalledWith("team_1", historicalRules);
+    expect(result.version).toBe(4); // a NEW version, not literally "1"
   });
 });
 

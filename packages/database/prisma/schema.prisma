@@ -110,14 +110,15 @@ model Team {
   dodoSubscriptionId String?
 
   // Relations
-  users         User[]
-  icp           ICPDefinition?
-  companyMemory CompanyMemory?
-  policy        PolicyDefinition?
-  decisions     Decision[]
-  apiKeys       ApiKey[]
-  webhooks      Webhook[]
-  integrations  Integration[]
+  users          User[]
+  icp            ICPDefinition?
+  companyMemory  CompanyMemory?
+  policy         PolicyDefinition?
+  policyVersions PolicyVersion[]
+  decisions      Decision[]
+  apiKeys        ApiKey[]
+  webhooks       Webhook[]
+  integrations   Integration[]
 
   @@index([slug])
 }
@@ -212,6 +213,25 @@ model PolicyDefinition {
   team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
   teamId String @unique
 
+  @@index([teamId])
+}
+
+// v4 roadmap Phase 5 -- a snapshot of PolicyDefinition.rules taken every
+// time updatePolicyForTeam() saves a new version, so a team's policy
+// history is queryable/rollback-able rather than only ever showing the
+// current rules. Purely additive: PolicyDefinition and evaluatePolicyRules()
+// are unchanged; this is a parallel append-only log, not a replacement.
+model PolicyVersion {
+  id        String   @id @default(cuid())
+  version   Int
+  rules     Json
+  createdAt DateTime @default(now())
+  createdBy String // userId of the admin who saved this version, or "system"
+
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  teamId String
+
+  @@unique([teamId, version])
   @@index([teamId])
 }
 

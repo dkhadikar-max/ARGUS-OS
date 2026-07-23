@@ -47,3 +47,25 @@ export const policyFlagSchema = z.object({
   message: z.string(),
 });
 export type PolicyFlag = z.infer<typeof policyFlagSchema>;
+
+// v4 roadmap Phase 5 -- one snapshot from PolicyVersion, additive to (not a
+// replacement of) the policyResponseSchema above, which still describes
+// only the current rules.
+export const policyVersionEntrySchema = z.object({
+  version: z.number().int().positive(),
+  rules: z.array(policyRuleSchema),
+  createdAt: z.string().datetime(),
+  createdBy: z.string(),
+});
+export type PolicyVersionEntry = z.infer<typeof policyVersionEntrySchema>;
+
+export const policyVersionHistoryResponseSchema = z.object({
+  teamId: z.string(),
+  versions: z.array(policyVersionEntrySchema),
+});
+export type PolicyVersionHistoryResponse = z.infer<typeof policyVersionHistoryResponseSchema>;
+
+export const rollbackPolicyRequestSchema = z.object({
+  version: z.number().int().positive(),
+});
+export type RollbackPolicyRequest = z.infer<typeof rollbackPolicyRequestSchema>;

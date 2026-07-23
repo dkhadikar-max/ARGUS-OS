@@ -1,7 +1,20 @@
-import { AppError, type PolicyFlag, type PolicyResponse, type PolicyRule, type UpdatePolicyRequest } from "@argus/shared";
+import {
+  AppError,
+  type PolicyFlag,
+  type PolicyResponse,
+  type PolicyRule,
+  type PolicyVersionHistoryResponse,
+  type UpdatePolicyRequest,
+} from "@argus/shared";
 import { ADMIN_ROLES, type AuthContext } from "../../middleware/auth.js";
 import { recordAudit, type RequestMeta } from "../../lib/audit.js";
-import { getPolicy, upsertPolicy } from "./policy.repository.js";
+import {
+  getPolicy,
+  getPolicyVersion,
+  getPolicyVersionHistory,
+  recordPolicyVersion,
+  upsertPolicy,
+} from "./policy.repository.js";
 
 export async function getPolicyForTeam(auth: AuthContext): Promise<PolicyResponse> {
   const policy = await getPolicy(auth.teamId);
@@ -28,6 +41,28 @@ export async function updatePolicyForTeam(
   }
 
   const updated = await upsertPolicy(auth.teamId, request.rules);
+
+  // v4 roadmap Phase 5 -- additive snapshot alongside the unchanged upsert
+  // above, so this version's exact rules stay queryable/rollback-able even
+  // after a later save overwrites PolicyDefinition.rules. Best-effort in
+  // spirit (mirrors learning.service.ts's own "must never fail the request
+  // that triggered it" pattern): if this insert fails, the actual policy
+  // update above has already succeeded and audit-logged, so the request
+  // should still succeed rather than erroring out over a history-tracking
+  // side effect.
+  try {
+    await recordPolicyVersion(auth.teamId, updated.version, request.rules, auth.userId ?? "system");
+  } catch (err) {
+    // Deliberately no rethrow -- see comment above.
+    await recordAudit({
+      entityType: "policy",
+      entityId: auth.teamId,
+      action: "version_snapshot_failed",
+      actorId: "system",
+      afterState: { version: updated.version, error: err instanceof Error ? err.message : String(err) },
+      meta,
+    });
+  }
 
   await recordAudit({
     entityType: "policy",
@@ -100,4 +135,44 @@ export function evaluatePolicyRules(rules: PolicyRule[], context: PolicyEvalCont
   return rules
     .filter((rule) => ruleMatches(rule, context))
     .map((rule) => ({ field: rule.field, action: rule.action, message: rule.message }));
+}
+
+// v4 roadmap Phase 5 -- version history + rollback, additive to everything
+// above. Same admin-only gate as updatePolicyForTeam, since both read/
+// mutate governance rules.
+
+export async function getPolicyVersionHistoryForTeam(auth: AuthContext): Promise<PolicyVersionHistoryResponse> {
+  if (!auth.role || !ADMIN_ROLES.has(auth.role)) {
+    throw new AppError("FORBIDDEN", "Only a team admin can view policy version history");
+  }
+
+  const versions = await getPolicyVersionHistory(auth.teamId);
+  return {
+    teamId: auth.teamId,
+    versions: versions.map((v) => ({
+      version: v.version,
+      rules: v.rules as never,
+      createdAt: v.createdAt.toISOString(),
+      createdBy: v.createdBy,
+    })),
+  };
+}
+
+/** Rolling back means re-saving a historical version's rules through the
+ *  existing, unchanged updatePolicyForTeam/upsertPolicy path -- it creates
+ *  a NEW version number carrying the old rules content, not a literal
+ *  revert to the old version number. Same as a git revert commit: the
+ *  history stays linear and every version, including this one, is still
+ *  snapshotted. */
+export async function rollbackPolicyForTeam(
+  auth: AuthContext,
+  version: number,
+  meta?: RequestMeta,
+): Promise<PolicyResponse> {
+  const target = await getPolicyVersion(auth.teamId, version);
+  if (!target) {
+    throw new AppError("NOT_FOUND", `Policy version ${version} does not exist for this team`);
+  }
+
+  return updatePolicyForTeam(auth, { rules: target.rules as never }, meta);
 }

@@ -16,3 +16,29 @@ export async function upsertPolicy(teamId: string, rules: PolicyRule[]) {
     update: { rules: rules as never, version: { increment: 1 } },
   });
 }
+
+// v4 roadmap Phase 5 -- additive versioning on top of the above, unchanged,
+// upsertPolicy. PolicyVersion is a parallel append-only log; nothing here
+// touches PolicyDefinition or evaluatePolicyRules()'s existing behavior.
+
+/** Snapshots one policy save into PolicyVersion. Called alongside (not
+ *  instead of) upsertPolicy -- see policy.service.ts's updatePolicyForTeam. */
+export function recordPolicyVersion(teamId: string, version: number, rules: PolicyRule[], createdBy: string) {
+  return prisma.policyVersion.create({
+    data: { teamId, version, rules: rules as never, createdBy },
+  });
+}
+
+/** Newest-first version history for a team. */
+export function getPolicyVersionHistory(teamId: string) {
+  return prisma.policyVersion.findMany({
+    where: { teamId },
+    orderBy: { version: "desc" },
+  });
+}
+
+/** One specific historical version's rules, or null if that version number
+ *  doesn't exist for this team (e.g. a stale/mistyped rollback request). */
+export function getPolicyVersion(teamId: string, version: number) {
+  return prisma.policyVersion.findUnique({ where: { teamId_version: { teamId, version } } });
+}
