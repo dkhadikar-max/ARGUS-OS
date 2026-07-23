@@ -1,0 +1,58 @@
+{
+  "runId": "2026-07-23T09-26-28-778Z",
+  "createdAt": "2026-07-23T09:26:28.779Z",
+  "model": "claude-sonnet-4-6",
+  "gitCommit": "8b881ba",
+  "results": [
+    {
+      "fixture": "conflicting-signals-hiring-freeze",
+      "verdict": "WAIT",
+      "weightedScore": 51,
+      "confidence": 54,
+      "agentConsensus": "high",
+      "recommendedAction": "wait_for_signal",
+      "processingTimeMs": 77414,
+      "error": null
+    },
+    {
+      "fixture": "moderate-fit-steady-growth",
+      "verdict": "PASS",
+      "weightedScore": 33,
+      "confidence": 47,
+      "agentConsensus": "high",
+      "recommendedAction": "pass_and_move_on",
+      "processingTimeMs": 103663,
+      "error": null
+    },
+    {
+      "fixture": "sparse-data-placeholder",
+      "verdict": "HARD_PASS",
+      "weightedScore": 0,
+      "confidence": 97,
+      "agentConsensus": "high",
+      "recommendedAction": "pass_and_move_on",
+      "processingTimeMs": 56895,
+      "error": null
+    },
+    {
+      "fixture": "strong-fit-hot-intent",
+      "verdict": "YES",
+      "weightedScore": 82,
+      "confidence": 72,
+      "agentConsensus": "high",
+      "recommendedAction": "message_now",
+      "processingTimeMs": 117971,
+      "error": null
+    },
+    {
+      "fixture": "weak-fit-wrong-title",
+      "verdict": "HARD_PASS",
+      "weightedScore": 4,
+      "confidence": 88,
+      "agentConsensus": "high",
+      "recommendedAction": "pass_and_move_on",
+      "processingTimeMs": 62441,
+      "error": null
+    }
+  ]
+}
