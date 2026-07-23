@@ -262,9 +262,47 @@ model Evidence {
   decision   Decision? @relation(fields: [decisionId], references: [id])
   decisionId String?
 
+  // v4 roadmap Phase 2 -- Evidence Graph, implemented as a logical graph
+  // over relational tables rather than a graph database (Decision 2: the
+  // Bible's own TDR-2 chose Postgres for the Decision Graph over Neo4j/
+  // Neptune for ACID reasons; this stays consistent with that). Purely
+  // additive -- no existing Evidence query or field changes.
+  outgoingEdges EvidenceEdge[] @relation("EvidenceEdgeFrom")
+  incomingEdges EvidenceEdge[] @relation("EvidenceEdgeTo")
+
   @@index([prospectId])
   @@index([decisionId])
   @@index([type])
+}
+
+// v4 roadmap Phase 2. A directed edge between two Evidence nodes, e.g. a
+// risk_signal Evidence row that "corroborates" a revenue Evidence row (the
+// architecture doc's own worked example). Not yet consumed anywhere --
+// Retriever Registry (Phase 5) is the first thing that will read these, per
+// the roadmap's explicit "do not implement Retrieval yet" instruction for
+// this phase.
+model EvidenceEdge {
+  id     String   @id @default(cuid())
+  from   Evidence @relation("EvidenceEdgeFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  fromId String
+  to     Evidence @relation("EvidenceEdgeTo", fields: [toId], references: [id], onDelete: Cascade)
+  toId   String
+
+  relation  EvidenceEdgeRelation
+  strength  Float    @default(0.5) // 0-1, how strong the relationship is
+  createdAt DateTime @default(now())
+
+  @@unique([fromId, toId, relation])
+  @@index([fromId])
+  @@index([toId])
+  @@index([relation])
+}
+
+enum EvidenceEdgeRelation {
+  CORROBORATES
+  CONTRADICTS
+  ENABLES
+  PRECEDES
 }
 
 enum EvidenceType {
