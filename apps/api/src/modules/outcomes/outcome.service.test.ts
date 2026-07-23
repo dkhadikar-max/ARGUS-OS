@@ -13,6 +13,7 @@ const repo = {
   getDecisionsForRepBreakdown: vi.fn(),
   countOverriddenDecisionsForTeam: vi.fn(),
   countOutcomesForTeam: vi.fn(),
+  updateDecisionValue: vi.fn(),
 };
 
 vi.mock("./outcome.repository.js", () => repo);
@@ -170,6 +171,71 @@ describe("createOutcome", () => {
       repo.countOutcomesForTeam.mockResolvedValue(20);
       runLearningAgent.mockRejectedValue(new Error("Claude is down"));
       await expect(createOutcome(request, auth)).resolves.toMatchObject({ id: "out_1" });
+    });
+  });
+
+  // v4 roadmap Phase 2 (Decision Value) -- revenue/false-positive/false-
+  // negative all depend on a real outcome, so this recompute only happens
+  // here, not at decision creation.
+  describe("Decision Value recompute", () => {
+    beforeEach(() => {
+      repo.createOutcomeRecord.mockResolvedValue({
+        id: "out_1",
+        decisionId: "dec_1",
+        type: "CLOSED_WON",
+        value: null,
+        timeToOutcomeDays: 30,
+        feedback: null,
+        loggedAt: new Date("2026-07-11T09:15:00Z"),
+      });
+      repo.getTeamOutcomesForVerdict.mockResolvedValue([]);
+      repo.upsertCompanyMemoryPatternForVerdict.mockResolvedValue(undefined);
+    });
+
+    it("recomputes decisionValueUsd/valueCostRatio using the real outcome type and persists it", async () => {
+      repo.findDecisionForOutcome.mockResolvedValue({
+        id: "dec_1",
+        verdict: "STRONG_YES",
+        outcome: null,
+        prospectId: "prospect_1",
+        inferenceCostUsd: 0.042,
+      });
+
+      await createOutcome({ ...request, type: "CLOSED_WON" }, auth);
+
+      // time_saved(1.0*75) + revenue(25000*0.05) + fp(0) + fn(1*5000) = 6325
+      expect(repo.updateDecisionValue).toHaveBeenCalledWith(
+        "dec_1",
+        6325,
+        expect.closeTo(6325 / 0.042, 5),
+      );
+    });
+
+    it("treats a missing inferenceCostUsd as 0, yielding a null valueCostRatio rather than throwing", async () => {
+      repo.findDecisionForOutcome.mockResolvedValue({
+        id: "dec_1",
+        verdict: "PASS",
+        outcome: null,
+        prospectId: "prospect_1",
+        inferenceCostUsd: null,
+      });
+
+      await createOutcome({ ...request, type: "NO_RESPONSE" }, auth);
+
+      expect(repo.updateDecisionValue).toHaveBeenCalledWith("dec_1", expect.any(Number), null);
+    });
+
+    it("is best-effort: a recompute failure doesn't fail the outcome request", async () => {
+      repo.findDecisionForOutcome.mockResolvedValue({
+        id: "dec_1",
+        verdict: "STRONG_YES",
+        outcome: null,
+        prospectId: "prospect_1",
+        inferenceCostUsd: 0.042,
+      });
+      repo.updateDecisionValue.mockRejectedValue(new Error("db unavailable"));
+
+      await expect(createOutcome({ ...request, type: "CLOSED_WON" }, auth)).resolves.toMatchObject({ id: "out_1" });
     });
   });
 });

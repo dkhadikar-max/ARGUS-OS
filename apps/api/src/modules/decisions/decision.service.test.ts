@@ -134,7 +134,11 @@ describe("createDecision", () => {
     repo.getUserPreferences.mockResolvedValue(null);
     repo.getProspectDecisionHistory.mockResolvedValue([]);
     repo.getTeamOutcomeHistory.mockResolvedValue([]);
-    runAgentDebate.mockResolvedValue({ output: agentDebateOutput, processingTimeMs: 3200 });
+    runAgentDebate.mockResolvedValue({
+      output: agentDebateOutput,
+      processingTimeMs: 3200,
+      usage: { inputTokens: 4000, outputTokens: 2000 },
+    });
     repo.createDecisionRecord.mockResolvedValue({ id: "dec_1" });
     repo.findDecisionById.mockResolvedValue({
       id: "dec_1",
@@ -234,6 +238,7 @@ describe("createDecision", () => {
         },
       },
       processingTimeMs: 3200,
+      usage: { inputTokens: 4000, outputTokens: 2000 },
     });
     repo.createDecisionRecord.mockResolvedValue({ id: "dec_1" });
     repo.findDecisionById.mockResolvedValue({
@@ -294,6 +299,7 @@ describe("createDecision", () => {
         },
       },
       processingTimeMs: 3200,
+      usage: { inputTokens: 4000, outputTokens: 2000 },
     });
     repo.createDecisionRecord.mockResolvedValue({ id: "dec_1" });
     repo.findDecisionById.mockResolvedValue({
@@ -349,7 +355,11 @@ describe("createDecision", () => {
       rules: [{ field: "confidence", operator: "gte", value: 90, action: "FLAG", message: "Very high confidence -- double-check evidence" }],
       version: 1,
     });
-    runAgentDebate.mockResolvedValue({ output: agentDebateOutput, processingTimeMs: 3200 });
+    runAgentDebate.mockResolvedValue({
+      output: agentDebateOutput,
+      processingTimeMs: 3200,
+      usage: { inputTokens: 4000, outputTokens: 2000 },
+    });
     repo.createDecisionRecord.mockResolvedValue({ id: "dec_1" });
     repo.findDecisionById.mockResolvedValue({
       id: "dec_1",
@@ -412,7 +422,11 @@ describe("createDecision", () => {
     repo.getUserPreferences.mockResolvedValue(null);
     repo.getProspectDecisionHistory.mockResolvedValue([]);
     repo.getTeamOutcomeHistory.mockResolvedValue([]);
-    runAgentDebate.mockResolvedValue({ output: agentDebateOutput, processingTimeMs: 3200 });
+    runAgentDebate.mockResolvedValue({
+      output: agentDebateOutput,
+      processingTimeMs: 3200,
+      usage: { inputTokens: 4000, outputTokens: 2000 },
+    });
     repo.createDecisionRecord.mockResolvedValue({ id: "dec_1" });
     repo.findDecisionById.mockResolvedValue({
       id: "dec_1",
@@ -472,7 +486,11 @@ describe("createDecision", () => {
     repo.getUserPreferences.mockResolvedValue(null);
     repo.getProspectDecisionHistory.mockResolvedValue([]);
     repo.getTeamOutcomeHistory.mockResolvedValue([]);
-    runAgentDebate.mockResolvedValue({ output: agentDebateOutput, processingTimeMs: 3200 });
+    runAgentDebate.mockResolvedValue({
+      output: agentDebateOutput,
+      processingTimeMs: 3200,
+      usage: { inputTokens: 4000, outputTokens: 2000 },
+    });
     repo.createDecisionRecord.mockResolvedValue({ id: "dec_1" });
     repo.findDecisionById.mockResolvedValue({
       id: "dec_1",
@@ -580,7 +598,11 @@ describe("createDecision", () => {
     repo.getUserPreferences.mockResolvedValue(null);
     repo.getProspectDecisionHistory.mockResolvedValue([]);
     repo.getTeamOutcomeHistory.mockResolvedValue([]);
-    runAgentDebate.mockResolvedValue({ output: agentDebateOutput, processingTimeMs: 3200 });
+    runAgentDebate.mockResolvedValue({
+      output: agentDebateOutput,
+      processingTimeMs: 3200,
+      usage: { inputTokens: 4000, outputTokens: 2000 },
+    });
     repo.createDecisionRecord.mockResolvedValue({ id: "dec_1" });
     repo.findDecisionById.mockResolvedValue({
       id: "dec_1",
@@ -632,7 +654,11 @@ describe("createDecision", () => {
     repo.getUserPreferences.mockResolvedValue(null);
     repo.getProspectDecisionHistory.mockResolvedValue([]);
     repo.getTeamOutcomeHistory.mockResolvedValue([]);
-    runAgentDebate.mockResolvedValue({ output: agentDebateOutput, processingTimeMs: 3200 });
+    runAgentDebate.mockResolvedValue({
+      output: agentDebateOutput,
+      processingTimeMs: 3200,
+      usage: { inputTokens: 4000, outputTokens: 2000 },
+    });
     repo.createDecisionRecord.mockResolvedValue({ id: "dec_1" });
     repo.findDecisionById.mockResolvedValue({
       id: "dec_1",

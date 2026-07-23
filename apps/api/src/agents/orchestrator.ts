@@ -129,12 +129,24 @@ function extractJson(text: string): unknown {
 // first attempt failed).
 const MAX_ATTEMPTS = 2;
 
+// v4 roadmap Phase 2 (Decision Value) -- accumulates real token usage
+// across every stage call (including failed/retried attempts, which still
+// cost real API spend) so a decision's actual inference cost is knowable,
+// not estimated. Passed in and mutated rather than returned, so callAgent's
+// own return type (Promise<T>, unchanged) doesn't need to become a tuple at
+// all 5 call sites in runAgentDebate.
+interface TokenUsageAccumulator {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 async function callAgent<T>(
   system: string,
   userPrompt: string,
   tool: ToolSchema,
   schema: ZodType<T>,
   maxTokens: number,
+  usage: TokenUsageAccumulator,
 ): Promise<T> {
   let lastError: unknown;
   // Live tests found the pipeline's total decision latency (112-116s) came in
@@ -157,6 +169,10 @@ async function callAgent<T>(
     try {
       const providerResponse = await llmProvider.call({ model: CLAUDE_MODEL, maxTokens, system, userPrompt, tool });
       stopReason = providerResponse.stopReason;
+      // Counted on every attempt, not just a successful one -- a failed/
+      // retried attempt still consumed real tokens Anthropic bills for.
+      usage.inputTokens += providerResponse.inputTokens;
+      usage.outputTokens += providerResponse.outputTokens;
 
       const parsed =
         providerResponse.toolInput !== null
@@ -367,7 +383,7 @@ const JUDGE_TOOL: ToolSchema = {
  */
 export async function runAgentDebate(
   input: DecisionAgentInput,
-): Promise<{ output: AgentDebateOutput; processingTimeMs: number }> {
+): Promise<{ output: AgentDebateOutput; processingTimeMs: number; usage: { inputTokens: number; outputTokens: number } }> {
   const startedAt = Date.now();
 
   // Appended rather than spliced into MASTER_SYSTEM_PROMPT itself, which
@@ -404,6 +420,8 @@ export async function runAgentDebate(
     return parts.join("");
   }
 
+  const usage: TokenUsageAccumulator = { inputTokens: 0, outputTokens: 0 };
+
   // Live-tested against a real prospect: 1024/800-token budgets (a rough
   // even split of the old combined call's 4096 across 5 sections) truncated
   // Research's response mid-`data_points` array before it reached
@@ -418,16 +436,25 @@ export async function runAgentDebate(
     RESEARCH_TOOL,
     researchAgentOutputSchema,
     2048,
+    usage,
   );
 
   const [icp, intent] = await Promise.all([
-    callAgent(systemPromptFor("icp"), fillPlaceholders(ICP_AGENT_PROMPT, input, { research }), ICP_TOOL, icpAgentOutputSchema, 1536),
+    callAgent(
+      systemPromptFor("icp"),
+      fillPlaceholders(ICP_AGENT_PROMPT, input, { research }),
+      ICP_TOOL,
+      icpAgentOutputSchema,
+      1536,
+      usage,
+    ),
     callAgent(
       systemPromptFor("intent"),
       fillPlaceholders(INTENT_AGENT_PROMPT, input, { research }),
       INTENT_TOOL,
       intentAgentOutputSchema,
       1536,
+      usage,
     ),
   ]);
 
@@ -444,6 +471,7 @@ export async function runAgentDebate(
     RISK_TOOL,
     riskAgentOutputSchema,
     2560,
+    usage,
   );
 
   const judge = await callAgent(
@@ -452,8 +480,9 @@ export async function runAgentDebate(
     JUDGE_TOOL,
     judgeAgentOutputSchema,
     2560,
+    usage,
   );
 
   const output = agentDebateOutputSchema.parse({ research, icp, intent, risk, judge });
-  return { output, processingTimeMs: Date.now() - startedAt };
+  return { output, processingTimeMs: Date.now() - startedAt, usage };
 }

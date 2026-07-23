@@ -10,8 +10,10 @@ import {
   getTeamOutcomesForVerdict,
   getVerdictAggregations,
   listOutcomes,
+  updateDecisionValue,
   upsertCompanyMemoryPatternForVerdict,
 } from "./outcome.repository.js";
+import { calculateDecisionValue, calculateValueCostRatio } from "../../agents/decision-value.service.js";
 import { publishTeamEvent } from "../../lib/pubsub.js";
 import { invalidateDecisionCache } from "../../lib/decision-cache.js";
 import { track } from "../../lib/analytics.js";
@@ -166,6 +168,20 @@ export async function createOutcome(
   });
 
   const patternUpdated = await updateCompanyMemoryPattern(auth.teamId, decision.verdict);
+
+  // v4 roadmap Phase 2 (Decision Value) -- revenue/false-positive/false-
+  // negative all depend on a real outcome, which only exists from this
+  // point on; recomputes and overwrites the creation-time estimate (which
+  // only had time_saved to go on). Best-effort: a failure here must never
+  // fail the outcome-logging request that triggered it (same reasoning as
+  // maybeRunLearningAgent below).
+  try {
+    const { decisionValueUsd } = calculateDecisionValue({ verdict: decision.verdict, outcomeType: outcome.type });
+    const valueCostRatio = calculateValueCostRatio(decisionValueUsd, decision.inferenceCostUsd ?? 0);
+    await updateDecisionValue(decision.id, decisionValueUsd, valueCostRatio);
+  } catch (err) {
+    logger.warn({ err, decisionId: decision.id }, "Decision Value recompute failed; outcome itself still recorded");
+  }
 
   // Best-effort and never awaited by the request/response cycle beyond this
   // point's own await -- a Claude call failing here must not fail the

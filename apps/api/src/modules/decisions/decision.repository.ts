@@ -75,6 +75,14 @@ export interface CreateDecisionInput {
   // see policy.service.ts's evaluatePolicyRules.
   policyFlags: unknown;
   processingTimeMs: number;
+  // v4 roadmap Phase 2 (Decision Value) -- optional so callers/tests that
+  // predate this phase don't need updating; decision.service.ts always
+  // passes these on a real create.
+  inputTokens?: number;
+  outputTokens?: number;
+  inferenceCostUsd?: number;
+  decisionValueUsd?: number;
+  valueCostRatio?: number | null;
   evidence: Array<{
     type: "FIRMOGRAPHIC" | "DEMOGRAPHIC" | "TECHNOGRAPHIC" | "INTENT" | "MARKET" | "HISTORICAL" | "DERIVED";
     source: "LINKEDIN" | "APOLLO" | "CLEARBIT" | "CRM" | "MANUAL" | "INFERRED" | "USER_INPUT";
@@ -104,6 +112,11 @@ export function createDecisionRecord(input: CreateDecisionInput) {
       agentOutputs: input.agentOutputs as never,
       policyFlags: input.policyFlags as never,
       processingTimeMs: input.processingTimeMs,
+      inputTokens: input.inputTokens,
+      outputTokens: input.outputTokens,
+      inferenceCostUsd: input.inferenceCostUsd,
+      decisionValueUsd: input.decisionValueUsd,
+      valueCostRatio: input.valueCostRatio,
       evidence: {
         create: input.evidence.map((e) => ({
           type: e.type,

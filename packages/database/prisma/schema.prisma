@@ -416,6 +416,20 @@ model Decision {
   // { flags: [{ field, action, message }] }, empty/null when no rule matched.
   policyFlags       Json?
   processingTimeMs  Int? // Performance tracking
+
+  // v4 roadmap Phase 2 (Decision Value) -- real, not estimated: inputTokens/
+  // outputTokens are the actual sum across every stage call in orchestrator.
+  // ts's runAgentDebate (0/0 on a cache hit, since no new API call was made).
+  // inferenceCostUsd is derived from them (see decision-value.service.ts for
+  // the pricing assumption). decisionValueUsd/valueCostRatio are computed
+  // once at decision creation (time-saved only, no outcome yet) and again
+  // once outcome.service.ts logs a real outcome for this decision.
+  inputTokens      Int?
+  outputTokens     Int?
+  inferenceCostUsd Float?
+  decisionValueUsd Float?
+  valueCostRatio   Float?
+
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 

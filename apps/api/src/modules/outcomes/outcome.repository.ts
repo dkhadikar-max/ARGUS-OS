@@ -8,6 +8,16 @@ export function findDecisionForOutcome(decisionId: string, teamId: string) {
   });
 }
 
+/** v4 roadmap Phase 2 (Decision Value) -- recomputed once a real outcome
+ *  exists (revenue/false-positive/false-negative all depend on one); see
+ *  outcome.service.ts's createOutcome for the calculation itself. */
+export function updateDecisionValue(decisionId: string, decisionValueUsd: number, valueCostRatio: number | null) {
+  return prisma.decision.update({
+    where: { id: decisionId },
+    data: { decisionValueUsd, valueCostRatio },
+  });
+}
+
 /** Bible §8.8 Learning Agent's "n>=20" significance threshold -- how many
  *  outcomes this team has ever logged, used to fire a run on every 20th. */
 export function countOutcomesForTeam(teamId: string) {

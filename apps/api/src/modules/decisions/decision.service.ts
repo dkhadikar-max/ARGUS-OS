@@ -1,6 +1,7 @@
 import { agentDebateOutputSchema, AppError, scoreToVerdict, type AgentDebateOutput, type CreateActionRequest, type CreateActionResponse, type CreateDecisionRequest, type DecisionResponse, type EditMessageDraftRequest, type EditMessageDraftResponse, type OverrideDecisionRequest, type OverrideDecisionResponse, type PolicyFlag, type ShareDecisionResponse } from "@argus/shared";
 import type { AuthContext } from "../../middleware/auth.js";
 import { runAgentDebate } from "../../agents/orchestrator.js";
+import { calculateDecisionValue, calculateInferenceCostUsd, calculateValueCostRatio } from "../../agents/decision-value.service.js";
 import {
   createActionTaken,
   createDecisionRecord,
@@ -247,6 +248,10 @@ export async function createDecision(
   const cacheStartedAt = Date.now();
   let output = await getCachedDebateOutput(prospect.id, request.context.teamId, icpVersion);
   let processingTimeMs: number;
+  // v4 roadmap Phase 2 (Decision Value) -- 0/0 on a cache hit is accurate,
+  // not a placeholder: no new API call was made, so there's genuinely no
+  // new inference cost for this request.
+  let usage = { inputTokens: 0, outputTokens: 0 };
 
   if (output) {
     processingTimeMs = Date.now() - cacheStartedAt;
@@ -281,6 +286,7 @@ export async function createDecision(
     });
     output = debate.output;
     processingTimeMs = debate.processingTimeMs;
+    usage = debate.usage;
     await setCachedDebateOutput(prospect.id, request.context.teamId, icpVersion, output);
   }
 
@@ -301,6 +307,14 @@ export async function createDecision(
     prospectTitle: prospect.title,
   });
 
+  // v4 roadmap Phase 2 (Decision Value) -- computed once here with
+  // outcomeType: null (revenue/fp/fn all require an outcome that doesn't
+  // exist yet; only time_saved contributes at creation time), then
+  // recomputed by outcome.service.ts once a real outcome is logged.
+  const inferenceCostUsd = calculateInferenceCostUsd(usage.inputTokens, usage.outputTokens);
+  const decisionValue = calculateDecisionValue({ verdict, outcomeType: null });
+  const valueCostRatio = calculateValueCostRatio(decisionValue.decisionValueUsd, inferenceCostUsd);
+
   const decision = await createDecisionRecord({
     userId: request.context.userId,
     teamId: request.context.teamId,
@@ -314,6 +328,11 @@ export async function createDecision(
     agentOutputs: output,
     policyFlags,
     processingTimeMs,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    inferenceCostUsd,
+    decisionValueUsd: decisionValue.decisionValueUsd,
+    valueCostRatio,
     evidence: [
       ...output.research.data_points.map((dp) => ({
         type: RESEARCH_TYPE_TO_EVIDENCE_TYPE[dp.type] ?? "DERIVED",
