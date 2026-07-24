@@ -118,6 +118,7 @@ model Team {
   routingThresholdVersions  RoutingThresholdVersion[]
   decisionComplexityWeights DecisionComplexityWeights[]
   learningRecommendations   LearningRecommendation[]
+  reasoningAssets           ReasoningAsset[]
   decisions                 Decision[]
   apiKeys                   ApiKey[]
   webhooks                  Webhook[]
@@ -300,6 +301,73 @@ model DecisionComplexityWeights {
   @@unique([teamId, version])
   @@index([teamId])
   @@index([teamId, status])
+}
+
+// v4 roadmap Phase 13 (docs/ARCHITECTURE_V4.md, "Reasoning Asset") -- a
+// metadata wrapper, not a shared base table: PolicyDefinition/PolicyVersion,
+// EvidenceEdge, RoutingThresholdVersion, and DecisionComplexityWeights keep
+// their own schemas, columns, and (where they have one) approval workflow
+// exactly as-is. This table only adds a place to register ANY reasoning
+// asset -- including the ones that are pure code today with no DB row at
+// all (Retriever, Prompt, Strategy: see RETRIEVER_REGISTRY, prompts.ts,
+// EXECUTION_STRATEGY_REGISTRY) -- and track ownership/effectiveness for it
+// generically, so the Learning Engine has one place to look rather than
+// bespoke code per subsystem.
+//
+// assetKey is a real row id for DB-backed types (Policy/Evidence/
+// Threshold) or a stable code-level name for code-only types (e.g.
+// "icp_retriever", "judge_prompt", "single_pass") -- there is deliberately
+// no foreign key to a single table, since no single table spans all 7
+// asset kinds honestly.
+//
+// effectivenessScore/lastEvaluatedAt start null and stay null until a real
+// evaluation happens -- nothing in Phase 13 auto-populates them with a
+// fabricated number, the same restraint LearningRecommendation's own
+// ROUTING_THRESHOLD/RETRIEVER_WEIGHT subsystems already show (declared in
+// the enum, never auto-populated because no real computation exists yet).
+//
+// "History" is deliberately NOT a bespoke table here -- reasoning-asset.
+// service.ts's registerReasoningAsset/recordEffectivenessScore both call
+// the existing recordAudit() (lib/audit.ts), the same generic AuditLog
+// every other module's state changes already go through.
+//
+// approvedAt/approvedBy exist only for asset types that have no approval
+// workflow of their own (Retriever/Prompt/Strategy) -- Policy/Threshold/
+// Weights already have one on their own tables and must not have a second,
+// possibly-conflicting approval state recorded here.
+model ReasoningAsset {
+  id                 String             @id @default(cuid())
+  assetType          ReasoningAssetType
+  assetKey           String
+  label              String
+  ownerId            String? // userId considered responsible for this asset
+  effectivenessScore Float?
+  lastEvaluatedAt    DateTime?
+  approvedAt         DateTime?
+  approvedBy         String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  // Nullable for forward-compatibility with a future global (not
+  // team-scoped) asset -- reasoning-asset.service.ts's current API always
+  // sets this to the caller's own team, the same team-scoping every other
+  // admin-gated module in this schema uses.
+  team   Team?   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  teamId String?
+
+  @@unique([assetType, assetKey, teamId])
+  @@index([teamId])
+  @@index([assetType])
+}
+
+enum ReasoningAssetType {
+  POLICY
+  EVIDENCE
+  THRESHOLD
+  PROMPT
+  RETRIEVER
+  STRATEGY
+  PATTERN
 }
 
 // v4 roadmap Phase 8 (Learning Wiring) -- Decision 3's "Recommendation ->

@@ -17,3 +17,4 @@ export * from "./schemas/billing.js";
 export * from "./schemas/routing.js";
 export * from "./schemas/learning-recommendation.js";
 export * from "./schemas/complexity.js";
+export * from "./schemas/reasoning-asset.js";
