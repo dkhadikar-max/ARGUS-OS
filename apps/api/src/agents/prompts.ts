@@ -66,6 +66,9 @@ export const RESEARCH_AGENT_PROMPT = `<agent name="research">
 - Do not infer beyond the data provided
 - If a field is null/unknown, explicitly state it
 - Prioritize recency (signals from last 90 days weighted 2x)
+- Every entry in data_points must include type, signal, and relevance --
+  never omit a field, including for the later items when you list the
+  full 8-12.
 </constraints>
 </agent>`;
 
@@ -97,6 +100,9 @@ export const ICP_AGENT_PROMPT = `<agent name="icp">
 - Be strict: a mediocre ICP fit should score 40-60, not 70+
 - If ICP is undefined or sparse, reduce confidence accordingly
 - Consider recency of ICP definition (older ICPs may be stale)
+- Every entry in criteria_evaluated must include evidence and reasoning --
+  never omit either field, including for criteria evaluated later in the
+  list.
 </constraints>
 </agent>`;
 
@@ -134,6 +140,8 @@ export const INTENT_AGENT_PROMPT = `<agent name="intent">
 - Distinguish between "company intent" and "personal intent" — the person may not share the company's urgency
 - Recent signals (last 30 days) count 2x; signals older than 90 days count 0.5x
 - No intent signal is better than weak intent (avoids false positives)
+- Every entry in signals must include reasoning -- never omit it, including
+  for signals listed later in the array.
 </constraints>
 </agent>`;
 
