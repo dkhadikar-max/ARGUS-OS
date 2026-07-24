@@ -177,6 +177,9 @@ Common risk categories:
 - If no significant risks exist, explicitly state "low risk profile"
 - Red flags must have specific evidence, not generalizations
 - Consider team history: if similar prospects have 0% close rate, flag it
+- Every risk in the risks array must include a mitigation value, even if
+  it's just "Monitor — no immediate action needed." Never omit this field,
+  including for the last risk(s) in the list when you identify 4-5.
 </constraints>
 </agent>`;
 
