@@ -401,7 +401,9 @@ export const JUDGE_TOOL: ToolSchema = {
 // `input`) and exported so the benchmark candidates build prompts the exact
 // same way. Takes companyContext as a parameter instead of closing over the
 // enclosing call's input; behavior is identical.
-export function systemPromptFor(stageName: string, companyContext: string | null): string {
+export type StageId = "research" | "icp" | "intent" | "risk" | "judge";
+
+export function systemPromptFor(stageName: StageId, companyContext: string | null): string {
   const parts = [MASTER_SYSTEM_PROMPT];
   if (companyContext) {
     parts.push(
@@ -426,6 +428,30 @@ export function systemPromptFor(stageName: string, companyContext: string | null
     `\n\nCONCISENESS: Keep every text field (summary, description, evidence, reasoning, etc.) to one tight sentence -- no restating facts already established by an earlier agent's output provided above, reference them briefly instead of re-explaining them. Do not pad toward the token limit; stop once the required fields are complete.`,
   );
   return parts.join("");
+}
+
+export interface StagePrompt {
+  system: string;
+  userPrompt: string;
+}
+
+// v4 roadmap Phase 16 (docs/ARCHITECTURE_V4.md, "Decision Context Builder /
+// Knowledge Pack" -- Day 1) -- the single place all 5 real pipeline stages
+// build their {system, userPrompt} pair, replacing what used to be an inline
+// systemPromptFor()+fillPlaceholders() call at each site. Deliberately takes
+// no position on caching/hashing: knowledgeHash computation is Day 2/3's job,
+// computed by the caller and passed in as data once it exists, not owned by
+// prompt construction itself.
+export function buildStagePrompt(
+  stageName: StageId,
+  promptTemplate: string,
+  input: DecisionAgentInput,
+  priorOutputs: StageOutputs,
+): StagePrompt {
+  return {
+    system: systemPromptFor(stageName, input.companyContext),
+    userPrompt: fillPlaceholders(promptTemplate, input, priorOutputs),
+  };
 }
 
 /**
@@ -454,32 +480,21 @@ export async function runStagesResearchThroughRisk(
   // "8-12 specific data points" (Bible §8.3), the most content-heavy
   // specialist stage. max_tokens is a ceiling, not a target, so being more
   // generous here costs nothing when a stage doesn't need it.
+  const researchPrompt = buildStagePrompt("research", RESEARCH_AGENT_PROMPT, input, {});
   const research = await callAgent(
-    systemPromptFor("research", input.companyContext),
-    fillPlaceholders(RESEARCH_AGENT_PROMPT, input, {}),
+    researchPrompt.system,
+    researchPrompt.userPrompt,
     RESEARCH_TOOL,
     researchAgentOutputSchema,
     2048,
     usage,
   );
 
+  const icpPrompt = buildStagePrompt("icp", ICP_AGENT_PROMPT, input, { research });
+  const intentPrompt = buildStagePrompt("intent", INTENT_AGENT_PROMPT, input, { research });
   const [icp, intent] = await Promise.all([
-    callAgent(
-      systemPromptFor("icp", input.companyContext),
-      fillPlaceholders(ICP_AGENT_PROMPT, input, { research }),
-      ICP_TOOL,
-      icpAgentOutputSchema,
-      1536,
-      usage,
-    ),
-    callAgent(
-      systemPromptFor("intent", input.companyContext),
-      fillPlaceholders(INTENT_AGENT_PROMPT, input, { research }),
-      INTENT_TOOL,
-      intentAgentOutputSchema,
-      1536,
-      usage,
-    ),
+    callAgent(icpPrompt.system, icpPrompt.userPrompt, ICP_TOOL, icpAgentOutputSchema, 1536, usage),
+    callAgent(intentPrompt.system, intentPrompt.userPrompt, INTENT_TOOL, intentAgentOutputSchema, 1536, usage),
   ]);
 
   // Live-tested twice against a real prospect: 1536 tokens (Risk's share of
@@ -489,9 +504,10 @@ export async function runStagesResearchThroughRisk(
   // with 5 text fields (category/severity/description/evidence/mitigation),
   // which is easily as verbose as Judge's own output. Matching Judge's 2560
   // budget rather than guessing at another intermediate number.
+  const riskPrompt = buildStagePrompt("risk", RISK_AGENT_PROMPT, input, { research, icp, intent });
   const risk = await callAgent(
-    systemPromptFor("risk", input.companyContext),
-    fillPlaceholders(RISK_AGENT_PROMPT, input, { research, icp, intent }),
+    riskPrompt.system,
+    riskPrompt.userPrompt,
     RISK_TOOL,
     riskAgentOutputSchema,
     2560,
@@ -515,9 +531,10 @@ export async function runAgentDebate(
 
   const { research, icp, intent, risk, usage } = await runStagesResearchThroughRisk(input);
 
+  const judgePrompt = buildStagePrompt("judge", JUDGE_AGENT_PROMPT, input, { research, icp, intent, risk });
   const judge = await callAgent(
-    systemPromptFor("judge", input.companyContext),
-    fillPlaceholders(JUDGE_AGENT_PROMPT, input, { research, icp, intent, risk }),
+    judgePrompt.system,
+    judgePrompt.userPrompt,
     JUDGE_TOOL,
     judgeAgentOutputSchema,
     2560,
