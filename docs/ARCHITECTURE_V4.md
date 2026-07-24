@@ -74,21 +74,23 @@ Reasoning Asset Evolution
 
 | Stage | Status | Where |
 |---|---|---|
-| Knowledge Assets | Partial | `EvidenceEdge` (Phase 3), `CompanyMemory`, `PolicyDefinition`/`PolicyVersion` (Phase 5) exist as separate models; not yet unified under one "Reasoning Asset" abstraction (Phase 13, planned, not started) |
-| Decision Complexity Engine | Partial | [conflict-detector.ts](../apps/api/src/agents/conflict/conflict-detector.ts) + [conflict-surprise.ts](../apps/api/src/agents/conflict/conflict-surprise.ts) compute cv/spread/directional/surprise today via fixed thresholds (`POSITIVE_THRESHOLD=65`, `cv>0.25`, `maxSurprise>0.7/0.9`); not yet a versioned, learnable weighted model (Phase 12, planned — needs a concrete feature/weight design before it's built) |
+| Knowledge Assets | Partial | `EvidenceEdge` (Phase 3), `CompanyMemory`, `PolicyDefinition`/`PolicyVersion` (Phase 5) exist as separate models; `ReasoningAsset` (Phase 13) can now register a metadata entry against any of them, but nothing auto-registers or auto-scores one yet |
+| Decision Complexity Engine | Built | [decision-complexity.ts](../apps/api/src/agents/complexity/decision-complexity.ts) computes cv/directional/maxSurprise and a weighted composite score; `DecisionComplexityWeights` (Phase 12) versions the weights via admin-triggered recompute from real labeled decision/outcome history. Not wired into any routing decision yet — see caveat below |
 | Execution Strategy Registry | Built | [execution-strategy.ts](../apps/api/src/agents/routing/execution-strategy.ts) — `EXECUTION_STRATEGY_REGISTRY`, an ordered list of strategy definitions (Phase 11) |
 | Reasoning Engine | Built | [orchestrator.ts](../apps/api/src/agents/orchestrator.ts)'s 5-agent pipeline; Phase 9's benchmark is evaluating single-call and conflict-augmented alternatives against it |
 | Decision / Outcome | Built | `decision.service.ts` / `outcome.service.ts` |
 | Learning Engine | Built (human-in-the-loop only — see Decision 3 below) | `learning.service.ts`, `LearningRecommendation` (PENDING/ACTIONED/DISMISSED) |
-| Decision Value as optimization target | Partial | `decision-value.service.ts` computes Decision Value and Decision Value/$ (used in Phase 9's benchmark metrics); not yet wired into the Routing Optimizer's actual routing decision (Phase 12 candidate) |
+| Decision Value as optimization target | Partial | `decision-value.service.ts` computes Decision Value and Decision Value/$ (used in Phase 9's benchmark metrics); not yet wired into the Routing Optimizer's actual routing decision |
+| Reasoning Asset | Built (metadata wrapper, not a shared base table) | [reasoning-asset.service.ts](../apps/api/src/modules/reasoning-assets/reasoning-asset.service.ts) — registers any of the 7 asset kinds by (assetType, assetKey); effectivenessScore stays null until a real evaluation is recorded, never auto-computed (Phase 13) |
 
-**Important caveat on Execution Strategy**: the registry (Phase 11) makes
-the *selection* of a strategy name inspectable and extensible. It does
-**not** yet make strategies "implement behavior" — nothing in
-`orchestrator.ts` currently branches on the `ExecutionStrategy` value to
-actually run fewer or more debate rounds. `determineExecutionStrategy` is
-computed but not called from anywhere in the live decision pipeline yet.
-Wiring it into real orchestration behavior is a separate, larger task
+**Important caveat on Execution Strategy and Decision Complexity**: the
+registry (Phase 11) makes the *selection* of a strategy name inspectable
+and extensible, and the Decision Complexity Engine (Phase 12) can now
+produce a real, versioned, learned score. Neither is wired into
+`orchestrator.ts` — nothing there branches on `ExecutionStrategy` or
+`calculateComplexityScore`'s output to actually run fewer or more debate
+rounds. Both are computed but uncalled from the live decision pipeline.
+Wiring either into real orchestration behavior is a separate, larger task
 against `orchestrator.ts` itself and needs its own explicit go-ahead before
 it's built, given how central that file is to every live decision made
 today.
@@ -115,22 +117,21 @@ today.
    Engine. Planned (Phase 13), not yet built — no code today unifies these
    under one model.
 
-## Open design questions before Phase 12 / Phase 13 can be built
+## How Phase 12 and Phase 13 resolved their own open questions
 
-These are listed here rather than guessed at in code:
+Both were built. The choices made, for the record:
 
-- **Phase 12 (Decision Complexity weight-learning):** what exact feature
-  set feeds the weighted score (cv, directional, surprise, and then what —
-  evidence quality and novelty need their own defined computations, which
-  don't exist yet), what triggers a re-weighting (a fixed decision count
-  like "100,000 decisions", a scheduled job, an admin-triggered
-  recompute?), and what happens to `RoutingThresholds`' existing two-field
-  shape when it's replaced by an N-feature weighted model — is it
-  superseded outright or does it coexist as a simpler fallback tier.
-- **Phase 13 (Reasoning Asset):** Policy, Evidence, Pattern, Retriever,
-  Threshold, Prompt, and Strategy are structurally very different today
-  (different Prisma models, different owners, different approval flows).
-  A real schema needs to decide whether "Reasoning Asset" is a new base
-  table each of these extends, a shared interface implemented by existing
-  tables without a schema change, or a metadata-only wrapper layered on
-  top — each has very different migration cost and blast radius.
+- **Phase 12 (Decision Complexity weight-learning):** feature set stayed at
+  the 3 already-computed signals (cv, directional, maxSurprise) — evidence
+  quality and novelty were explicitly left out, since neither has a real
+  computation anywhere in the codebase and fabricating one wasn't in scope.
+  Re-weighting is admin-triggered only (no scheduled job, no fixed decision
+  count) — `POST /api/v1/complexity/weights/recompute`. `RoutingThresholds`
+  was left completely untouched; `DecisionComplexityWeights` is a new,
+  separate, additive table, not a replacement.
+- **Phase 13 (Reasoning Asset):** built as a metadata wrapper, not a shared
+  base table — `ReasoningAsset` references any of the 7 asset kinds by
+  `(assetType, assetKey)` rather than a single foreign key, since 3 of them
+  (Retriever, Prompt, Strategy) are still pure code with no DB row to point
+  to. Existing tables (Policy/Evidence/Threshold/Weights) keep their own
+  schemas and approval workflows untouched.
