@@ -153,6 +153,12 @@ export async function callAgent<T>(
   schema: ZodType<T>,
   maxTokens: number,
   usage: TokenUsageAccumulator,
+  // v4 roadmap Phase 14 (docs/ARCHITECTURE_V4.md, "Dynamic Model Routing"
+  // benchmark) -- optional per-call override, defaulting to the same
+  // CLAUDE_MODEL every existing call site already used implicitly. Backward
+  // compatible: none of runAgentDebate's 5 call sites pass this, so nothing
+  // about the live production pipeline changes.
+  model: string = CLAUDE_MODEL,
 ): Promise<T> {
   let lastError: unknown;
   // Live tests found the pipeline's total decision latency (112-116s) came in
@@ -173,7 +179,7 @@ export async function callAgent<T>(
     // guess-and-redeploy cycle to confirm truncation was the actual cause.
     let stopReason: string | null = null;
     try {
-      const providerResponse = await llmProvider.call({ model: CLAUDE_MODEL, maxTokens, system, userPrompt, tool });
+      const providerResponse = await llmProvider.call({ model, maxTokens, system, userPrompt, tool });
       stopReason = providerResponse.stopReason;
       // Counted on every attempt, not just a successful one -- a failed/
       // retried attempt still consumed real tokens Anthropic bills for.

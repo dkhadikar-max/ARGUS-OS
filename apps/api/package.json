@@ -13,7 +13,9 @@
     "eval:run": "tsx eval/run.ts",
     "eval:compare": "tsx eval/compare.ts",
     "eval:run-candidate": "tsx eval/run-candidate.ts",
-    "eval:compare-candidates": "tsx eval/compare-candidates.ts"
+    "eval:compare-candidates": "tsx eval/compare-candidates.ts",
+    "eval:run-model-routing": "tsx eval/run-model-routing.ts",
+    "eval:compare-model-routing": "tsx eval/compare-model-routing.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.3",

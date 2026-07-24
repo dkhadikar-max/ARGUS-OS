@@ -26,20 +26,30 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(__dirname, "fixtures");
 const RUNS_DIR = join(__dirname, "runs");
 
-function parseArgs(): { candidate: BenchmarkCandidate; limit: number | null } {
+function parseArgs(): { candidate: BenchmarkCandidate; limit: number | null; fixtures: string[] | null } {
   const candidateArg = process.argv.find((a) => a.startsWith("--candidate="))?.split("=")[1];
   const limitArg = process.argv.find((a) => a.startsWith("--limit="))?.split("=")[1];
+  const fixtureArg = process.argv.find((a) => a.startsWith("--fixture="))?.split("=")[1];
   if (candidateArg !== "pipeline" && candidateArg !== "single-call" && candidateArg !== "pipeline-with-conflict") {
-    throw new Error("Usage: --candidate=pipeline|single-call|pipeline-with-conflict [--limit=N]");
+    throw new Error("Usage: --candidate=pipeline|single-call|pipeline-with-conflict [--limit=N] [--fixture=name1,name2]");
   }
-  return { candidate: candidateArg, limit: limitArg ? Number(limitArg) : null };
+  return {
+    candidate: candidateArg,
+    limit: limitArg ? Number(limitArg) : null,
+    fixtures: fixtureArg ? fixtureArg.split(",") : null,
+  };
 }
 
-function loadFixtures(limit: number | null): EvalFixture[] {
+function loadFixtures(limit: number | null, fixtureNames: string[] | null): EvalFixture[] {
   const all = readdirSync(FIXTURES_DIR)
     .filter((f) => f.endsWith(".json"))
     .sort() // deterministic order, so --limit=10 is the same 10 every run
     .map((f) => JSON.parse(readFileSync(join(FIXTURES_DIR, f), "utf-8")) as EvalFixture);
+  // --fixture targets exact fixtures by name (e.g. re-testing just the ones
+  // that failed in a prior run, without re-spending on ones that already
+  // succeeded) -- takes precedence over --limit, which only ever meant
+  // "the first N in sorted order".
+  if (fixtureNames) return all.filter((f) => fixtureNames.includes(f.name));
   return limit ? all.slice(0, limit) : all;
 }
 
@@ -110,8 +120,8 @@ async function runOneFixture(candidate: BenchmarkCandidate, fixture: EvalFixture
 }
 
 async function main() {
-  const { candidate, limit } = parseArgs();
-  const fixtures = loadFixtures(limit);
+  const { candidate, limit, fixtures: fixtureNames } = parseArgs();
+  const fixtures = loadFixtures(limit, fixtureNames);
   console.log(`Running ${fixtures.length} fixture(s) against candidate "${candidate}" (${CLAUDE_MODEL})...\n`);
 
   const results: CandidateRunResult[] = [];

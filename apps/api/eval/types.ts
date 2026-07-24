@@ -70,3 +70,31 @@ export interface CandidateRunManifest {
   gitCommit: string | null;
   results: CandidateRunResult[];
 }
+
+// v4 roadmap Phase 14 (docs/ARCHITECTURE_V4.md, "Dynamic Model Routing"
+// benchmark) -- deliberately separate from BenchmarkCandidate/
+// CandidateRunResult above: this varies which MODEL each agent stage runs
+// on, not which orchestration ARCHITECTURE is used, and compare-candidates.
+// ts's pipeline-with-conflict-specific comparison logic doesn't apply here.
+export interface ModelRoutingRunResult {
+  fixture: string;
+  agentOverrides: Record<string, string>;
+  verdict: string;
+  weightedScore: number;
+  confidence: number;
+  agentConsensus: string;
+  recommendedAction: string;
+  processingTimeMs: number;
+  inputTokens: number;
+  outputTokens: number;
+  inferenceCostUsd: number;
+  error: string | null;
+}
+
+export interface ModelRoutingRunManifest {
+  runId: string;
+  createdAt: string;
+  agentOverrides: Record<string, string>;
+  gitCommit: string | null;
+  results: ModelRoutingRunResult[];
+}
