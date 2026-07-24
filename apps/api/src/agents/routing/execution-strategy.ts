@@ -14,6 +14,24 @@ import type { ExecutionStrategy, RoutingThresholds } from "@argus/shared";
  * configurable via thresholds -- a disagreement this unusual for a company
  * warrants the deepest review regardless of how lenient that team's own
  * thresholds are set.
+ *
+ * v4 roadmap Phase 11 (Architecture North Star, docs/ARCHITECTURE_V4.md) --
+ * EXECUTION_STRATEGY_REGISTRY replaces what used to be nested if/else
+ * branching with an ordered list of strategy definitions, so adding a new
+ * strategy later means appending a registry entry instead of editing
+ * control flow. Order is priority, evaluated top to bottom, first match
+ * wins -- this preserves the exact same "executive_debate is checked
+ * first, independent of the team's own thresholds" invariant as before
+ * (see the same real bug this behavior was already caught by, referenced
+ * in the executive_debate entry below and covered by
+ * execution-strategy.test.ts).
+ *
+ * This registry only decides WHICH strategy name applies -- it does not
+ * yet make strategies "implement behavior". Nothing in orchestrator.ts
+ * currently branches on the returned ExecutionStrategy to actually run
+ * fewer or more debate rounds; determineExecutionStrategy isn't called
+ * from the live decision pipeline at all yet. Wiring real orchestration
+ * behavior to this registry is separate, larger, unstarted work.
  */
 export interface ConflictSignal {
   cv: number;
@@ -21,26 +39,46 @@ export interface ConflictSignal {
   directional: boolean;
 }
 
+export interface ExecutionStrategyDefinition {
+  name: ExecutionStrategy;
+  /** True if this strategy applies to the given conflict signal under the
+   *  given team thresholds. Registry entries are evaluated in array order;
+   *  the first match wins. */
+  matches: (conflict: ConflictSignal, thresholds: RoutingThresholds) => boolean;
+}
+
 const EXECUTIVE_SURPRISE_FLOOR = 0.9;
+
+export const EXECUTION_STRATEGY_REGISTRY: ExecutionStrategyDefinition[] = [
+  {
+    name: "executive_debate",
+    // Regardless of a team's own thresholds -- see module comment above.
+    // A lenient maxSurpriseThreshold must not be able to suppress this.
+    matches: (conflict) => conflict.maxSurprise > EXECUTIVE_SURPRISE_FLOOR,
+  },
+  {
+    name: "micro_debate",
+    matches: (conflict, thresholds) =>
+      conflict.cv > thresholds.cvThreshold ||
+      conflict.maxSurprise > thresholds.maxSurpriseThreshold ||
+      conflict.directional,
+  },
+  {
+    name: "single_pass",
+    // Fallback -- always matches if nothing above did. Must stay last.
+    matches: () => true,
+  },
+];
 
 export function determineExecutionStrategy(
   conflict: ConflictSignal,
   thresholds: RoutingThresholds,
 ): ExecutionStrategy {
-  // Checked first, independent of the team's own thresholds below -- this
-  // is what makes it genuinely "regardless of thresholds" per the module
-  // comment. Gating it behind hasConflict would let a lenient team's
-  // thresholds suppress it entirely, which was a real bug caught by this
-  // module's own test (a lenient maxSurpriseThreshold of 0.95 was letting
-  // a 0.95 surprise score return single_pass instead of executive_debate).
-  if (conflict.maxSurprise > EXECUTIVE_SURPRISE_FLOOR) return "executive_debate";
-
-  const hasConflict =
-    conflict.cv > thresholds.cvThreshold ||
-    conflict.maxSurprise > thresholds.maxSurpriseThreshold ||
-    conflict.directional;
-
-  return hasConflict ? "micro_debate" : "single_pass";
+  // EXECUTION_STRATEGY_REGISTRY's last entry (single_pass) always matches,
+  // so `find` never falls through to the `?? "single_pass"` default in
+  // practice -- it's there so the return type doesn't need a cast.
+  const matched = EXECUTION_STRATEGY_REGISTRY.find((strategy) => strategy.matches(conflict, thresholds));
+  return matched?.name ?? "single_pass";
 }
 
 /** "A/B support": what the ACTIVE thresholds decide vs. what a PENDING
