@@ -1,0 +1,24 @@
+{
+  "name": "edge-title-partial-match",
+  "input": {
+    "prospectData": {
+      "profile": { "name": "Ingrid Solberg", "title": "SVP of Customer Success", "linkedInUrl": "https://www.linkedin.com/in/edge-title-partial/" },
+      "company": { "name": "Vantage Cloud", "domain": "vantagecloud.com", "size": 90, "industry": "SaaS", "funding": "Series A" },
+      "rawProfile": { "headline": "SVP of Customer Success at Vantage Cloud", "recentActivity": ["Hiring 2 CS managers"] },
+      "enrichedData": { "employeeCount": 90, "industry": "SaaS", "fundingStage": "Series A" }
+    },
+    "teamIcp": [
+      { "field": "companySize", "operator": "gte", "value": 50, "weight": 0.3 },
+      { "field": "companyIndustry", "operator": "in", "value": ["SaaS", "Software", "Technology"], "weight": 0.3 },
+      { "field": "title", "operator": "contains", "value": "VP", "weight": 0.2 },
+      { "field": "companyFunding", "operator": "in", "value": ["Series A", "Series B", "Series C"], "weight": 0.2 }
+    ],
+    "companyMemory": { "patterns": [], "riskFlags": [] },
+    "intentSignals": { "headline": "SVP of Customer Success at Vantage Cloud", "recentActivity": ["Hiring 2 CS managers"] },
+    "historicalEngagement": [],
+    "teamHistory": [],
+    "userPreferences": { "messageTone": "professional", "messageLength": "concise" },
+    "teamPatterns": [],
+    "companyContext": "We sell an AI-powered sales prioritization tool to B2B revenue teams, helping SDRs and AEs stop wasting time on low-probability prospects."
+  }
+}

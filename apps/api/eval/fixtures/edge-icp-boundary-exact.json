@@ -1,0 +1,24 @@
+{
+  "name": "edge-icp-boundary-exact",
+  "input": {
+    "prospectData": {
+      "profile": { "name": "Devon Marsh", "title": "VP of Operations", "linkedInUrl": "https://www.linkedin.com/in/edge-icp-boundary/" },
+      "company": { "name": "Threshold Systems", "domain": "threshold.io", "size": 50, "industry": "SaaS", "funding": "Series B" },
+      "rawProfile": { "headline": "VP of Operations at Threshold Systems", "recentActivity": [] },
+      "enrichedData": { "employeeCount": 50, "industry": "SaaS", "fundingStage": "Series B" }
+    },
+    "teamIcp": [
+      { "field": "companySize", "operator": "gte", "value": 50, "weight": 0.3 },
+      { "field": "companyIndustry", "operator": "in", "value": ["SaaS", "Software", "Technology"], "weight": 0.3 },
+      { "field": "title", "operator": "contains", "value": "VP", "weight": 0.2 },
+      { "field": "companyFunding", "operator": "in", "value": ["Series A", "Series B", "Series C"], "weight": 0.2 }
+    ],
+    "companyMemory": { "patterns": [], "riskFlags": [] },
+    "intentSignals": { "headline": "VP of Operations at Threshold Systems", "recentActivity": [] },
+    "historicalEngagement": [],
+    "teamHistory": [],
+    "userPreferences": { "messageTone": "professional", "messageLength": "concise" },
+    "teamPatterns": [],
+    "companyContext": "We sell an AI-powered sales prioritization tool to B2B revenue teams, helping SDRs and AEs stop wasting time on low-probability prospects."
+  }
+}

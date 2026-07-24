@@ -1,0 +1,75 @@
+{
+  "name": "matrix-icp-moderate_intent-none_risk-moderate",
+  "input": {
+    "prospectData": {
+      "profile": {
+        "name": "Nadia Popescu",
+        "title": "Director of Sales",
+        "linkedInUrl": "https://www.linkedin.com/in/matrix-icp-moderate_intent-none_risk-moderate/"
+      },
+      "company": {
+        "name": "Fieldstone Logistics 22",
+        "domain": "fieldstone22.com",
+        "size": 120,
+        "industry": "Logistics",
+        "funding": null
+      },
+      "rawProfile": null,
+      "enrichedData": {
+        "riskSignal": "growth_slowing"
+      }
+    },
+    "teamIcp": [
+      {
+        "field": "companySize",
+        "operator": "gte",
+        "value": 50,
+        "weight": 0.3
+      },
+      {
+        "field": "companyIndustry",
+        "operator": "in",
+        "value": [
+          "SaaS",
+          "Software",
+          "Technology"
+        ],
+        "weight": 0.3
+      },
+      {
+        "field": "title",
+        "operator": "contains",
+        "value": "VP",
+        "weight": 0.2
+      },
+      {
+        "field": "companyFunding",
+        "operator": "in",
+        "value": [
+          "Series A",
+          "Series B",
+          "Series C"
+        ],
+        "weight": 0.2
+      }
+    ],
+    "companyMemory": {
+      "patterns": [],
+      "riskFlags": [
+        {
+          "category": "Timing",
+          "occurrenceRate": 0.15
+        }
+      ]
+    },
+    "intentSignals": null,
+    "historicalEngagement": [],
+    "teamHistory": [],
+    "userPreferences": {
+      "messageTone": "professional",
+      "messageLength": "concise"
+    },
+    "teamPatterns": [],
+    "companyContext": "We sell an AI-powered sales prioritization tool to B2B revenue teams, helping SDRs and AEs stop wasting time on low-probability prospects."
+  }
+}

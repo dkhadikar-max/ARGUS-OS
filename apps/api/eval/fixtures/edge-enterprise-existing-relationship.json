@@ -1,0 +1,24 @@
+{
+  "name": "edge-enterprise-existing-relationship",
+  "input": {
+    "prospectData": {
+      "profile": { "name": "Harold Whitfield", "title": "VP of Platform Engineering", "linkedInUrl": "https://www.linkedin.com/in/edge-enterprise-existing/" },
+      "company": { "name": "Meridian Technologies", "domain": "meridiantech.com", "size": 2400, "industry": "Technology", "funding": null },
+      "rawProfile": { "headline": "VP of Platform Engineering at Meridian Technologies", "recentActivity": ["Expanding the platform team into a new region"] },
+      "enrichedData": { "employeeCount": 2400, "industry": "Technology", "fundingStage": null, "companyTier": "enterprise" }
+    },
+    "teamIcp": [
+      { "field": "companySize", "operator": "gte", "value": 50, "weight": 0.3 },
+      { "field": "companyIndustry", "operator": "in", "value": ["SaaS", "Software", "Technology"], "weight": 0.3 },
+      { "field": "title", "operator": "contains", "value": "VP", "weight": 0.2 },
+      { "field": "companyFunding", "operator": "in", "value": ["Series A", "Series B", "Series C"], "weight": 0.2 }
+    ],
+    "companyMemory": { "patterns": [{ "verdict": "STRONG_YES", "meetingRate": 0.7, "sampleSize": 12 }], "riskFlags": [] },
+    "intentSignals": { "headline": "VP of Platform Engineering at Meridian Technologies", "recentActivity": ["Expanding the platform team into a new region"] },
+    "historicalEngagement": [{ "verdict": "CLOSED_WON", "outcome": "CLOSED_WON", "createdAt": "2025-11-01T00:00:00Z" }],
+    "teamHistory": [{ "verdict": "STRONG_YES", "outcome": "CLOSED_WON" }],
+    "userPreferences": { "messageTone": "professional", "messageLength": "concise" },
+    "teamPatterns": [{ "verdict": "STRONG_YES", "meetingRate": 0.7, "sampleSize": 12 }],
+    "companyContext": "We sell an AI-powered sales prioritization tool to B2B revenue teams, helping SDRs and AEs stop wasting time on low-probability prospects. This is an existing customer account (previous_deal_value > $50,000) expanding within the same company."
+  }
+}

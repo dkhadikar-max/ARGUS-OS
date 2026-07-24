@@ -1,0 +1,24 @@
+{
+  "name": "edge-all-null-evidence",
+  "input": {
+    "prospectData": {
+      "profile": { "name": "Unknown Contact", "title": null, "linkedInUrl": "https://www.linkedin.com/in/edge-all-null/" },
+      "company": { "name": null, "domain": null, "size": null, "industry": null, "funding": null },
+      "rawProfile": null,
+      "enrichedData": null
+    },
+    "teamIcp": [
+      { "field": "companySize", "operator": "gte", "value": 50, "weight": 0.3 },
+      { "field": "companyIndustry", "operator": "in", "value": ["SaaS", "Software", "Technology"], "weight": 0.3 },
+      { "field": "title", "operator": "contains", "value": "VP", "weight": 0.2 },
+      { "field": "companyFunding", "operator": "in", "value": ["Series A", "Series B", "Series C"], "weight": 0.2 }
+    ],
+    "companyMemory": null,
+    "intentSignals": null,
+    "historicalEngagement": [],
+    "teamHistory": [],
+    "userPreferences": null,
+    "teamPatterns": null,
+    "companyContext": "We sell an AI-powered sales prioritization tool to B2B revenue teams, helping SDRs and AEs stop wasting time on low-probability prospects."
+  }
+}

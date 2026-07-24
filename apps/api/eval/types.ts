@@ -31,3 +31,42 @@ export interface EvalRunManifest {
   gitCommit: string | null;
   results: EvalRunResult[];
 }
+
+// v4 roadmap Phase 9 -- the 3-candidate architecture benchmark. Additive:
+// EvalFixture/EvalRunResult/EvalRunManifest above are untouched and still
+// used by the Phase 0 baseline manifest already committed.
+
+export type BenchmarkCandidate = "pipeline" | "single-call" | "pipeline-with-conflict";
+
+export interface CandidateRunResult {
+  fixture: string;
+  candidate: BenchmarkCandidate;
+  verdict: string;
+  weightedScore: number;
+  confidence: number;
+  agentConsensus: string;
+  recommendedAction: string;
+  processingTimeMs: number;
+  inputTokens: number;
+  outputTokens: number;
+  inferenceCostUsd: number;
+  /** No-outcome variant (time_saved only) -- see eval/metrics.ts's module
+   *  comment for why the full Decision Value formula isn't measurable
+   *  against synthetic fixtures. */
+  decisionValueUsd: number;
+  valueCostRatio: number | null;
+  evidenceUtilizationRate: number | null;
+  confidenceCalibration: { consideredSparse: boolean; judgeConfidence: number; ruleHeld: boolean };
+  /** Only populated for the pipeline-with-conflict candidate. */
+  conflict: { cv: number; spread: number; directional: boolean } | null;
+  error: string | null;
+}
+
+export interface CandidateRunManifest {
+  runId: string;
+  createdAt: string;
+  candidate: BenchmarkCandidate;
+  model: string;
+  gitCommit: string | null;
+  results: CandidateRunResult[];
+}

@@ -1,0 +1,36 @@
+{
+  "name": "edge-recent-funding-but-hiring-freeze",
+  "input": {
+    "prospectData": {
+      "profile": { "name": "Bianca Ferreira", "title": "VP of Growth", "linkedInUrl": "https://www.linkedin.com/in/edge-funding-freeze/" },
+      "company": { "name": "Alloy Data", "domain": "alloydata.com", "size": 140, "industry": "SaaS", "funding": "Series B" },
+      "rawProfile": {
+        "headline": "VP of Growth at Alloy Data",
+        "recentActivity": [
+          "Company announced $18M Series B two weeks ago",
+          "Internal memo (leaked) mentions a temporary hiring freeze pending budget review"
+        ]
+      },
+      "enrichedData": { "employeeCount": 140, "industry": "SaaS", "fundingStage": "Series B", "riskSignal": "hiring_freeze_despite_funding" }
+    },
+    "teamIcp": [
+      { "field": "companySize", "operator": "gte", "value": 50, "weight": 0.3 },
+      { "field": "companyIndustry", "operator": "in", "value": ["SaaS", "Software", "Technology"], "weight": 0.3 },
+      { "field": "title", "operator": "contains", "value": "VP", "weight": 0.2 },
+      { "field": "companyFunding", "operator": "in", "value": ["Series A", "Series B", "Series C"], "weight": 0.2 }
+    ],
+    "companyMemory": { "patterns": [], "riskFlags": [{ "category": "Timing", "occurrenceRate": 0.2 }] },
+    "intentSignals": {
+      "headline": "VP of Growth at Alloy Data",
+      "recentActivity": [
+        "Company announced $18M Series B two weeks ago",
+        "Internal memo (leaked) mentions a temporary hiring freeze pending budget review"
+      ]
+    },
+    "historicalEngagement": [],
+    "teamHistory": [],
+    "userPreferences": { "messageTone": "professional", "messageLength": "concise" },
+    "teamPatterns": [],
+    "companyContext": "We sell an AI-powered sales prioritization tool to B2B revenue teams, helping SDRs and AEs stop wasting time on low-probability prospects."
+  }
+}

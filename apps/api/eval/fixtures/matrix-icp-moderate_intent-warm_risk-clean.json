@@ -1,0 +1,80 @@
+{
+  "name": "matrix-icp-moderate_intent-warm_risk-clean",
+  "input": {
+    "prospectData": {
+      "profile": {
+        "name": "James Okafor",
+        "title": "Director of Sales",
+        "linkedInUrl": "https://www.linkedin.com/in/matrix-icp-moderate_intent-warm_risk-clean/"
+      },
+      "company": {
+        "name": "Fieldstone Logistics 15",
+        "domain": "fieldstone15.com",
+        "size": 120,
+        "industry": "Logistics",
+        "funding": null
+      },
+      "rawProfile": {
+        "headline": "Steady growth",
+        "recentActivity": [
+          "8% headcount growth over 6 months, no acute trigger"
+        ]
+      },
+      "enrichedData": {
+        "riskSignal": null
+      }
+    },
+    "teamIcp": [
+      {
+        "field": "companySize",
+        "operator": "gte",
+        "value": 50,
+        "weight": 0.3
+      },
+      {
+        "field": "companyIndustry",
+        "operator": "in",
+        "value": [
+          "SaaS",
+          "Software",
+          "Technology"
+        ],
+        "weight": 0.3
+      },
+      {
+        "field": "title",
+        "operator": "contains",
+        "value": "VP",
+        "weight": 0.2
+      },
+      {
+        "field": "companyFunding",
+        "operator": "in",
+        "value": [
+          "Series A",
+          "Series B",
+          "Series C"
+        ],
+        "weight": 0.2
+      }
+    ],
+    "companyMemory": {
+      "patterns": [],
+      "riskFlags": []
+    },
+    "intentSignals": {
+      "headline": "Steady growth",
+      "recentActivity": [
+        "8% headcount growth over 6 months, no acute trigger"
+      ]
+    },
+    "historicalEngagement": [],
+    "teamHistory": [],
+    "userPreferences": {
+      "messageTone": "professional",
+      "messageLength": "concise"
+    },
+    "teamPatterns": [],
+    "companyContext": "We sell an AI-powered sales prioritization tool to B2B revenue teams, helping SDRs and AEs stop wasting time on low-probability prospects."
+  }
+}

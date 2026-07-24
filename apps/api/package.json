@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "eval:run": "tsx eval/run.ts",
-    "eval:compare": "tsx eval/compare.ts"
+    "eval:compare": "tsx eval/compare.ts",
+    "eval:run-candidate": "tsx eval/run-candidate.ts",
+    "eval:compare-candidates": "tsx eval/compare-candidates.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.3",

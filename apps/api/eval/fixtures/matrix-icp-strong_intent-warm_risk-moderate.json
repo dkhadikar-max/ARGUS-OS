@@ -1,0 +1,85 @@
+{
+  "name": "matrix-icp-strong_intent-warm_risk-moderate",
+  "input": {
+    "prospectData": {
+      "profile": {
+        "name": "Aisha Khan",
+        "title": "VP of Revenue Operations",
+        "linkedInUrl": "https://www.linkedin.com/in/matrix-icp-strong_intent-warm_risk-moderate/"
+      },
+      "company": {
+        "name": "Northwind Analytics 4",
+        "domain": "northwind4.com",
+        "size": 180,
+        "industry": "SaaS",
+        "funding": "Series B"
+      },
+      "rawProfile": {
+        "headline": "Steady growth",
+        "recentActivity": [
+          "8% headcount growth over 6 months, no acute trigger"
+        ]
+      },
+      "enrichedData": {
+        "riskSignal": "growth_slowing"
+      }
+    },
+    "teamIcp": [
+      {
+        "field": "companySize",
+        "operator": "gte",
+        "value": 50,
+        "weight": 0.3
+      },
+      {
+        "field": "companyIndustry",
+        "operator": "in",
+        "value": [
+          "SaaS",
+          "Software",
+          "Technology"
+        ],
+        "weight": 0.3
+      },
+      {
+        "field": "title",
+        "operator": "contains",
+        "value": "VP",
+        "weight": 0.2
+      },
+      {
+        "field": "companyFunding",
+        "operator": "in",
+        "value": [
+          "Series A",
+          "Series B",
+          "Series C"
+        ],
+        "weight": 0.2
+      }
+    ],
+    "companyMemory": {
+      "patterns": [],
+      "riskFlags": [
+        {
+          "category": "Timing",
+          "occurrenceRate": 0.15
+        }
+      ]
+    },
+    "intentSignals": {
+      "headline": "Steady growth",
+      "recentActivity": [
+        "8% headcount growth over 6 months, no acute trigger"
+      ]
+    },
+    "historicalEngagement": [],
+    "teamHistory": [],
+    "userPreferences": {
+      "messageTone": "professional",
+      "messageLength": "concise"
+    },
+    "teamPatterns": [],
+    "companyContext": "We sell an AI-powered sales prioritization tool to B2B revenue teams, helping SDRs and AEs stop wasting time on low-probability prospects."
+  }
+}

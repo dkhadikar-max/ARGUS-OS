@@ -1,0 +1,24 @@
+{
+  "name": "edge-conflicting-strong-icp-severe-risk",
+  "input": {
+    "prospectData": {
+      "profile": { "name": "Owen Castillo", "title": "VP of Revenue", "linkedInUrl": "https://www.linkedin.com/in/edge-strong-icp-severe-risk/" },
+      "company": { "name": "Zenith Analytics", "domain": "zenithanalytics.com", "size": 220, "industry": "SaaS", "funding": "Series C" },
+      "rawProfile": { "headline": "VP of Revenue at Zenith Analytics", "recentActivity": ["Company announced a hiring freeze and 15% layoffs last week"] },
+      "enrichedData": { "employeeCount": 220, "industry": "SaaS", "fundingStage": "Series C", "riskSignal": "layoffs_and_hiring_freeze" }
+    },
+    "teamIcp": [
+      { "field": "companySize", "operator": "gte", "value": 50, "weight": 0.3 },
+      { "field": "companyIndustry", "operator": "in", "value": ["SaaS", "Software", "Technology"], "weight": 0.3 },
+      { "field": "title", "operator": "contains", "value": "VP", "weight": 0.2 },
+      { "field": "companyFunding", "operator": "in", "value": ["Series A", "Series B", "Series C"], "weight": 0.2 }
+    ],
+    "companyMemory": { "patterns": [], "riskFlags": [{ "category": "Budget", "occurrenceRate": 0.35 }] },
+    "intentSignals": { "headline": "VP of Revenue at Zenith Analytics", "recentActivity": ["Company announced a hiring freeze and 15% layoffs last week"] },
+    "historicalEngagement": [],
+    "teamHistory": [],
+    "userPreferences": { "messageTone": "professional", "messageLength": "concise" },
+    "teamPatterns": [],
+    "companyContext": "We sell an AI-powered sales prioritization tool to B2B revenue teams, helping SDRs and AEs stop wasting time on low-probability prospects."
+  }
+}

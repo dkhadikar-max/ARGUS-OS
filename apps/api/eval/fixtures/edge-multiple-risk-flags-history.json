@@ -1,0 +1,34 @@
+{
+  "name": "edge-multiple-risk-flags-history",
+  "input": {
+    "prospectData": {
+      "profile": { "name": "Trevor Nash", "title": "VP of Sales", "linkedInUrl": "https://www.linkedin.com/in/edge-risk-history/" },
+      "company": { "name": "Ridgeline Software", "domain": "ridgelinesoft.com", "size": 95, "industry": "SaaS", "funding": "Series A" },
+      "rawProfile": { "headline": "VP of Sales at Ridgeline Software", "recentActivity": [] },
+      "enrichedData": { "employeeCount": 95, "industry": "SaaS", "fundingStage": "Series A" }
+    },
+    "teamIcp": [
+      { "field": "companySize", "operator": "gte", "value": 50, "weight": 0.3 },
+      { "field": "companyIndustry", "operator": "in", "value": ["SaaS", "Software", "Technology"], "weight": 0.3 },
+      { "field": "title", "operator": "contains", "value": "VP", "weight": 0.2 },
+      { "field": "companyFunding", "operator": "in", "value": ["Series A", "Series B", "Series C"], "weight": 0.2 }
+    ],
+    "companyMemory": {
+      "patterns": [{ "verdict": "HARD_PASS", "meetingRate": 0.02, "sampleSize": 40 }],
+      "riskFlags": [
+        { "category": "Engagement", "occurrenceRate": 0.6, "falsePositiveRate": 0.05 },
+        { "category": "Authority", "occurrenceRate": 0.4, "falsePositiveRate": 0.1 }
+      ]
+    },
+    "intentSignals": { "headline": "VP of Sales at Ridgeline Software", "recentActivity": [] },
+    "historicalEngagement": [],
+    "teamHistory": [
+      { "verdict": "HARD_PASS", "outcome": "NO_RESPONSE" },
+      { "verdict": "HARD_PASS", "outcome": "NO_RESPONSE" },
+      { "verdict": "PASS", "outcome": "NO_RESPONSE" }
+    ],
+    "userPreferences": { "messageTone": "professional", "messageLength": "concise" },
+    "teamPatterns": [{ "verdict": "HARD_PASS", "meetingRate": 0.02, "sampleSize": 40 }],
+    "companyContext": "We sell an AI-powered sales prioritization tool to B2B revenue teams, helping SDRs and AEs stop wasting time on low-probability prospects. This team has a documented 0% close rate with similar VP-of-Sales-at-similar-size-SaaS profiles historically."
+  }
+}

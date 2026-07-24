@@ -1,0 +1,89 @@
+{
+  "name": "matrix-icp-strong_intent-hot_risk-moderate",
+  "input": {
+    "prospectData": {
+      "profile": {
+        "name": "Marcus Webb",
+        "title": "VP of Revenue Operations",
+        "linkedInUrl": "https://www.linkedin.com/in/matrix-icp-strong_intent-hot_risk-moderate/"
+      },
+      "company": {
+        "name": "Northwind Analytics 1",
+        "domain": "northwind1.com",
+        "size": 180,
+        "industry": "SaaS",
+        "funding": "Series B"
+      },
+      "rawProfile": {
+        "headline": "Actively hiring",
+        "recentActivity": [
+          "3 open RevOps roles posted in the last 14 days",
+          "Recently closed a funding round",
+          "Posted about scaling the team fast"
+        ]
+      },
+      "enrichedData": {
+        "riskSignal": "growth_slowing"
+      }
+    },
+    "teamIcp": [
+      {
+        "field": "companySize",
+        "operator": "gte",
+        "value": 50,
+        "weight": 0.3
+      },
+      {
+        "field": "companyIndustry",
+        "operator": "in",
+        "value": [
+          "SaaS",
+          "Software",
+          "Technology"
+        ],
+        "weight": 0.3
+      },
+      {
+        "field": "title",
+        "operator": "contains",
+        "value": "VP",
+        "weight": 0.2
+      },
+      {
+        "field": "companyFunding",
+        "operator": "in",
+        "value": [
+          "Series A",
+          "Series B",
+          "Series C"
+        ],
+        "weight": 0.2
+      }
+    ],
+    "companyMemory": {
+      "patterns": [],
+      "riskFlags": [
+        {
+          "category": "Timing",
+          "occurrenceRate": 0.15
+        }
+      ]
+    },
+    "intentSignals": {
+      "headline": "Actively hiring",
+      "recentActivity": [
+        "3 open RevOps roles posted in the last 14 days",
+        "Recently closed a funding round",
+        "Posted about scaling the team fast"
+      ]
+    },
+    "historicalEngagement": [],
+    "teamHistory": [],
+    "userPreferences": {
+      "messageTone": "professional",
+      "messageLength": "concise"
+    },
+    "teamPatterns": [],
+    "companyContext": "We sell an AI-powered sales prioritization tool to B2B revenue teams, helping SDRs and AEs stop wasting time on low-probability prospects."
+  }
+}

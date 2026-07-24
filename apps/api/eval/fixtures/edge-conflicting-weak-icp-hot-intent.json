@@ -1,0 +1,24 @@
+{
+  "name": "edge-conflicting-weak-icp-hot-intent",
+  "input": {
+    "prospectData": {
+      "profile": { "name": "Simone Dubois", "title": "Office Manager", "linkedInUrl": "https://www.linkedin.com/in/edge-weak-icp-hot-intent/" },
+      "company": { "name": "Petal & Pine", "domain": "petalandpine.com", "size": 8, "industry": "Retail", "funding": null },
+      "rawProfile": { "headline": "Office Manager at Petal & Pine", "recentActivity": ["Posted 3 job openings this week", "Actively commenting on sales-tech content"] },
+      "enrichedData": { "employeeCount": 8, "industry": "Retail", "fundingStage": null }
+    },
+    "teamIcp": [
+      { "field": "companySize", "operator": "gte", "value": 50, "weight": 0.3 },
+      { "field": "companyIndustry", "operator": "in", "value": ["SaaS", "Software", "Technology"], "weight": 0.3 },
+      { "field": "title", "operator": "contains", "value": "VP", "weight": 0.2 },
+      { "field": "companyFunding", "operator": "in", "value": ["Series A", "Series B", "Series C"], "weight": 0.2 }
+    ],
+    "companyMemory": { "patterns": [], "riskFlags": [] },
+    "intentSignals": { "headline": "Office Manager at Petal & Pine", "recentActivity": ["Posted 3 job openings this week", "Actively commenting on sales-tech content"] },
+    "historicalEngagement": [],
+    "teamHistory": [],
+    "userPreferences": { "messageTone": "professional", "messageLength": "concise" },
+    "teamPatterns": [],
+    "companyContext": "We sell an AI-powered sales prioritization tool to B2B revenue teams, helping SDRs and AEs stop wasting time on low-probability prospects."
+  }
+}

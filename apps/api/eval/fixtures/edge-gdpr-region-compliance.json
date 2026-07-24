@@ -1,0 +1,24 @@
+{
+  "name": "edge-gdpr-region-compliance",
+  "input": {
+    "prospectData": {
+      "profile": { "name": "Freya Lindqvist", "title": "VP of Sales Operations", "linkedInUrl": "https://www.linkedin.com/in/edge-gdpr-region/" },
+      "company": { "name": "Nordwell SaaS", "domain": "nordwell.eu", "size": 210, "industry": "SaaS", "funding": "Series B" },
+      "rawProfile": { "headline": "VP of Sales Operations at Nordwell SaaS, Stockholm", "recentActivity": ["Expanding EU sales team"] },
+      "enrichedData": { "employeeCount": 210, "industry": "SaaS", "fundingStage": "Series B", "region": "EU", "gdprStatus": "unknown" }
+    },
+    "teamIcp": [
+      { "field": "companySize", "operator": "gte", "value": 50, "weight": 0.3 },
+      { "field": "companyIndustry", "operator": "in", "value": ["SaaS", "Software", "Technology"], "weight": 0.3 },
+      { "field": "title", "operator": "contains", "value": "VP", "weight": 0.2 },
+      { "field": "companyFunding", "operator": "in", "value": ["Series A", "Series B", "Series C"], "weight": 0.2 }
+    ],
+    "companyMemory": { "patterns": [], "riskFlags": [] },
+    "intentSignals": { "headline": "VP of Sales Operations at Nordwell SaaS, Stockholm", "recentActivity": ["Expanding EU sales team"] },
+    "historicalEngagement": [],
+    "teamHistory": [],
+    "userPreferences": { "messageTone": "professional", "messageLength": "concise" },
+    "teamPatterns": [],
+    "companyContext": "We sell an AI-powered sales prioritization tool to B2B revenue teams, helping SDRs and AEs stop wasting time on low-probability prospects. Note: this prospect is EU-based; GDPR compliance status for our own data handling with this account is not yet confirmed."
+  }
+}
