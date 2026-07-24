@@ -79,21 +79,21 @@ enum UserRole {
 // ───────────────────────────────────────────
 
 model Team {
-  id            String        @id @default(cuid())
-  name          String
-  slug          String        @unique
-  plan          PlanTier      @default(FREE)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  billingStatus BillingStatus @default(TRIAL)
-  trialEndsAt   DateTime?
-  maxSeats      Int           @default(1)
+  id                 String        @id @default(cuid())
+  name               String
+  slug               String        @unique
+  plan               PlanTier      @default(FREE)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  billingStatus      BillingStatus @default(TRIAL)
+  trialEndsAt        DateTime?
+  maxSeats           Int           @default(1)
   // Bible has no onboarding wireframe (see webhook.repository.ts's
   // createUserWithPersonalTeam comment) -- this is the new field the
   // company-onboarding wizard writes on completion, and the one the
   // dashboard's /onboarding route checks to decide whether to show the
   // wizard again or redirect straight into the app.
-  onboardedAt   DateTime?
+  onboardedAt        DateTime?
   // Free-text profile of the SELLER's own company (value prop, product,
   // tone) -- distinct from ICP (which describes the target customer) and
   // from CompanyMemory (which stores learned prospect-scoring patterns).
@@ -101,7 +101,7 @@ model Team {
   // drafted messages aren't written with zero knowledge of what the team
   // actually sells. No Bible section defines this; see onboarding.md-style
   // comment in team.service.ts for the same gap this fills.
-  companyContext String? @db.Text
+  companyContext     String?       @db.Text
   // Bible §5.2 "BillingSubscription" -- Dodo Payments (not Stripe, which
   // isn't available in India), see apps/api's billing module. Set together
   // on the same subscription.active/renewed webhook (never independently),
@@ -110,17 +110,18 @@ model Team {
   dodoSubscriptionId String?
 
   // Relations
-  users                   User[]
-  icp                     ICPDefinition?
-  companyMemory           CompanyMemory?
-  policy                  PolicyDefinition?
-  policyVersions          PolicyVersion[]
-  routingThresholdVersions RoutingThresholdVersion[]
-  learningRecommendations LearningRecommendation[]
-  decisions               Decision[]
-  apiKeys                 ApiKey[]
-  webhooks                Webhook[]
-  integrations            Integration[]
+  users                     User[]
+  icp                       ICPDefinition?
+  companyMemory             CompanyMemory?
+  policy                    PolicyDefinition?
+  policyVersions            PolicyVersion[]
+  routingThresholdVersions  RoutingThresholdVersion[]
+  decisionComplexityWeights DecisionComplexityWeights[]
+  learningRecommendations   LearningRecommendation[]
+  decisions                 Decision[]
+  apiKeys                   ApiKey[]
+  webhooks                  Webhook[]
+  integrations              Integration[]
 
   @@index([slug])
 }
@@ -164,7 +165,7 @@ model ICPDefinition {
 
   // Criteria stored as JSON for flexibility
   criteria Json // { criteria: [{ field, operator, value, weight }] }
-  version  Int  @default(1)
+  version  Int     @default(1)
   isActive Boolean @default(true)
 
   team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
@@ -179,9 +180,9 @@ model CompanyMemory {
   updatedAt DateTime @updatedAt
 
   // Patterns, rules, and insights extracted from outcomes
-  patterns  Json // { patterns: [{ description, evidence, confidence, type }] }
-  riskFlags Json // { flags: [{ condition, severity, recommendation }] }
-  icpHistory Json // { versions: [{ criteria, accuracy, date }] }
+  patterns         Json // { patterns: [{ description, evidence, confidence, type }] }
+  riskFlags        Json // { flags: [{ condition, severity, recommendation }] }
+  icpHistory       Json // { versions: [{ criteria, accuracy, date }] }
   // Bible §8.8 Learning Agent's most recent run for this team -- a
   // human-reviewable report (accuracy_by_verdict, systematic_errors,
   // patterns, prompt_adjustments, icp_recommendations, priority), never
@@ -247,11 +248,11 @@ model PolicyVersion {
 // per team may be ACTIVE at a time; approving a PENDING version atomically
 // supersedes whichever version was ACTIVE before it.
 model RoutingThresholdVersion {
-  id         String                @id @default(cuid())
+  id         String                 @id @default(cuid())
   version    Int
   thresholds Json // { cvThreshold: 0-1, maxSurpriseThreshold: 0-1 }
   status     RoutingThresholdStatus @default(PENDING)
-  createdAt  DateTime              @default(now())
+  createdAt  DateTime               @default(now())
   createdBy  String // userId, or "learning_agent" once Phase 8 wires suggestions in
   approvedAt DateTime?
   approvedBy String?
@@ -271,6 +272,36 @@ enum RoutingThresholdStatus {
   SUPERSEDED
 }
 
+// v4 roadmap Phase 12 (docs/ARCHITECTURE_V4.md, "Decision Complexity
+// Engine") -- versions the weights conflict-surprise.ts's cv/directional/
+// maxSurprise features are combined with into a single complexity score.
+// Reuses RoutingThresholdStatus for the lifecycle enum rather than
+// declaring an identical PENDING/ACTIVE/REJECTED/SUPERSEDED enum a second
+// time -- same versioned-config-with-approval semantics, different table.
+//
+// Unlike RoutingThresholdVersion, there is no "propose arbitrary weights"
+// endpoint: weights are only ever produced by triggerComplexityWeightsRecompute
+// (complexity.service.ts) from real labeled decision/outcome history, never
+// hand-typed by an admin -- see that function's own comment for why.
+model DecisionComplexityWeights {
+  id         String                 @id @default(cuid())
+  version    Int
+  weights    Json // { cv: number, directional: number, maxSurprise: number }, sums to 1
+  sampleSize Int // count of labeled (outcome-backed) decisions the recompute used
+  status     RoutingThresholdStatus @default(PENDING)
+  createdAt  DateTime               @default(now())
+  createdBy  String // userId who triggered the recompute
+  approvedAt DateTime?
+  approvedBy String?
+
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  teamId String
+
+  @@unique([teamId, version])
+  @@index([teamId])
+  @@index([teamId, status])
+}
+
 // v4 roadmap Phase 8 (Learning Wiring) -- Decision 3's "Recommendation ->
 // Approval -> Version" flow applied to the Learning Agent: surfaces its
 // existing icp_recommendations/prompt_adjustments output (already
@@ -287,12 +318,12 @@ enum RoutingThresholdStatus {
 // fabricating structured threshold/weight suggestions by parsing free text
 // would be an unreliable guess, not a real recommendation.
 model LearningRecommendation {
-  id              String                         @id @default(cuid())
+  id              String                          @id @default(cuid())
   targetSubsystem LearningRecommendationSubsystem
-  rationale       String                         @db.Text
+  rationale       String                          @db.Text
   suggestedChange Json? // structured payload when available (e.g. one prompt_adjustments entry); null for plain-text-only recommendations (icp_recommendations)
-  status          LearningRecommendationStatus   @default(PENDING)
-  createdAt       DateTime                       @default(now())
+  status          LearningRecommendationStatus    @default(PENDING)
+  createdAt       DateTime                        @default(now())
   reviewedAt      DateTime?
   reviewedBy      String?
 
@@ -359,7 +390,7 @@ model Evidence {
   extractedAt DateTime       @default(now())
   isStale     Boolean        @default(false)
 
-  prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  prospect   Prospect  @relation(fields: [prospectId], references: [id], onDelete: Cascade)
   prospectId String
   decision   Decision? @relation(fields: [decisionId], references: [id])
   decisionId String?
@@ -391,8 +422,8 @@ model EvidenceEdge {
   toId   String
 
   relation  EvidenceEdgeRelation
-  strength  Float    @default(0.5) // 0-1, how strong the relationship is
-  createdAt DateTime @default(now())
+  strength  Float                @default(0.5) // 0-1, how strong the relationship is
+  createdAt DateTime             @default(now())
 
   @@unique([fromId, toId, relation])
   @@index([fromId])
@@ -450,7 +481,7 @@ model IntentSignal {
 // ───────────────────────────────────────────
 
 model Decision {
-  id                String   @id @default(cuid())
+  id                String  @id @default(cuid())
   verdict           Verdict
   confidence        Int // 0-100
   weightedScore     Float? // 0-100
@@ -477,8 +508,8 @@ model Decision {
   decisionValueUsd Float?
   valueCostRatio   Float?
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
   user       User     @relation(fields: [userId], references: [id])
@@ -619,15 +650,15 @@ enum OutcomeType {
 // ───────────────────────────────────────────
 
 model UserPreferences {
-  id               String   @id @default(cuid())
-  messageTone      String   @default("professional")
-  messageLength    String   @default("medium") // short, medium, long
-  autoVerdict      Boolean  @default(false) // Auto-deliver verdict without click
-  sidebarPosition  String   @default("right") // left, right
-  defaultChannel   Channel  @default(LINKEDIN)
-  digestFrequency  String   @default("daily") // never, daily, weekly
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id              String   @id @default(cuid())
+  messageTone     String   @default("professional")
+  messageLength   String   @default("medium") // short, medium, long
+  autoVerdict     Boolean  @default(false) // Auto-deliver verdict without click
+  sidebarPosition String   @default("right") // left, right
+  defaultChannel  Channel  @default(LINKEDIN)
+  digestFrequency String   @default("daily") // never, daily, weekly
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId String @unique
@@ -663,13 +694,13 @@ enum IntegrationStatus {
 }
 
 model Webhook {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   url        String
   events     String[] // ["decision.created", "outcome.logged"]
   secret     String?
-  isActive   Boolean  @default(true)
+  isActive   Boolean   @default(true)
   lastUsedAt DateTime?
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
 
   team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
   teamId String

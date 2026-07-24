@@ -20,6 +20,7 @@ import { teamRouter } from "./modules/teams/team.routes.js";
 import { billingRouter } from "./modules/billing/billing.routes.js";
 import { routingRouter } from "./modules/routing/routing.routes.js";
 import { learningRecommendationRouter } from "./modules/learning-recommendations/learning-recommendation.routes.js";
+import { complexityRouter } from "./modules/complexity/complexity.routes.js";
 
 export function createApp() {
   const app = express();
@@ -73,6 +74,7 @@ export function createApp() {
   app.use("/api/v1/billing", billingRouter);
   app.use("/api/v1/routing", routingRouter);
   app.use("/api/v1/learning-recommendations", learningRecommendationRouter);
+  app.use("/api/v1/complexity", complexityRouter);
 
   app.use(errorHandler);
 
