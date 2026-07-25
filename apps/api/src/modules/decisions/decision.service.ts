@@ -2,6 +2,8 @@ import { agentDebateOutputSchema, AppError, scoreToVerdict, type AgentDebateOutp
 import type { AuthContext } from "../../middleware/auth.js";
 import { runAgentDebate } from "../../agents/orchestrator.js";
 import { buildDecisionContext } from "../../agents/decision-context-builder.js";
+import { observePromptCaching } from "../../agents/prompt-cache-shadow.js";
+import { env } from "../../config/env.js";
 import { calculateDecisionValue, calculateInferenceCostUsd, calculateValueCostRatio } from "../../agents/decision-value.service.js";
 import {
   createActionTaken,
@@ -257,9 +259,25 @@ export async function createDecision(
   if (output) {
     processingTimeMs = Date.now() - cacheStartedAt;
   } else {
-    const debate = await runAgentDebate(
-      buildDecisionContext({ prospect, icp, companyMemory, userPreferences, prospectHistory, teamHistory, team }),
-    );
+    const context = buildDecisionContext({ prospect, icp, companyMemory, userPreferences, prospectHistory, teamHistory, team });
+
+    // v4 roadmap Phase 16 Day 5 -- shadow-only: observes the knowledge-pack
+    // cache-key scheme's real-traffic consistency without altering which
+    // prompt actually gets sent below. See prompt-cache-shadow.ts's own
+    // module comment for why there's no "old vs new" prompt construction
+    // left to parallel-run (Day 1/Day 4 already unified and validated
+    // that) -- a cache-key collision is the one thing worth flagging here.
+    if (env.USE_KNOWLEDGE_PACK) {
+      const mismatches = observePromptCaching(context).filter((o) => !o.consistent);
+      if (mismatches.length > 0) {
+        logger.error(
+          { mismatches, prospectId: prospect.id, teamId: request.context.teamId },
+          "Knowledge-pack shadow observation found cache-key mismatches",
+        );
+      }
+    }
+
+    const debate = await runAgentDebate(context);
     output = debate.output;
     processingTimeMs = debate.processingTimeMs;
     usage = debate.usage;

@@ -95,6 +95,18 @@ const envSchema = z.object({
     .string()
     .length(64, "CONFIG_ENCRYPTION_KEY must be a 64-character hex string (32 bytes) — generate with `openssl rand -hex 32`")
     .optional(),
+
+  // v4 roadmap Phase 16 Day 5 (docs/ARCHITECTURE_V4.md) -- gates the
+  // knowledge-pack cache-key SHADOW observation only (see
+  // agents/prompt-cache-shadow.ts): logs would-be cache hit/miss and flags
+  // any key collision, never alters which prompt is sent to the LLM.
+  // z.coerce.boolean() is deliberately not used -- Boolean("false") is
+  // true in JS, so that coercion would silently treat
+  // USE_KNOWLEDGE_PACK=false as enabled.
+  USE_KNOWLEDGE_PACK: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
 });
 
 export type Env = z.infer<typeof envSchema>;
