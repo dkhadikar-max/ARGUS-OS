@@ -1,6 +1,7 @@
 import { agentDebateOutputSchema, AppError, scoreToVerdict, type AgentDebateOutput, type CreateActionRequest, type CreateActionResponse, type CreateDecisionRequest, type DecisionResponse, type EditMessageDraftRequest, type EditMessageDraftResponse, type OverrideDecisionRequest, type OverrideDecisionResponse, type PolicyFlag, type ShareDecisionResponse } from "@argus/shared";
 import type { AuthContext } from "../../middleware/auth.js";
 import { runAgentDebate } from "../../agents/orchestrator.js";
+import { buildDecisionContext } from "../../agents/decision-context-builder.js";
 import { calculateDecisionValue, calculateInferenceCostUsd, calculateValueCostRatio } from "../../agents/decision-value.service.js";
 import {
   createActionTaken,
@@ -256,34 +257,9 @@ export async function createDecision(
   if (output) {
     processingTimeMs = Date.now() - cacheStartedAt;
   } else {
-    const debate = await runAgentDebate({
-      prospectData: {
-        profile: { name: prospect.name, title: prospect.title, linkedInUrl: prospect.linkedInUrl },
-        company: {
-          name: prospect.companyName,
-          domain: prospect.companyDomain,
-          size: prospect.companySize,
-          industry: prospect.companyIndustry,
-          funding: prospect.companyFunding,
-        },
-        rawProfile: prospect.rawProfile,
-        enrichedData: prospect.enrichedData,
-      },
-      teamIcp: icp?.criteria ?? null,
-      companyMemory: companyMemory
-        ? { patterns: companyMemory.patterns, riskFlags: companyMemory.riskFlags }
-        : null,
-      intentSignals: prospect.rawProfile,
-      historicalEngagement: prospectHistory.map((d) => ({
-        verdict: d.verdict,
-        outcome: d.outcome?.type ?? null,
-        createdAt: d.createdAt,
-      })),
-      teamHistory: teamHistory.map((d) => ({ verdict: d.verdict, outcome: d.outcome?.type })),
-      userPreferences: userPreferences ?? null,
-      teamPatterns: companyMemory?.patterns ?? null,
-      companyContext: team?.companyContext ?? null,
-    });
+    const debate = await runAgentDebate(
+      buildDecisionContext({ prospect, icp, companyMemory, userPreferences, prospectHistory, teamHistory, team }),
+    );
     output = debate.output;
     processingTimeMs = debate.processingTimeMs;
     usage = debate.usage;
