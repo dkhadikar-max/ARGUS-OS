@@ -77,7 +77,7 @@ Reasoning Asset Evolution
 | Knowledge Assets | Partial | `EvidenceEdge` (Phase 3), `CompanyMemory`, `PolicyDefinition`/`PolicyVersion` (Phase 5) exist as separate models; `ReasoningAsset` (Phase 13) can now register a metadata entry against any of them, but nothing auto-registers or auto-scores one yet |
 | Decision Complexity Engine | Built | [decision-complexity.ts](../apps/api/src/agents/complexity/decision-complexity.ts) computes cv/directional/maxSurprise and a weighted composite score; `DecisionComplexityWeights` (Phase 12) versions the weights via admin-triggered recompute from real labeled decision/outcome history. Not wired into any routing decision yet — see caveat below |
 | Execution Strategy Registry | Built | [execution-strategy.ts](../apps/api/src/agents/routing/execution-strategy.ts) — `EXECUTION_STRATEGY_REGISTRY`, an ordered list of strategy definitions (Phase 11) |
-| Reasoning Engine | Built | [orchestrator.ts](../apps/api/src/agents/orchestrator.ts)'s 5-agent pipeline; Phase 9's benchmark is evaluating single-call and conflict-augmented alternatives against it |
+| Reasoning Engine | Built | [orchestrator.ts](../apps/api/src/agents/orchestrator.ts)'s 5-agent pipeline; Phase 9's benchmark is evaluating single-call and conflict-augmented alternatives against it; Phase 16 added a prompt-construction/caching layer (`buildStagePrompt`, `DecisionContextBuilder`, `USE_KNOWLEDGE_PACK` shadow observation), off by default |
 | Decision / Outcome | Built | `decision.service.ts` / `outcome.service.ts` |
 | Learning Engine | Built (human-in-the-loop only — see Decision 3 below) | `learning.service.ts`, `LearningRecommendation` (PENDING/ACTIONED/DISMISSED) |
 | Decision Value as optimization target | Partial | `decision-value.service.ts` computes Decision Value and Decision Value/$ (used in Phase 9's benchmark metrics); not yet wired into the Routing Optimizer's actual routing decision |
@@ -117,9 +117,9 @@ today.
    Engine. Planned (Phase 13), not yet built — no code today unifies these
    under one model.
 
-## How Phase 12 and Phase 13 resolved their own open questions
+## How Phase 12, 13, and 16 resolved their own open questions
 
-Both were built. The choices made, for the record:
+All three were built. The choices made, for the record:
 
 - **Phase 12 (Decision Complexity weight-learning):** feature set stayed at
   the 3 already-computed signals (cv, directional, maxSurprise) — evidence
@@ -135,3 +135,51 @@ Both were built. The choices made, for the record:
   (Retriever, Prompt, Strategy) are still pure code with no DB row to point
   to. Existing tables (Policy/Evidence/Threshold/Weights) keep their own
   schemas and approval workflows untouched.
+- **Phase 16 (Knowledge Pack / prompt-caching foundation, Days 1–5):** an
+  external "Compiler-Based Knowledge Flow" proposal (`KnowledgePackCompiler`
+  → `ContextCompiler` → `PromptRenderer` classes, `ReasoningAsset` as a
+  content store) didn't match the real codebase — `ReasoningAsset` (Phase
+  13) is a metadata registry, not content, and prompt construction was
+  never one wrappable `buildPrompt()` call but 5 separate inline call
+  sites in `orchestrator.ts`. Rebuilt against the real code instead:
+  - **Day 1** — [`buildStagePrompt`](../apps/api/src/agents/orchestrator.ts)
+    (typed `StageId`, not a raw `string`): extracts the 5 call sites'
+    `systemPromptFor()` + `fillPlaceholders()` pairs into one helper.
+    Zero behavior change — same two functions, same order, same output.
+  - **Day 2** — [`decision-context-builder.ts`](../apps/api/src/agents/decision-context-builder.ts):
+    centralizes the `DecisionAgentInput` shaping logic `decision.service.ts`
+    used to inline, typed off the real repository functions' own return
+    types. `decision.service.ts`'s `Promise.all` fetch stays the
+    authoritative source of decision inputs, unchanged. Adds
+    `hashKnowledgeFields()` — canonical (sorted-key) SHA-256 over only the
+    genuinely team-level fields (`teamIcp`, `companyMemory`, `teamHistory`,
+    `userPreferences`, `teamPatterns`); `prospectData` and the two
+    per-prospect fields (`intentSignals`, `historicalEngagement`) are
+    excluded regardless of how little they varied across the 51 eval
+    fixtures (Phase 15) — that low variance is a fixture-generation
+    artifact, not evidence of real cross-decision sharing.
+  - **Day 3** — [`prompt-cache-key.ts`](../apps/api/src/agents/prompt-cache-key.ts):
+    `buildPromptCacheKey(stageName, promptTemplate, knowledgeHash)`, built
+    entirely outside `buildStagePrompt` — prompt construction owns zero
+    hashing. Uses a content hash of the prompt template itself as the
+    "did the wording change" component rather than a manually-maintained
+    version string, so any `prompts.ts` edit invalidates the key
+    automatically instead of depending on a developer remembering to bump
+    a number.
+  - **Day 4** — [`eval/snapshot-prompt-migration.ts`](../apps/api/eval/snapshot-prompt-migration.ts):
+    proved `buildStagePrompt`'s output byte-identical to the pre-Day-1
+    construction across all 51 fixtures × 5 stages (255/255 real
+    comparisons against real fixtures, not asserted from the diff).
+  - **Day 5** — [`prompt-cache-shadow.ts`](../apps/api/src/agents/prompt-cache-shadow.ts),
+    gated by `USE_KNOWLEDGE_PACK` (`env.ts`, default `false`):
+    shadow-observes real decisions and flags the one remaining
+    unvalidated invariant — does the same `(stage, promptHash,
+    knowledgeHash)` cache key ever produce a different rendered prompt?
+    `runAgentDebate`'s real call is never altered, skipped, or
+    short-circuited by the flag.
+
+  **Deliberately not done**, per the plan's own "no more design" and
+  "not yet" framing: no `KnowledgePack` DB table, no Redis-backed prompt
+  cache, no production cutover. `USE_KNOWLEDGE_PACK` has shipped to
+  `main` but stays off by default until real shadow-observation data
+  from a parallel-run period justifies turning it on.
