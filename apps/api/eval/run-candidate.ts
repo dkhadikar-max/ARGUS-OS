@@ -9,7 +9,7 @@ import { execSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { scoreToVerdict } from "@argus/shared";
+import { AppError, scoreToVerdict } from "@argus/shared";
 import { runAgentDebate, type DecisionAgentInput } from "../src/agents/orchestrator.js";
 import { CLAUDE_MODEL } from "../src/agents/claude-client.js";
 import { runAgentDebateSingleCall } from "../src/agents/benchmark/single-call-orchestrator.js";
@@ -114,7 +114,17 @@ async function runOneFixture(candidate: BenchmarkCandidate, fixture: EvalFixture
       evidenceUtilizationRate: null,
       confidenceCalibration: { consideredSparse: false, judgeConfidence: -1, ruleHeld: false },
       conflict: null,
-      error: err instanceof Error ? err.message : String(err),
+      // callAgent (orchestrator.ts) throws a generic AppError whose own
+      // .message is always "Unable to generate a decision right now..." --
+      // the actual ZodError/truncation/API-error text it caught goes into
+      // extra.cause instead. Recording err.message alone (the previous
+      // behavior) silently discarded that for every failed fixture in
+      // every manifest -- surfaced by matrix-icp-moderate_intent-cold_
+      // risk-severe's failure in the 2026-07-24T17-21-53-473Z pipeline
+      // baseline having no diagnosable cause.
+      error:
+        (err instanceof Error ? err.message : String(err)) +
+        (err instanceof AppError && err.extra?.cause !== undefined ? ` (cause: ${String(err.extra.cause)})` : ""),
     };
   }
 }
