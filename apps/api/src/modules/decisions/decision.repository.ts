@@ -60,6 +60,15 @@ export function getTeamOutcomeHistory(teamId: string) {
   });
 }
 
+/** Existing Evidence rows for this prospect, if any -- created by prior
+ *  decisions (see createDecisionRecord's own evidence array). Genuinely
+ *  empty for a prospect with no prior decisions; not a bug. Feeds
+ *  capability-shadow.ts's real (not fabricated) evidence pool for the
+ *  Retriever-Registry-derived ReasoningCapability shadow observation. */
+export function getEvidenceForProspect(prospectId: string) {
+  return prisma.evidence.findMany({ where: { prospectId } });
+}
+
 export interface CreateDecisionInput {
   userId: string;
   teamId: string;

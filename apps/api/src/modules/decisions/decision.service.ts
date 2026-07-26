@@ -4,6 +4,7 @@ import { runAgentDebate } from "../../agents/orchestrator.js";
 import { buildDecisionContext } from "../../agents/decision-context-builder.js";
 import { observePromptCaching } from "../../agents/prompt-cache-shadow.js";
 import { recordDecisionStateShadow } from "../../agents/decision-state-shadow.js";
+import { observeCapabilityOutputs } from "../../agents/capability-shadow.js";
 import { env } from "../../config/env.js";
 import { calculateDecisionValue, calculateInferenceCostUsd, calculateValueCostRatio } from "../../agents/decision-value.service.js";
 import {
@@ -13,6 +14,7 @@ import {
   findDecisionById,
   getActiveIcp,
   getCompanyMemory,
+  getEvidenceForProspect,
   getProspectDecisionHistory,
   getTeamOutcomeHistory,
   getUserPreferences,
@@ -348,11 +350,14 @@ export async function createDecision(
     throw new AppError("NOT_FOUND", "Decision could not be retrieved after creation");
   }
 
-  // Controller & Capability Specification v3.0, Phase 1 -- shadow-only:
-  // records a DecisionState for this now-fully-known decision. Never
-  // influences anything above; see decision-state.ts's module comment for
-  // which fields are real vs. structurally-present-but-empty pending later
-  // phases (Budget Manager, Controller, capability advisories).
+  // Controller & Capability Specification v3.0 -- shadow-only: records a
+  // DecisionState (+ Expected Utility + Controller decision) for this
+  // now-fully-known decision, and separately, real per-capability output
+  // for this prospect's real (possibly empty) existing evidence pool.
+  // Neither influences anything above; see decision-state.ts's and
+  // capability-shadow.ts's own module comments for what's real vs.
+  // structurally-present-but-empty, and why this isn't "capability
+  // selection" (nothing selects -- all 4 real capabilities always run).
   if (env.RECORD_DECISION_STATE) {
     recordDecisionStateShadow({
       decisionId: decision.id,
@@ -366,6 +371,9 @@ export async function createDecision(
       processingTimeMs,
       verdict,
     });
+
+    const evidencePool = await getEvidenceForProspect(prospect.id);
+    await observeCapabilityOutputs(decision.id, evidencePool);
   }
 
   await publishTeamEvent(request.context.teamId, {

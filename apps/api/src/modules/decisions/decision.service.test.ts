@@ -9,6 +9,7 @@ const repo = {
   getUserPreferences: vi.fn(),
   getProspectDecisionHistory: vi.fn(),
   getTeamOutcomeHistory: vi.fn(),
+  getEvidenceForProspect: vi.fn().mockResolvedValue([]),
   createDecisionRecord: vi.fn(),
   findDecisionById: vi.fn(),
   createOverride: vi.fn(),
