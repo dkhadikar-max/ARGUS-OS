@@ -83,8 +83,13 @@ export interface ConfidenceAssessment {
 export interface Disagreement {
   description: string;
   /** The Judge agent's `conflicts` are free text, not numerically scored --
-   *  there is no real severity/magnitude value to report yet. */
-  magnitude: null;
+   *  buildDecisionState always sets this to null today, since there is no
+   *  real severity/magnitude value to report yet. Typed as `number | null`
+   *  (not literal `null`) so the shape can honestly hold a real severity
+   *  score once something computes one -- expected-utility.ts's
+   *  riskPenalty() filters on `magnitude > 70`, which only makes sense if
+   *  a real number is representable here. */
+  magnitude: number | null;
 }
 
 export interface DecisionState {
