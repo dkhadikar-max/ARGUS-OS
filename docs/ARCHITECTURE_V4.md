@@ -183,3 +183,72 @@ All three were built. The choices made, for the record:
   cache, no production cutover. `USE_KNOWLEDGE_PACK` has shipped to
   `main` but stays off by default until real shadow-observation data
   from a parallel-run period justifies turning it on.
+
+## Controller & Capability Specification v3.0
+
+A separate, more ambitious external spec proposed an "Adaptive Reasoning
+Platform" — `DecisionState` graphs, a `BudgetManager`, capability-advisory
+outputs, a `PlanningPolicy`/Controller loop, `DecisionPack` domain
+generalization, and online/offline learning. A gap analysis against the
+real codebase found **zero** of its 8 core components already
+implemented, and — the load-bearing finding — the entire architecture
+presupposes an iterative reasoning loop that doesn't exist: the live
+pipeline ([orchestrator.ts](../apps/api/src/agents/orchestrator.ts)) is
+still a fixed, single-pass, 5-stage sequence with no "round 2." Everything
+built below is scoped narrower than the spec's own phasing as a result,
+following this session's "validate every architectural assumption
+against reality, never force the code to match the document" rule.
+
+- [`decision-state.ts`](../apps/api/src/agents/decision-state.ts) —
+  `DecisionState` as a purely additive, shadow-only audit record (gated by
+  `RECORD_DECISION_STATE`, default `false`). Real fields (verdict,
+  confidence, disagreements, `RawCost` budget) are honestly separated from
+  fields with no real data source yet (evidence graph, `reasoningHistory`,
+  `controllerMemory`, objective's time-horizon/decay) rather than
+  fabricated. Always produces version 0 — there's no round 2 to produce a
+  version 1 from.
+- [`budget-manager.ts`](../apps/api/src/agents/budget-manager.ts) —
+  `normalizeCost`/`denormalizeCost`/`allocate` only; no `consume()` or
+  `evaluateReallocation()`, since nothing spends a budget mid-decision yet.
+  `denormalizeCost` is explicitly documented as *not* a true inverse of
+  `normalizeCost` (a 3-term sum can't be uniquely decomposed).
+- [`reasoning-capability.ts`](../apps/api/src/agents/reasoning-capability.ts) —
+  the `ReasoningCapability`/`CapabilityOutput`/`CapabilityAdvisory` plug-in
+  contract, proven against something real (the existing, still-unwired
+  Retriever Registry, Phase 4) via `wrapRetrieverAsCapability`, rather than
+  left as bare types.
+- [`expected-utility.ts`](../apps/api/src/agents/expected-utility.ts) —
+  the five-term Expected Utility function (`Gain − Loss − Delay −
+  ReasoningCost − RiskPenalty`) as pure functions over one real
+  `DecisionState`. Three terms are fully real (Gain, Loss, ReasoningCost);
+  Delay and RiskPenalty are honest zeros against real data today (no
+  per-decision time-decay rate or disagreement severity score exists
+  anywhere in ARGUS), each proven correct against synthetic states with
+  real-shaped data for when that data eventually exists.
+- [`controller.ts`](../apps/api/src/agents/controller.ts) — the narrowest
+  honest Controller slice: a stop/escalate `decide()` over one completed
+  `DecisionState`. No `continue`/`invoke_capability` (no real next
+  capability to invoke) and no oscillation/progress detection (needs real
+  multi-round history that doesn't exist). Against real data today,
+  `baseValue` is always the fixed $25,000 constant — below the $100K
+  escalation threshold — so `decide()` always returns `"stop"`; a real,
+  deterministic finding, not a bug.
+- [`decision-pack.ts`](../apps/api/src/agents/decision-pack.ts) — engineering
+  scaffolding only, per explicit scope: formalizes the one real domain
+  (`SALES_LEAD_QUALIFICATION_PACK`) ARGUS implements today, with every
+  field referencing already-real prompts/schemas/constants. No second
+  domain invented — whether ARGUS ever supports one (e.g. recruiting)
+  remains an open product decision. `deriveDecisionPack()` demonstrates
+  "inheritance" as plain object override, proven against a synthetic test
+  pack, not a real second vertical.
+- [`decision-state-shadow.ts`](../apps/api/src/agents/decision-state-shadow.ts) —
+  ties the above together: for every real, shadow-captured decision, also
+  computes and logs the real Expected Utility breakdown and Controller
+  decision. Still purely observational, same flag, zero behavior change.
+
+**Deliberately not done**: the Controller loop itself (deciding
+continue-vs-stop across real rounds), capability advisory scoring,
+oscillation/progress detection, `ControllerPolicy` training, and a second
+`DecisionPack`. All of these need either a real iterative round to exist
+in production or a product decision that hasn't been made — building any
+of them now would mean simulating something that isn't real yet.
