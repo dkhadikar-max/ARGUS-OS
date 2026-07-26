@@ -57,13 +57,23 @@ describe("recordDecisionStateShadow", () => {
     expect(infoSpy).toHaveBeenCalledTimes(1);
     const call = infoSpy.mock.calls[0] ?? [];
     const [payload, message] = call;
-    expect(message).toBe("DecisionState shadow-recorded (Controller spec v3.0 Phase 1)");
+    expect(message).toBe("DecisionState shadow-recorded (Controller spec v3.0)");
     expect(payload).toMatchObject({
       decisionId: "dec_1",
       version: 0,
       teamId: "team_1",
       verdict: { label: "YES", confidence: 82 },
       action: "message_now",
+      controllerAction: "stop",
     });
+  });
+
+  it("includes the real Expected Utility breakdown computed for this same state", () => {
+    const infoSpy = vi.spyOn(logger, "info").mockImplementation(() => logger);
+    recordDecisionStateShadow(sampleInput());
+    const call = infoSpy.mock.calls[0] ?? [];
+    const [payload] = call as [{ expectedUtility?: { gain: number; loss: number; expectedUtility: number } }];
+    expect(typeof payload.expectedUtility?.gain).toBe("number");
+    expect(typeof payload.expectedUtility?.expectedUtility).toBe("number");
   });
 });
