@@ -40,24 +40,29 @@ export function buildSystemPromptCacheKey(stageName: StageId, promptTemplate: st
 }
 
 /**
- * A key over a stage's prompt wording + a team's knowledge fields
- * (teamIcp/companyMemory/teamHistory/userPreferences/teamPatterns -- see
- * decision-context-builder.ts's hashKnowledgeFields). Correction, made
- * after a real bug: this key does NOT characterize "one stage's rendered
- * prompt" the way an earlier version of this docstring claimed --
- * buildStagePrompt's userPrompt also embeds prospectData/intentSignals/
- * historicalEngagement, none of which are part of knowledgeHash, so two
- * different prospects sharing the same team knowledge get the SAME key
- * here but a genuinely DIFFERENT rendered userPrompt. Observed for real in
+ * A key over a stage's prompt wording + a hash of the shared reasoning
+ * context that isn't prospect-specific -- today that's just knowledgeHash
+ * (teamIcp/companyMemory/teamHistory/userPreferences/teamPatterns, see
+ * decision-context-builder.ts's hashKnowledgeFields), but named for what
+ * it's growing into rather than what it happens to cover right now: this
+ * is meant to eventually fold in organization policies, static retrieval
+ * results, and any other reusable, non-prospect-specific input, not stay
+ * scoped to "team" fields specifically. Correction, made after a real bug:
+ * this key does NOT characterize "one stage's rendered prompt" the way an
+ * earlier version of this docstring claimed -- buildStagePrompt's
+ * userPrompt also embeds prospectData/intentSignals/historicalEngagement,
+ * none of which are part of knowledgeHash, so two different prospects
+ * sharing the same knowledge context get the SAME key here but a
+ * genuinely DIFFERENT rendered userPrompt. Observed for real in
  * decision.service.test.ts once its orchestrator mock was fixed to expose
  * buildStagePrompt -- see prompt-cache-shadow.ts's git history.
  *
- * Kept for a possible future L2 cache of a team-level prefix, but NOT
- * currently validated against any rendered content -- that would require
- * fillPlaceholders to expose the team-level portion of a user prompt
+ * Kept for a possible future L2 cache of a knowledge-context prefix, but
+ * NOT currently validated against any rendered content -- that would
+ * require fillPlaceholders to expose that portion of a user prompt
  * separately from the prospect-level portion, which it doesn't today.
  * Not called by observePromptCaching; not wired anywhere yet.
  */
-export function buildTeamKnowledgeCacheKey(stageName: StageId, promptTemplate: string, knowledgeHash: string): string {
-  return `team-knowledge:${stageName}:${hashPromptTemplate(promptTemplate)}:${knowledgeHash}`;
+export function buildKnowledgeContextCacheKey(stageName: StageId, promptTemplate: string, knowledgeHash: string): string {
+  return `knowledge-context:${stageName}:${hashPromptTemplate(promptTemplate)}:${knowledgeHash}`;
 }

@@ -72,10 +72,10 @@ const defaultTracker = createCacheKeyTracker();
  * The one thing genuinely fully determined by (stage, prompt wording,
  * companyContext) is the SYSTEM prompt -- systemPromptFor() never reads
  * prospectData/teamIcp/companyMemory/etc. That's what's checked now, via
- * buildSystemPromptCacheKey (the real L1 "cross-team cache" tier). Team-
- * level (L2) and per-prospect (L4, never cached) caching remain unstarted,
- * separate work -- see prompt-cache-key.ts's buildTeamKnowledgeCacheKey for
- * why that one isn't validated here.
+ * buildSystemPromptCacheKey (the real L1 "cross-team cache" tier). Team/
+ * knowledge-context (L2) and per-prospect (L4, never cached) caching remain
+ * unstarted, separate work -- see prompt-cache-key.ts's
+ * buildKnowledgeContextCacheKey for why that one isn't validated here.
  */
 export function observePromptCaching(
   input: DecisionAgentInput,

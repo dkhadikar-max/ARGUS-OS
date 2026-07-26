@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSystemPromptCacheKey, buildTeamKnowledgeCacheKey, hashCompanyContext, hashPromptTemplate } from "./prompt-cache-key.js";
+import { buildSystemPromptCacheKey, buildKnowledgeContextCacheKey, hashCompanyContext, hashPromptTemplate } from "./prompt-cache-key.js";
 import { buildDecisionContext, hashKnowledgeFields, type DecisionSources } from "./decision-context-builder.js";
 
 describe("hashPromptTemplate", () => {
@@ -55,7 +55,7 @@ describe("buildSystemPromptCacheKey", () => {
   });
 });
 
-describe("buildTeamKnowledgeCacheKey", () => {
+describe("buildKnowledgeContextCacheKey", () => {
   it("composes with hashKnowledgeFields from decision-context-builder without either owning the other's hashing", () => {
     const template = "Analyze {{prospect_data}} against {{team_icp}}.";
     const sources: DecisionSources = {
@@ -68,7 +68,7 @@ describe("buildTeamKnowledgeCacheKey", () => {
       team: null,
     };
     const knowledge = hashKnowledgeFields(buildDecisionContext(sources));
-    const key = buildTeamKnowledgeCacheKey("icp", template, knowledge);
-    expect(key).toBe(`team-knowledge:icp:${hashPromptTemplate(template)}:${knowledge}`);
+    const key = buildKnowledgeContextCacheKey("icp", template, knowledge);
+    expect(key).toBe(`knowledge-context:icp:${hashPromptTemplate(template)}:${knowledge}`);
   });
 });
