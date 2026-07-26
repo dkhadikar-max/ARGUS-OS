@@ -3,6 +3,7 @@ import type { AuthContext } from "../../middleware/auth.js";
 import { runAgentDebate } from "../../agents/orchestrator.js";
 import { buildDecisionContext } from "../../agents/decision-context-builder.js";
 import { observePromptCaching } from "../../agents/prompt-cache-shadow.js";
+import { recordDecisionStateShadow } from "../../agents/decision-state-shadow.js";
 import { env } from "../../config/env.js";
 import { calculateDecisionValue, calculateInferenceCostUsd, calculateValueCostRatio } from "../../agents/decision-value.service.js";
 import {
@@ -256,11 +257,14 @@ export async function createDecision(
   // new inference cost for this request.
   let usage = { inputTokens: 0, outputTokens: 0 };
 
+  // Hoisted above the cache-hit/miss split (pure, no side effects) so both
+  // paths can feed it to the Controller-spec Phase 1 shadow state below --
+  // previously only built on a cache miss, since only that path needed it.
+  const context = buildDecisionContext({ prospect, icp, companyMemory, userPreferences, prospectHistory, teamHistory, team });
+
   if (output) {
     processingTimeMs = Date.now() - cacheStartedAt;
   } else {
-    const context = buildDecisionContext({ prospect, icp, companyMemory, userPreferences, prospectHistory, teamHistory, team });
-
     // v4 roadmap Phase 16 Day 5 -- shadow-only: observes the knowledge-pack
     // cache-key scheme's real-traffic consistency without altering which
     // prompt actually gets sent below. See prompt-cache-shadow.ts's own
@@ -342,6 +346,26 @@ export async function createDecision(
   const full = await findDecisionById(decision.id, request.context.teamId);
   if (!full) {
     throw new AppError("NOT_FOUND", "Decision could not be retrieved after creation");
+  }
+
+  // Controller & Capability Specification v3.0, Phase 1 -- shadow-only:
+  // records a DecisionState for this now-fully-known decision. Never
+  // influences anything above; see decision-state.ts's module comment for
+  // which fields are real vs. structurally-present-but-empty pending later
+  // phases (Budget Manager, Controller, capability advisories).
+  if (env.RECORD_DECISION_STATE) {
+    recordDecisionStateShadow({
+      decisionId: decision.id,
+      teamId: request.context.teamId,
+      userId: request.context.userId,
+      prospectId: prospect.id,
+      prospectName: prospect.name,
+      input: context,
+      output,
+      usage,
+      processingTimeMs,
+      verdict,
+    });
   }
 
   await publishTeamEvent(request.context.teamId, {

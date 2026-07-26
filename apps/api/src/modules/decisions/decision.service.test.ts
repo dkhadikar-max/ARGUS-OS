@@ -19,7 +19,14 @@ const repo = {
 vi.mock("./decision.repository.js", () => repo);
 
 const runAgentDebate = vi.fn();
-vi.mock("../../agents/orchestrator.js", () => ({ runAgentDebate }));
+// importOriginal preserves buildStagePrompt/fillPlaceholders/systemPromptFor
+// (real functions, needed by prompt-cache-shadow.ts's observePromptCaching
+// whenever USE_KNOWLEDGE_PACK happens to be true in the environment these
+// tests run under) -- only runAgentDebate itself is faked.
+vi.mock("../../agents/orchestrator.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../agents/orchestrator.js")>();
+  return { ...actual, runAgentDebate };
+});
 
 const publishTeamEvent = vi.fn();
 vi.mock("../../lib/pubsub.js", () => ({ publishTeamEvent }));

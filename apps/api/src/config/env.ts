@@ -107,6 +107,15 @@ const envSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((v) => v === "true"),
+
+  // Controller & Capability Specification v3.0, Phase 1 (as scoped in the
+  // gap analysis) -- gates a purely additive, shadow-only DecisionState
+  // audit-log capture (see agents/decision-state-shadow.ts). Never alters
+  // which prompt is sent, which agent runs, or what a decision returns.
+  RECORD_DECISION_STATE: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
 });
 
 export type Env = z.infer<typeof envSchema>;

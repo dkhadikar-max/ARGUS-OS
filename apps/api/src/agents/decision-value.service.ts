@@ -27,10 +27,15 @@ export function calculateInferenceCostUsd(inputTokens: number, outputTokens: num
 // as-is (not re-derived from ARGUS's own data, which doesn't exist yet to
 // derive them from).
 const SDR_HOURLY_COST_USD = 75;
-const AVG_DEAL_SIZE_USD = 25000;
+// Exported so decision-state.ts (Controller spec Phase 1) can reuse the same
+// real, already-justified numbers instead of duplicating new magic constants
+// for DecisionState.objective -- there is no per-prospect deal-value
+// estimate anywhere in ARGUS today, so this shared baseline is the only
+// honest value available.
+export const AVG_DEAL_SIZE_USD = 25000;
 const REVENUE_ATTRIBUTION_RATE = 0.05;
-const FP_REDUCTION_VALUE_USD = 150;
-const FN_REDUCTION_VALUE_USD = 5000;
+export const FP_REDUCTION_VALUE_USD = 150;
+export const FN_REDUCTION_VALUE_USD = 5000;
 
 /** Hours of SDR time a verdict saves (or well-spends) by correctly
  *  prioritizing or deprioritizing a prospect. The architecture doc's own
