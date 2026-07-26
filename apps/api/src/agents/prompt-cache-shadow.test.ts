@@ -55,22 +55,36 @@ describe("observePromptCaching", () => {
 
     const second = observePromptCaching(decisionInput, tracker);
     expect(second.every((o) => !o.isNewKey && o.consistent)).toBe(true);
-    // Same cache keys both times, since knowledge (teamIcp/companyMemory/etc) is unchanged.
+    // Same cache keys both times, since companyContext (the real determinant
+    // of system-prompt content) is unchanged.
     expect(second.map((o) => o.cacheKey)).toEqual(first.map((o) => o.cacheKey));
   });
 
-  it("produces different cache keys when team-level knowledge (teamIcp) differs", () => {
+  it("does NOT produce different cache keys when team-level knowledge (teamIcp) differs -- the system prompt never reads it", () => {
     const tracker = createCacheKeyTracker();
     const a = observePromptCaching(input({ teamIcp: { minSize: 50 } }), tracker);
     const b = observePromptCaching(input({ teamIcp: { minSize: 999 } }), tracker);
-    expect(a.map((o) => o.cacheKey)).not.toEqual(b.map((o) => o.cacheKey));
+    expect(a.map((o) => o.cacheKey)).toEqual(b.map((o) => o.cacheKey));
+    // Real invariant proof, not just equal keys: the two really do render the
+    // exact same system prompt, so equal keys are actually correct here.
+    expect(a.every((o) => o.consistent)).toBe(true);
+    expect(b.every((o) => o.consistent)).toBe(true);
   });
 
-  it("does NOT produce different cache keys when only per-prospect fields (prospectData) differ", () => {
+  it("does NOT produce different cache keys when per-prospect fields (prospectData) differ", () => {
     const tracker = createCacheKeyTracker();
     const a = observePromptCaching(input({ prospectData: { profile: { name: "Jane" } } }), tracker);
     const b = observePromptCaching(input({ prospectData: { profile: { name: "A Totally Different Name" } } }), tracker);
     expect(a.map((o) => o.cacheKey)).toEqual(b.map((o) => o.cacheKey));
+    expect(a.every((o) => o.consistent)).toBe(true);
+    expect(b.every((o) => o.consistent)).toBe(true);
+  });
+
+  it("DOES produce different cache keys when companyContext differs -- the real determinant of system-prompt content", () => {
+    const tracker = createCacheKeyTracker();
+    const a = observePromptCaching(input({ companyContext: "We sell CRM software." }), tracker);
+    const b = observePromptCaching(input({ companyContext: "We sell observability tooling." }), tracker);
+    expect(a.map((o) => o.cacheKey)).not.toEqual(b.map((o) => o.cacheKey));
   });
 
   it("surfaces an inconsistent observation from the injected tracker (wiring test)", () => {

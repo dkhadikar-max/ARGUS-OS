@@ -19,15 +19,45 @@ export function hashPromptTemplate(promptTemplate: string): string {
   return createHash("sha256").update(promptTemplate).digest("hex");
 }
 
+export function hashCompanyContext(companyContext: string | null): string {
+  return createHash("sha256")
+    .update(companyContext ?? "")
+    .digest("hex");
+}
+
 /**
- * Full cache key for one stage's rendered prompt: which stage, whether the
- * prompt wording changed (promptTemplate's own hash), and whether the
- * team's knowledge changed (knowledgeHash, from
- * decision-context-builder.ts's hashKnowledgeFields -- computed by the
- * caller, not here). Deliberately excludes anything prospect-specific:
- * per-prospect content is never cached (see hashKnowledgeFields' own scoping
- * note), so it has no place in a cache key either.
+ * Cache key for the ONE thing that's actually fully determined by
+ * (stage, prompt wording, companyContext): the SYSTEM prompt --
+ * systemPromptFor() never reads prospectData/teamIcp/companyMemory/etc, only
+ * companyContext (see orchestrator.ts). This is the real L1 "cross-team
+ * cache" tier from the Day 5 shadow-observation design; it's the only key
+ * this module builds that's safe to validate "same key -> same content"
+ * against, and prompt-cache-shadow.ts's observePromptCaching does exactly
+ * that (against built.system only, never the full rendered prompt).
  */
-export function buildPromptCacheKey(stageName: StageId, promptTemplate: string, knowledgeHash: string): string {
-  return `prompt:${stageName}:${hashPromptTemplate(promptTemplate)}:${knowledgeHash}`;
+export function buildSystemPromptCacheKey(stageName: StageId, promptTemplate: string, companyContext: string | null): string {
+  return `system:${stageName}:${hashPromptTemplate(promptTemplate)}:${hashCompanyContext(companyContext)}`;
+}
+
+/**
+ * A key over a stage's prompt wording + a team's knowledge fields
+ * (teamIcp/companyMemory/teamHistory/userPreferences/teamPatterns -- see
+ * decision-context-builder.ts's hashKnowledgeFields). Correction, made
+ * after a real bug: this key does NOT characterize "one stage's rendered
+ * prompt" the way an earlier version of this docstring claimed --
+ * buildStagePrompt's userPrompt also embeds prospectData/intentSignals/
+ * historicalEngagement, none of which are part of knowledgeHash, so two
+ * different prospects sharing the same team knowledge get the SAME key
+ * here but a genuinely DIFFERENT rendered userPrompt. Observed for real in
+ * decision.service.test.ts once its orchestrator mock was fixed to expose
+ * buildStagePrompt -- see prompt-cache-shadow.ts's git history.
+ *
+ * Kept for a possible future L2 cache of a team-level prefix, but NOT
+ * currently validated against any rendered content -- that would require
+ * fillPlaceholders to expose the team-level portion of a user prompt
+ * separately from the prospect-level portion, which it doesn't today.
+ * Not called by observePromptCaching; not wired anywhere yet.
+ */
+export function buildTeamKnowledgeCacheKey(stageName: StageId, promptTemplate: string, knowledgeHash: string): string {
+  return `team-knowledge:${stageName}:${hashPromptTemplate(promptTemplate)}:${knowledgeHash}`;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPromptCacheKey, hashPromptTemplate } from "./prompt-cache-key.js";
+import { buildSystemPromptCacheKey, buildTeamKnowledgeCacheKey, hashCompanyContext, hashPromptTemplate } from "./prompt-cache-key.js";
 import { buildDecisionContext, hashKnowledgeFields, type DecisionSources } from "./decision-context-builder.js";
 
 describe("hashPromptTemplate", () => {
@@ -14,34 +14,50 @@ describe("hashPromptTemplate", () => {
   });
 });
 
-describe("buildPromptCacheKey", () => {
-  const template = "Analyze {{prospect_data}} against {{team_icp}}.";
-  const knowledgeHash = "deadbeef";
+describe("hashCompanyContext", () => {
+  it("is deterministic for null (and doesn't crash on it)", () => {
+    expect(hashCompanyContext(null)).toBe(hashCompanyContext(null));
+  });
 
-  it("has the prompt:{stage}:{promptHash}:{knowledgeHash} shape", () => {
-    const key = buildPromptCacheKey("research", template, knowledgeHash);
-    expect(key).toBe(`prompt:research:${hashPromptTemplate(template)}:${knowledgeHash}`);
+  it("does not collide a real company context with null", () => {
+    expect(hashCompanyContext(null)).not.toBe(hashCompanyContext("We sell CRM software."));
+  });
+
+  it("changes when the companyContext string changes", () => {
+    expect(hashCompanyContext("We sell CRM software.")).not.toBe(hashCompanyContext("We sell observability tooling."));
+  });
+});
+
+describe("buildSystemPromptCacheKey", () => {
+  const template = "Analyze {{prospect_data}} against {{team_icp}}.";
+
+  it("has the system:{stage}:{promptHash}:{companyContextHash} shape", () => {
+    const key = buildSystemPromptCacheKey("research", template, "We sell CRM software.");
+    expect(key).toBe(`system:research:${hashPromptTemplate(template)}:${hashCompanyContext("We sell CRM software.")}`);
   });
 
   it("changes when stageName changes, all else equal", () => {
-    const researchKey = buildPromptCacheKey("research", template, knowledgeHash);
-    const icpKey = buildPromptCacheKey("icp", template, knowledgeHash);
+    const researchKey = buildSystemPromptCacheKey("research", template, "ctx");
+    const icpKey = buildSystemPromptCacheKey("icp", template, "ctx");
     expect(researchKey).not.toBe(icpKey);
   });
 
   it("changes when the prompt template's wording changes, all else equal", () => {
-    const before = buildPromptCacheKey("research", template, knowledgeHash);
-    const after = buildPromptCacheKey("research", template + " Extra sentence.", knowledgeHash);
+    const before = buildSystemPromptCacheKey("research", template, "ctx");
+    const after = buildSystemPromptCacheKey("research", template + " Extra sentence.", "ctx");
     expect(before).not.toBe(after);
   });
 
-  it("changes when knowledgeHash changes, all else equal", () => {
-    const a = buildPromptCacheKey("research", template, "hash-a");
-    const b = buildPromptCacheKey("research", template, "hash-b");
+  it("changes when companyContext changes, all else equal -- the actual determinant of system prompt content", () => {
+    const a = buildSystemPromptCacheKey("research", template, "We sell CRM software.");
+    const b = buildSystemPromptCacheKey("research", template, "We sell observability tooling.");
     expect(a).not.toBe(b);
   });
+});
 
+describe("buildTeamKnowledgeCacheKey", () => {
   it("composes with hashKnowledgeFields from decision-context-builder without either owning the other's hashing", () => {
+    const template = "Analyze {{prospect_data}} against {{team_icp}}.";
     const sources: DecisionSources = {
       prospect: { id: "p1", name: "Jane", rawProfile: {}, enrichedData: {} } as unknown as DecisionSources["prospect"],
       icp: { criteria: { minSize: 50 } } as unknown as DecisionSources["icp"],
@@ -51,9 +67,8 @@ describe("buildPromptCacheKey", () => {
       teamHistory: [] as unknown as DecisionSources["teamHistory"],
       team: null,
     };
-    const input = buildDecisionContext(sources);
-    const knowledge = hashKnowledgeFields(input);
-    const key = buildPromptCacheKey("icp", template, knowledge);
-    expect(key).toBe(`prompt:icp:${hashPromptTemplate(template)}:${knowledge}`);
+    const knowledge = hashKnowledgeFields(buildDecisionContext(sources));
+    const key = buildTeamKnowledgeCacheKey("icp", template, knowledge);
+    expect(key).toBe(`team-knowledge:icp:${hashPromptTemplate(template)}:${knowledge}`);
   });
 });

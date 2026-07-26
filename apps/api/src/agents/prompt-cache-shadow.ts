@@ -1,8 +1,7 @@
 import { createHash } from "node:crypto";
 import { logger } from "../lib/logger.js";
-import { hashKnowledgeFields } from "./decision-context-builder.js";
 import { buildStagePrompt, type DecisionAgentInput, type StageId } from "./orchestrator.js";
-import { buildPromptCacheKey } from "./prompt-cache-key.js";
+import { buildSystemPromptCacheKey } from "./prompt-cache-key.js";
 import { ICP_AGENT_PROMPT, INTENT_AGENT_PROMPT, JUDGE_AGENT_PROMPT, RESEARCH_AGENT_PROMPT, RISK_AGENT_PROMPT } from "./prompts.js";
 
 const STAGE_TEMPLATES: Record<StageId, string> = {
@@ -60,32 +59,41 @@ const defaultTracker = createCacheKeyTracker();
  * behavior. buildStagePrompt is already the only prompt-construction path
  * (Day 1), proven byte-identical to what it replaced across 51 fixtures x
  * 5 stages (Day 4) -- there's no "old vs new" prompt construction left to
- * parallel-run. What's actually unvalidated is the cache-KEY scheme
- * itself: does the same (stage, promptHash, knowledgeHash) key really
- * always correspond to the same rendered prompt under real traffic? That's
- * the one real invariant this checks, and the only thing gated by
- * USE_KNOWLEDGE_PACK -- the real runAgentDebate call this feeds into is
- * never altered, skipped, or short-circuited.
+ * parallel-run.
+ *
+ * Correction: this used to hash the FULL rendered prompt (system +
+ * userPrompt) against a key built from team-level knowledge only. That's
+ * structurally guaranteed to "collide" for any two different prospects
+ * sharing the same team knowledge, since userPrompt always embeds
+ * prospectData/intentSignals/historicalEngagement, none of which are part
+ * of that key -- it was never a real bug in the prompts, just the wrong
+ * invariant being checked.
+ *
+ * The one thing genuinely fully determined by (stage, prompt wording,
+ * companyContext) is the SYSTEM prompt -- systemPromptFor() never reads
+ * prospectData/teamIcp/companyMemory/etc. That's what's checked now, via
+ * buildSystemPromptCacheKey (the real L1 "cross-team cache" tier). Team-
+ * level (L2) and per-prospect (L4, never cached) caching remain unstarted,
+ * separate work -- see prompt-cache-key.ts's buildTeamKnowledgeCacheKey for
+ * why that one isn't validated here.
  */
 export function observePromptCaching(
   input: DecisionAgentInput,
   tracker: CacheKeyTracker = defaultTracker,
 ): PromptCacheObservation[] {
-  const knowledgeHash = hashKnowledgeFields(input);
-
   return (Object.entries(STAGE_TEMPLATES) as Array<[StageId, string]>).map(([stage, template]) => {
     // priorOutputs is {} here -- research_output/icp_output/etc tokens
     // depend on real prior-stage agent output that doesn't exist until
-    // runAgentDebate actually runs. That substitution renders the same
-    // literal placeholder text regardless of knowledge, so it doesn't
-    // affect whether this key scheme is internally consistent.
+    // runAgentDebate actually runs. buildStagePrompt's `system` never reads
+    // priorOutputs at all (only systemPromptFor(stage, companyContext)
+    // does), so this has no effect on what's being checked below.
     const built = buildStagePrompt(stage, template, input, {});
-    const promptHash = hashString(`${built.system} ${built.userPrompt}`);
-    const cacheKey = buildPromptCacheKey(stage, template, knowledgeHash);
+    const systemPromptHash = hashString(built.system);
+    const cacheKey = buildSystemPromptCacheKey(stage, template, input.companyContext);
 
-    const { isNewKey, consistent } = tracker.observe(cacheKey, promptHash);
+    const { isNewKey, consistent } = tracker.observe(cacheKey, systemPromptHash);
     if (!consistent) {
-      logger.error({ stage, cacheKey }, "Knowledge-pack cache key collision: same key produced a different prompt");
+      logger.error({ stage, cacheKey }, "System-prompt cache key collision: same key produced a different system prompt");
     }
     return { stage, cacheKey, isNewKey, consistent };
   });
