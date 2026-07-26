@@ -7,6 +7,7 @@ import {
   calculateInferenceCostUsd,
 } from "./decision-value.service.js";
 import type { DecisionAgentInput, TokenUsageAccumulator } from "./orchestrator.js";
+import { SALES_LEAD_QUALIFICATION_PACK } from "./decision-pack.js";
 
 // Controller & Capability Specification v3.0, Phase 1 -- recommended scope
 // per the gap analysis: DecisionState as an additive, shadow-only audit
@@ -149,8 +150,6 @@ export interface BuildDecisionStateInput {
   verdict: Verdict;
 }
 
-const SALES_LEAD_QUALIFICATION_PACK_ID = "sales-lead-qualification-v1";
-
 /** Builds the single (version 0, root) DecisionState for one real,
  *  already-completed decision. Never called mid-decision, never consumed
  *  by anything that changes behavior -- see the module comment above for
@@ -184,7 +183,7 @@ export function buildDecisionState(input: BuildDecisionStateInput): DecisionStat
     createdAt,
     transition,
 
-    packId: SALES_LEAD_QUALIFICATION_PACK_ID,
+    packId: SALES_LEAD_QUALIFICATION_PACK.id,
     teamId: input.teamId,
     userId: input.userId,
 
@@ -222,6 +221,6 @@ export function buildDecisionState(input: BuildDecisionStateInput): DecisionStat
     outcome: undefined,
     controllerMemory: {},
 
-    metadata: { latencySoFarMs: input.processingTimeMs, packId: SALES_LEAD_QUALIFICATION_PACK_ID, capturedAt: createdAt },
+    metadata: { latencySoFarMs: input.processingTimeMs, packId: SALES_LEAD_QUALIFICATION_PACK.id, capturedAt: createdAt },
   };
 }
