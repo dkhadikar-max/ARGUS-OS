@@ -245,6 +245,15 @@ against reality, never force the code to match the document" rule.
   ties the above together: for every real, shadow-captured decision, also
   computes and logs the real Expected Utility breakdown and Controller
   decision. Still purely observational, same flag, zero behavior change.
+- [`capability-shadow.ts`](../apps/api/src/agents/capability-shadow.ts) —
+  not "capability selection" (nothing selects; the pipeline is fixed, so
+  all 4 real retriever capabilities always run) but real per-capability
+  output against a real evidence pool
+  ([`getEvidenceForProspect`](../apps/api/src/modules/decisions/decision.repository.ts),
+  genuinely empty for a prospect with no prior decisions). Same
+  `RECORD_DECISION_STATE` flag, same zero-behavior-change guarantee —
+  confirmed by real log output showing correct non-zero confidence for a
+  populated pool and all-zero for an empty one.
 
 **Deliberately not done**: the Controller loop itself (deciding
 continue-vs-stop across real rounds), capability advisory scoring,
