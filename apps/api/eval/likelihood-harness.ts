@@ -150,6 +150,25 @@ function currentGitCommit(): string | null {
   }
 }
 
+// REPAIR LAYER SCOPE (2026-07-27 pilots, raw + repair, llama3.2:3b): the
+// larger 15-fixture repair-mode run surfaced more failure shapes than the
+// original 2-fixture sample -- not just a whole array field serialized as a
+// string (Class A: `"data_points": "[...]"`) but also array *items* coming
+// back as objects instead of strings (`hidden_risks[0]` an object, not a
+// string) and numeric fields serialized as strings (`confidence: "85"`).
+// This repair layer intentionally handles ONLY the top-level Class A shape.
+// It is a **serialization repair layer, not a semantic correction layer** --
+// scoped to primitive coercion (JSON-decoding a field that should already
+// be structured data), never to inventing missing fields, interpreting
+// prose, or guessing intent. The other observed shapes (array-item type
+// mismatches, stringified numbers) are left to fail validation as-is: they
+// are either also primitive-coercion candidates for a future, explicitly
+// separate rule, or -- if the model wrote actual prose instead of the
+// expected empty/typed value -- a model-capability or prompt problem no
+// amount of repair-layer coercion should paper over. Expanding this
+// function to swallow every observed shape would make it a second
+// inference engine and defeat the point of measuring the model at all.
+
 /** Tool-schema-declared array fields (top-level only -- the one shape the
  *  2026-07-27 pilot found llama3.2:3b mis-typing). Driven by the real
  *  ToolSchema, not a hardcoded per-stage field list, so this stays correct
