@@ -58,7 +58,11 @@ function sampleInput(overrides: Partial<BuildDecisionStateInput> = {}): BuildDec
 // Ample on every dimension -- isolates the confidence/capability branches
 // from the budget-exhaustion branch in tests that aren't about budget.
 const ampleBudget: BudgetSnapshot = { remainingReasoning: 3, remainingLatency: Number.POSITIVE_INFINITY, remainingCost: 100 };
-const exhaustedBudget: BudgetSnapshot = { remainingReasoning: 0, remainingLatency: Number.POSITIVE_INFINITY, remainingCost: 100 };
+// Bug fix (Critical #4): remainingCost is the actual exhaustion signal now
+// (see controller.ts's own decide() comment) -- remainingCost: 0 is what
+// makes this fixture genuinely "exhausted"; remainingReasoning: 0 alone no
+// longer would.
+const exhaustedBudget: BudgetSnapshot = { remainingReasoning: 0, remainingLatency: Number.POSITIVE_INFINITY, remainingCost: 0 };
 
 function capabilityOutput(confidence: number, capabilityId = "x"): CapabilityOutput<Evidence[]> {
   return {
@@ -78,11 +82,20 @@ const highValuePolicy: ControllerPolicy = {
 };
 
 describe("decide", () => {
-  it("always returns stop against a real DecisionState today -- deriveBudgetSnapshot's remainingReasoning is always 0", () => {
+  // Bug fix (Critical #4) changed WHY this stops: deriveBudgetSnapshot's
+  // remainingReasoning is still always 0 post-Judge, but that alone no
+  // longer forces "stop" -- remainingCost (real dollar cost) is large and
+  // positive for this sample, so the budget genuinely isn't exhausted. It
+  // still stops here because the sample's real Judge confidence (82) meets
+  // confidenceThreshold (70), not because of budget.
+  it("returns stop for a real, high-confidence DecisionState today -- via the confidence branch, not budget exhaustion", () => {
     const state = buildDecisionState(sampleInput());
     const budget = deriveBudgetSnapshot(state.budget.raw, state.objective.value, 0);
     expect(budget.remainingReasoning).toBe(0);
-    expect(decide(state, budget, undefined).action).toBe("stop");
+    expect(budget.remainingCost).toBeGreaterThan(0);
+    const result = decide(state, budget, undefined);
+    expect(result.action).toBe("stop");
+    expect(result.reasons.join(" ")).toContain("confidenceThreshold");
   });
 
   it("escalates when baseValue exceeds the threshold and agentConsensus is low (stuck proxy)", () => {
@@ -120,6 +133,25 @@ describe("decide", () => {
     const result = decide(state, exhaustedBudget, capabilityOutputs);
     expect(result.action).toBe("stop");
     expect(result.reasons.join(" ")).toContain("Budget exhausted");
+  });
+
+  // Bug fix (Critical #4): before this, remainingReasoning<=0 alone was
+  // sufficient to force "stop", even when real dollar cost (remainingCost)
+  // showed the decision could genuinely still afford to act -- the raw
+  // step count treated a cheap capability and an expensive one as costing
+  // the same "1 step", with no way to tell them apart. This is exactly the
+  // shape every real decision has today (remainingReasoning always 0 post-
+  // Judge, remainingCost always large and positive): proves it's no longer
+  // treated as exhausted just because the step count hit zero.
+  it("does NOT treat the budget as exhausted from remainingReasoning/remainingLatency alone when remainingCost shows real room", () => {
+    const state = buildDecisionState(sampleInput({ output: sampleOutput({ confidence: 42 }) }));
+    const stepExhaustedButAffordable: BudgetSnapshot = { remainingReasoning: 0, remainingLatency: 0, remainingCost: 2500 };
+    const capabilityOutputs: CapabilityOutputsByStage = { risk: capabilityOutput(18, "risk") };
+
+    const result = decide(state, stepExhaustedButAffordable, capabilityOutputs);
+
+    expect(result.action).not.toBe("stop");
+    expect(result.action).toBe("invoke_capability");
   });
 
   it("stops when confidence meets confidenceThreshold, even with ample budget", () => {

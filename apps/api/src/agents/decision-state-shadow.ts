@@ -25,11 +25,13 @@ import type { CapabilityOutputsByStage } from "./reasoning-capability.js";
  * observeCapabilityOutputs() result) -- are real per-stage data, not a
  * synthetic stand-in.
  *
- * Against every real DecisionState today, decide() always returns "stop":
- * deriveBudgetSnapshot's remainingReasoning is always exactly 0 (the fixed
- * 5-stage pipeline has no adaptive step budget) -- see controller.ts's own
- * module comment. Logged anyway, to prove the full wiring against real
- * data rather than only against controller.test.ts's synthetic fixtures.
+ * Against most real DecisionStates today, decide() returns "stop" -- but,
+ * since Critical Bug #4's fix (controller.ts's own module comment),
+ * because real Judge confidence usually meets confidenceThreshold, not
+ * because of budget (remainingCost is typically large and positive; the
+ * old remainingReasoning-based exhaustion gate is gone). A real decision
+ * with genuinely low confidence now reaches continue/invoke_capability
+ * here for real, not just in controller.test.ts's synthetic fixtures.
  */
 export function recordDecisionStateShadow(input: BuildDecisionStateInput, capabilityOutputs?: CapabilityOutputsByStage): void {
   const state = buildDecisionState(input);

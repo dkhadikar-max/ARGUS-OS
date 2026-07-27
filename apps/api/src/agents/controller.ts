@@ -108,8 +108,20 @@ export const DEFAULT_CONTROLLER_POLICY: ControllerPolicy = {
  *      no real multi-round signal to check (there's only ever one round
  *      against real data today) -- proxied by two real, Judge-produced
  *      signals instead: low agent consensus, or any disagreement at all.
- *   2. stop -- budget exhausted (any BudgetSnapshot dimension <= 0). No
- *      further reasoning is affordable, whatever the confidence is.
+ *   2. stop -- budget exhausted (remainingCost <= 0). No further reasoning
+ *      is affordable, whatever the confidence is. Bug fix (Critical #4):
+ *      this used to be "any BudgetSnapshot dimension <= 0", which made
+ *      remainingReasoning (a raw step count, 5 - depth) an independent
+ *      exhaustion gate -- structurally blind to real cost variance between
+ *      capabilities (a cheap retriever call and an expensive multi-
+ *      thousand-token Judge call both "cost" exactly 1 step). remainingCost
+ *      is the one BudgetSnapshot dimension actually derived from each
+ *      stage's own real costUsd (via budget-manager.ts's normalizeCost),
+ *      so it's now the sole authoritative signal. remainingReasoning/
+ *      remainingLatency hitting zero is still real, still included in the
+ *      reasons text below, but no longer independently sufficient to stop
+ *      the Controller from reasoning about a decision it can genuinely
+ *      still afford.
  *   3. stop -- confidence >= policy.confidenceThreshold. The verdict is
  *      good enough as-is.
  *   4. invoke_capability -- capabilityOutputs was given AND its weakest
@@ -124,14 +136,15 @@ export const DEFAULT_CONTROLLER_POLICY: ControllerPolicy = {
  *      clears its own threshold (the ambiguity is in synthesis, not
  *      evidence -- also explicit, also named).
  *
- * Against every real DecisionState today, branch 2 always fires:
- * deriveBudgetSnapshot's remainingReasoning is always exactly 0 (the fixed
- * 5-stage pipeline has no adaptive step budget), so decide() always
- * returns "stop" for real decisions -- an honest, deterministic finding,
- * not a bug. continue/invoke_capability are real and reachable (proven
- * against synthetic BudgetSnapshot/CapabilityOutputsByStage in
- * controller.test.ts) but stay dormant until a real Controller loop can
- * actually afford a next step.
+ * Against real DecisionStates today, remainingCost is typically a large
+ * positive number (allocate()'s normalized points budget vastly exceeds
+ * one decision's real dollar cost), so branch 2 is now rarely the reason a
+ * real decision stops -- branch 3 (confidence >= threshold) usually is,
+ * for decisions with real Judge confidence at or above 70. For a real
+ * decision with genuinely LOW confidence, branches 4/5 are now actually
+ * reachable against real data, not just synthetic test fixtures -- a
+ * meaningful change from the prior step-based gate, which capped every
+ * post-Judge decide() call at "stop" regardless of confidence.
  */
 export function decide(
   state: DecisionState,
@@ -160,14 +173,16 @@ export function decide(
     };
   }
 
-  const isBudgetExhausted = budget.remainingReasoning <= 0 || budget.remainingLatency <= 0 || budget.remainingCost <= 0;
+  // Bug fix (Critical #4): remainingCost alone -- see this function's own
+  // doc comment for why remainingReasoning/remainingLatency are no longer
+  // independent exhaustion gates.
+  const isBudgetExhausted = budget.remainingCost <= 0;
   if (isBudgetExhausted) {
     return {
       action: "stop",
       reasons: [
-        `Budget exhausted (remainingReasoning=${budget.remainingReasoning}, ` +
-          `remainingLatency=${budget.remainingLatency}, remainingCost=${budget.remainingCost}); ` +
-          "no further reasoning is affordable regardless of confidence.",
+        `Budget exhausted (remainingCost=${budget.remainingCost}; remainingReasoning=${budget.remainingReasoning}, ` +
+          `remainingLatency=${budget.remainingLatency} for reference); no further reasoning is affordable regardless of confidence.`,
       ],
       confidence,
       utilityEstimate,
