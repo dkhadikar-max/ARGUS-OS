@@ -41,6 +41,19 @@ export interface ControllerDecision {
   targetCapability?: string;
   confidence: number;
   utilityEstimate: number;
+  /** Bug fix (Critical #6): capabilityOutputs is a required parameter (no
+   *  `?`, callers must explicitly pass a value or `undefined`) -- but
+   *  nothing stops a FUTURE caller from computing `undefined` by accident
+   *  (a bug elsewhere) rather than deliberately, and free-text `reasons`
+   *  alone isn't a queryable, alertable signal. True whenever
+   *  capabilityOutputs was undefined for this call, regardless of which
+   *  action was taken -- a real caller can monitor/alert on this field
+   *  directly instead of parsing reasons strings. False whenever real
+   *  capability-level data was actually provided, including when every
+   *  capability individually cleared its own threshold (a different,
+   *  already-distinguished "continue" branch -- see decide()'s own
+   *  evaluation-order comment). */
+  capabilityVisibilityMissing: boolean;
 }
 
 // Controller spec v3.0 Section 5.2's own stated default.
@@ -155,6 +168,7 @@ export function decide(
   const expectedUtility = computeExpectedUtility(state, policy.weights);
   const utilityEstimate = expectedUtility.expectedUtility;
   const confidence = state.confidence.overall;
+  const capabilityVisibilityMissing = capabilityOutputs === undefined;
 
   const isStuck = state.confidence.agentConsensus === "low" || state.disagreements.length > 0;
   const isHighValue = state.objective.value.baseValue > policy.escalationThresholds.highValueEscalationThreshold;
@@ -170,6 +184,7 @@ export function decide(
       ],
       confidence,
       utilityEstimate,
+      capabilityVisibilityMissing,
     };
   }
 
@@ -186,6 +201,7 @@ export function decide(
       ],
       confidence,
       utilityEstimate,
+      capabilityVisibilityMissing,
     };
   }
 
@@ -195,6 +211,7 @@ export function decide(
       reasons: [`Confidence (${confidence}) meets confidenceThreshold (${policy.confidenceThreshold}); the verdict stands.`],
       confidence,
       utilityEstimate,
+      capabilityVisibilityMissing,
     };
   }
 
@@ -219,6 +236,7 @@ export function decide(
         ],
         confidence,
         utilityEstimate,
+        capabilityVisibilityMissing,
       };
     }
     return {
@@ -231,6 +249,7 @@ export function decide(
       ],
       confidence,
       utilityEstimate,
+      capabilityVisibilityMissing,
     };
   }
 
@@ -243,5 +262,6 @@ export function decide(
     ],
     confidence,
     utilityEstimate,
+    capabilityVisibilityMissing,
   };
 }

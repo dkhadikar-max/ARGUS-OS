@@ -195,6 +195,32 @@ describe("decide", () => {
     expect(result.reasons.join(" ")).toContain("No capability-level output was provided");
   });
 
+  // Bug fix (Critical #6): capabilityOutputs is a required parameter (no
+  // `?`), so a caller can't silently OMIT it -- but nothing stopped a
+  // future caller from accidentally COMPUTING undefined (a bug elsewhere)
+  // rather than deliberately passing it, and free-text reasons alone isn't
+  // a queryable, alertable signal. capabilityVisibilityMissing gives a
+  // real caller something to monitor/alert on directly.
+  describe("capabilityVisibilityMissing", () => {
+    it("is true whenever capabilityOutputs is undefined, regardless of the resulting action", () => {
+      const highConfidenceState = buildDecisionState(sampleInput({ output: sampleOutput({ confidence: 90 }) }));
+      const lowConfidenceState = buildDecisionState(sampleInput({ output: sampleOutput({ confidence: 42 }) }));
+
+      expect(decide(highConfidenceState, ampleBudget, undefined).capabilityVisibilityMissing).toBe(true);
+      expect(decide(lowConfidenceState, ampleBudget, undefined).capabilityVisibilityMissing).toBe(true);
+      expect(decide(lowConfidenceState, exhaustedBudget, undefined).capabilityVisibilityMissing).toBe(true);
+    });
+
+    it("is false whenever real capabilityOutputs was actually provided, regardless of the resulting action", () => {
+      const state = buildDecisionState(sampleInput({ output: sampleOutput({ confidence: 42 }) }));
+      const weakLink: CapabilityOutputsByStage = { risk: capabilityOutput(18, "risk") };
+      const allHealthy: CapabilityOutputsByStage = { risk: capabilityOutput(90, "risk") };
+
+      expect(decide(state, ampleBudget, weakLink).capabilityVisibilityMissing).toBe(false);
+      expect(decide(state, ampleBudget, allHealthy).capabilityVisibilityMissing).toBe(false);
+    });
+  });
+
   it("is deterministic -- the same inputs always produce the same ControllerDecision", () => {
     const state = buildDecisionState(sampleInput({ output: sampleOutput({ confidence: 42 }) }));
     const capabilityOutputs: CapabilityOutputsByStage = { risk: capabilityOutput(18, "risk") };

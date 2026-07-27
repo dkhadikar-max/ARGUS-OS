@@ -1234,6 +1234,7 @@ describe("notifyControllerEscalation", () => {
     reasons: ["baseValue (150000) exceeds highValueEscalationThreshold (100000)", "1 disagreement(s)"],
     confidence: 55,
     utilityEstimate: -12.5,
+    capabilityVisibilityMissing: false,
   };
 
   it("records an audit entry and alerts Slack when the team has Slack connected", async () => {
