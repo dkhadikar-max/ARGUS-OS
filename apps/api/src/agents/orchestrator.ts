@@ -163,6 +163,11 @@ export async function callAgent<T>(
   // compatible: none of runAgentDebate's 5 call sites pass this, so nothing
   // about the live production pipeline changes.
   model: string = CLAUDE_MODEL,
+  // eval/likelihood-harness.ts -- same override pattern as `model` above,
+  // one call site further: which LLMProvider services this call, not just
+  // which model name is sent to it. Defaults to the same module-level
+  // llmProvider singleton every existing call site already used implicitly.
+  provider: LLMProvider = llmProvider,
 ): Promise<T> {
   let lastError: unknown;
   // Live tests found the pipeline's total decision latency (112-116s) came in
@@ -183,7 +188,7 @@ export async function callAgent<T>(
     // guess-and-redeploy cycle to confirm truncation was the actual cause.
     let stopReason: string | null = null;
     try {
-      const providerResponse = await llmProvider.call({ model, maxTokens, system, userPrompt, tool });
+      const providerResponse = await provider.call({ model, maxTokens, system, userPrompt, tool });
       stopReason = providerResponse.stopReason;
       // Counted on every attempt, not just a successful one -- a failed/
       // retried attempt still consumed real tokens Anthropic bills for.
