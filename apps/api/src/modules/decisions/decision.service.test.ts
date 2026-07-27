@@ -193,6 +193,7 @@ describe("createDecision", () => {
       "prospect_1",
       "team_1",
       "none",
+      "legacy",
       agentDebateOutput,
     );
     expect(track).toHaveBeenCalledWith(
@@ -579,7 +580,7 @@ describe("createDecision", () => {
 
     await createDecision(request, auth);
 
-    expect(getCachedDebateOutput).toHaveBeenCalledWith("prospect_1", "team_1", 3);
+    expect(getCachedDebateOutput).toHaveBeenCalledWith("prospect_1", "team_1", 3, "legacy");
     expect(runAgentDebate).not.toHaveBeenCalled();
     expect(setCachedDebateOutput).not.toHaveBeenCalled();
     // A cache hit still creates its own Decision row -- each request is

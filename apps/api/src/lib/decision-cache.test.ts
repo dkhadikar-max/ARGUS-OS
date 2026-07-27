@@ -33,30 +33,53 @@ beforeEach(() => {
 describe("getCachedDebateOutput", () => {
   it("returns null on a cache miss without calling JSON.parse on undefined", async () => {
     redis.get.mockResolvedValue(null);
-    const result = await getCachedDebateOutput("prospect_1", "team_1", 1);
+    const result = await getCachedDebateOutput("prospect_1", "team_1", 1, "legacy");
     expect(result).toBeNull();
-    expect(redis.get).toHaveBeenCalledWith("decision:prospect_1:team_1:1");
+    expect(redis.get).toHaveBeenCalledWith("decision:prospect_1:team_1:1:legacy");
   });
 
-  it("parses a cached value using the Bible §9.2 key format", async () => {
+  it("parses a cached value using the Bible §9.2 key format, extended with the runtime path", async () => {
     redis.get.mockResolvedValue(JSON.stringify(sampleOutput));
-    const result = await getCachedDebateOutput("prospect_1", "team_1", "none");
-    expect(redis.get).toHaveBeenCalledWith("decision:prospect_1:team_1:none");
+    const result = await getCachedDebateOutput("prospect_1", "team_1", "none", "legacy");
+    expect(redis.get).toHaveBeenCalledWith("decision:prospect_1:team_1:none:legacy");
     expect(result).toEqual(sampleOutput);
   });
 
   it("treats a corrupt cache entry as a miss instead of throwing", async () => {
     redis.get.mockResolvedValue("{not valid json");
-    const result = await getCachedDebateOutput("prospect_1", "team_1", 1);
+    const result = await getCachedDebateOutput("prospect_1", "team_1", 1, "legacy");
     expect(result).toBeNull();
+  });
+
+  // Bug fix (Critical #1): this is the actual scenario that was broken --
+  // an Execution Runtime v1 write must never be visible to a legacy-path
+  // read for the same prospect+team+icpVersion, and vice versa.
+  it("isolates legacy and execution-runtime-v1 cache entries for the same prospect+team+icpVersion", async () => {
+    await getCachedDebateOutput("prospect_1", "team_1", 1, "legacy");
+    await getCachedDebateOutput("prospect_1", "team_1", 1, "execution-runtime-v1");
+    const [legacyKey] = redis.get.mock.calls[0] as [string];
+    const [runtimeKey] = redis.get.mock.calls[1] as [string];
+    expect(legacyKey).not.toBe(runtimeKey);
+    expect(legacyKey).toBe("decision:prospect_1:team_1:1:legacy");
+    expect(runtimeKey).toBe("decision:prospect_1:team_1:1:execution-runtime-v1");
   });
 });
 
 describe("setCachedDebateOutput", () => {
-  it("stores JSON with a 24h TTL (Bible §9.2)", async () => {
-    await setCachedDebateOutput("prospect_1", "team_1", 2, sampleOutput as never);
+  it("stores JSON with a 24h TTL (Bible §9.2), keyed by runtime path", async () => {
+    await setCachedDebateOutput("prospect_1", "team_1", 2, "legacy", sampleOutput as never);
     expect(redis.set).toHaveBeenCalledWith(
-      "decision:prospect_1:team_1:2",
+      "decision:prospect_1:team_1:2:legacy",
+      JSON.stringify(sampleOutput),
+      "EX",
+      86400,
+    );
+  });
+
+  it("writes execution-runtime-v1 output under a different key than legacy would use", async () => {
+    await setCachedDebateOutput("prospect_1", "team_1", 2, "execution-runtime-v1", sampleOutput as never);
+    expect(redis.set).toHaveBeenCalledWith(
+      "decision:prospect_1:team_1:2:execution-runtime-v1",
       JSON.stringify(sampleOutput),
       "EX",
       86400,
@@ -65,13 +88,16 @@ describe("setCachedDebateOutput", () => {
 });
 
 describe("invalidateDecisionCache", () => {
-  it("deletes every icpVersion-keyed entry for this prospect+team", async () => {
-    redis.keys.mockResolvedValue(["decision:prospect_1:team_1:1", "decision:prospect_1:team_1:2"]);
+  it("deletes every icpVersion+runtime-keyed entry for this prospect+team", async () => {
+    redis.keys.mockResolvedValue([
+      "decision:prospect_1:team_1:1:legacy",
+      "decision:prospect_1:team_1:2:execution-runtime-v1",
+    ]);
     await invalidateDecisionCache("prospect_1", "team_1");
     expect(redis.keys).toHaveBeenCalledWith("decision:prospect_1:team_1:*");
     expect(redis.del).toHaveBeenCalledWith(
-      "decision:prospect_1:team_1:1",
-      "decision:prospect_1:team_1:2",
+      "decision:prospect_1:team_1:1:legacy",
+      "decision:prospect_1:team_1:2:execution-runtime-v1",
     );
   });
 

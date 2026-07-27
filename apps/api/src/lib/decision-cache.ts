@@ -13,16 +13,27 @@ import { redis } from "./redis.js";
 // its id already is a stable hash of prospect identity.
 const CACHE_TTL_SECONDS = 24 * 60 * 60;
 
-function cacheKey(prospectId: string, teamId: string, icpVersion: number | "none"): string {
-  return `decision:${prospectId}:${teamId}:${icpVersion}`;
+// Bug fix (Critical #1): the Bible's own key had no runtime dimension, so a
+// decision produced by Execution Runtime v1 and one produced by the legacy
+// pipeline for the SAME prospect+team+icpVersion collided on the same Redis
+// key. Whichever runtime wrote last would silently serve its output to a
+// request that took the OTHER path -- including a request with
+// EXECUTION_RUNTIME_V1 off being served an Execution-Runtime-v1-produced
+// verdict, for up to the full 24h TTL. RuntimePath makes that collision
+// structurally impossible: each runtime gets its own cache entry.
+export type RuntimePath = "legacy" | "execution-runtime-v1";
+
+function cacheKey(prospectId: string, teamId: string, icpVersion: number | "none", runtime: RuntimePath): string {
+  return `decision:${prospectId}:${teamId}:${icpVersion}:${runtime}`;
 }
 
 export async function getCachedDebateOutput(
   prospectId: string,
   teamId: string,
   icpVersion: number | "none",
+  runtime: RuntimePath,
 ): Promise<AgentDebateOutput | null> {
-  const raw = await redis.get(cacheKey(prospectId, teamId, icpVersion));
+  const raw = await redis.get(cacheKey(prospectId, teamId, icpVersion, runtime));
   if (!raw) return null;
   try {
     return JSON.parse(raw) as AgentDebateOutput;
@@ -35,10 +46,11 @@ export async function setCachedDebateOutput(
   prospectId: string,
   teamId: string,
   icpVersion: number | "none",
+  runtime: RuntimePath,
   output: AgentDebateOutput,
 ): Promise<void> {
   await redis.set(
-    cacheKey(prospectId, teamId, icpVersion),
+    cacheKey(prospectId, teamId, icpVersion, runtime),
     JSON.stringify(output),
     "EX",
     CACHE_TTL_SECONDS,
@@ -52,7 +64,10 @@ export async function setCachedDebateOutput(
  * is now based on stale context. ICP changes don't need explicit
  * invalidation here: they naturally fall out of the key (a new
  * `icpVersion` is simply a cache miss), so old-version entries just expire
- * via the 24h TTL instead of being actively purged.
+ * via the 24h TTL instead of being actively purged. The wildcard already
+ * covers the `:{runtime}` suffix too (matches everything after `teamId:`),
+ * so this purges both RuntimePath variants without needing to know about
+ * RuntimePath at all.
  */
 export async function invalidateDecisionCache(prospectId: string, teamId: string): Promise<void> {
   const pattern = `decision:${prospectId}:${teamId}:*`;

@@ -24,7 +24,7 @@ import {
 } from "./decision.repository.js";
 import type { EvidenceType } from "@argus/database";
 import { publishTeamEvent } from "../../lib/pubsub.js";
-import { getCachedDebateOutput, setCachedDebateOutput } from "../../lib/decision-cache.js";
+import { getCachedDebateOutput, setCachedDebateOutput, type RuntimePath } from "../../lib/decision-cache.js";
 import { track } from "../../lib/analytics.js";
 import { enrichProspect, type EnrichmentResult } from "../../lib/enrichment/enrichment.service.js";
 import { recordAudit, type RequestMeta } from "../../lib/audit.js";
@@ -252,8 +252,13 @@ export async function createDecision(
   // since the last identical request. Keyed on the *current* ICP version,
   // so an ICP edit is a cache miss rather than serving a stale verdict.
   const icpVersion = icp?.version ?? "none";
+  // Bug fix (Critical #1): the cache key must isolate which runtime produced
+  // an entry -- see decision-cache.ts's own RuntimePath comment. Without
+  // this, a request with the flag off could be served an Execution-Runtime-
+  // v1-produced verdict (or vice versa) for up to the cache's 24h TTL.
+  const runtimePath: RuntimePath = env.EXECUTION_RUNTIME_V1 ? "execution-runtime-v1" : "legacy";
   const cacheStartedAt = Date.now();
-  let output = await getCachedDebateOutput(prospect.id, request.context.teamId, icpVersion);
+  let output = await getCachedDebateOutput(prospect.id, request.context.teamId, icpVersion, runtimePath);
   let processingTimeMs: number;
   // v4 roadmap Phase 2 (Decision Value) -- 0/0 on a cache hit is accurate,
   // not a placeholder: no new API call was made, so there's genuinely no
@@ -299,7 +304,7 @@ export async function createDecision(
     output = debate.output;
     processingTimeMs = debate.processingTimeMs;
     usage = debate.usage;
-    await setCachedDebateOutput(prospect.id, request.context.teamId, icpVersion, output);
+    await setCachedDebateOutput(prospect.id, request.context.teamId, icpVersion, runtimePath, output);
   }
 
   // Bible §8.7 maps weightedScore to verdict via fixed bands, and the Judge
