@@ -1,6 +1,7 @@
 import type { Evidence } from "@argus/database";
 import { logger } from "../lib/logger.js";
 import { RETRIEVER_CAPABILITIES, type CapabilityOutput } from "./reasoning-capability.js";
+import { selectBestAdvisory } from "./advisory-scoring.js";
 
 // Controller & Capability Specification v3.0 -- "shadow capability
 // selection logging," narrowed to what's honest: nothing in ARGUS
@@ -28,6 +29,14 @@ export async function observeCapabilityOutputs(decisionId: string, evidencePool:
   );
   const outputsByStage = Object.fromEntries(entries) as CapabilityOutputsByStage;
 
+  // Real aggregation across real CapabilityOutputs -- honestly null today,
+  // since none of the 4 retriever capabilities emit an advisory (see
+  // reasoning-capability.ts's wrapRetrieverAsCapability module comment).
+  // Logged anyway, same as controllerAction/expectedUtility in
+  // decision-state-shadow.ts, to prove the wiring against real data rather
+  // than only against advisory-scoring.test.ts's synthetic fixtures.
+  const bestAdvisory = selectBestAdvisory(Object.values(outputsByStage));
+
   logger.info(
     {
       decisionId,
@@ -38,6 +47,7 @@ export async function observeCapabilityOutputs(decisionId: string, evidencePool:
           { confidence: output.confidence, evidenceCount: output.evidenceProduced.length, latencyMs: output.latencyMs },
         ]),
       ),
+      bestAdvisory,
     },
     "Capability outputs shadow-recorded (Controller spec v3.0 -- real evidence pool, not a fabricated selection)",
   );

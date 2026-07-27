@@ -254,10 +254,32 @@ against reality, never force the code to match the document" rule.
   `RECORD_DECISION_STATE` flag, same zero-behavior-change guarantee —
   confirmed by real log output showing correct non-zero confidence for a
   populated pool and all-zero for an empty one.
+- [`decision-state-graph.ts`](../apps/api/src/agents/decision-state-graph.ts) —
+  the multi-version `DecisionStateGraph` runtime abstraction (`createDecisionStateGraph`,
+  `getRootState`/`getCurrentState`/`getStateAtVersion`/`getPath`, `appendState`
+  with real hash-chain and version integrity checks), immutable per Decision
+  State's own frozen invariant. `getBranchPoint`/`replay`/`branchAt` deliberately
+  deferred — no design decision yet for what a "branch" means for ARGUS. Every
+  real graph today has exactly one node (version 0, no parent); multi-version
+  logic proven against synthetic-but-contract-valid states built from a real root.
+- [`advisory-scoring.ts`](../apps/api/src/agents/advisory-scoring.ts) —
+  Section 3.3/3.4's advisory scoring math: `priorityWeight()` (the spec's own
+  fixed lookup) and `scoreRecommendedAction()` (`expectedConfidenceGain *
+  (advisoryConfidence/100) * priorityWeight(priority)`, returning `null` rather
+  than defaulting to 0 when `expectedConfidenceGain` is absent — Section 3.4's
+  own "cannot be scored without it" constraint). `selectBestAdvisory()`
+  aggregates across real `CapabilityOutput`s and is wired into
+  `capability-shadow.ts`'s shadow log (`bestAdvisory` field) — honestly `null`
+  against real data today, since no real capability emits an `advisory` yet;
+  confirmed by real log output. The spec's own `incorporateAdvisories()`
+  (comparing an advisory's score against "the Controller's own
+  capability-selection score") is deliberately not built — `controller.ts`'s
+  real `decide()` has no such score to compare against.
 
 **Deliberately not done**: the Controller loop itself (deciding
-continue-vs-stop across real rounds), capability advisory scoring,
-oscillation/progress detection, `ControllerPolicy` training, and a second
-`DecisionPack`. All of these need either a real iterative round to exist
-in production or a product decision that hasn't been made — building any
-of them now would mean simulating something that isn't real yet.
+continue-vs-stop across real rounds), oscillation/progress detection,
+`ControllerPolicy` training, a second `DecisionPack`, and Decision State
+Graph branching (`getBranchPoint`/`replay`/`branchAt`). All of these need
+either a real iterative round to exist in production or a product decision
+that hasn't been made — building any of them now would mean simulating
+something that isn't real yet.
