@@ -1,6 +1,7 @@
 import { agentDebateOutputSchema, AppError, scoreToVerdict, type AgentDebateOutput, type CreateActionRequest, type CreateActionResponse, type CreateDecisionRequest, type DecisionResponse, type EditMessageDraftRequest, type EditMessageDraftResponse, type OverrideDecisionRequest, type OverrideDecisionResponse, type PolicyFlag, type ShareDecisionResponse } from "@argus/shared";
 import type { AuthContext } from "../../middleware/auth.js";
 import { runAgentDebate } from "../../agents/orchestrator.js";
+import { runAgentDebateWithController } from "../../agents/execution-runtime.js";
 import { buildDecisionContext } from "../../agents/decision-context-builder.js";
 import { observePromptCaching } from "../../agents/prompt-cache-shadow.js";
 import { recordDecisionStateShadow } from "../../agents/decision-state-shadow.js";
@@ -283,7 +284,18 @@ export async function createDecision(
       }
     }
 
-    const debate = await runAgentDebate(context);
+    // Execution Runtime v1 Phase 1 (env.EXECUTION_RUNTIME_V1, default
+    // false) -- runAgentDebateWithController returns the exact same
+    // {output, processingTimeMs, usage} shape as runAgentDebate, so nothing
+    // below this branch needs to know which path ran.
+    const debate = env.EXECUTION_RUNTIME_V1
+      ? await runAgentDebateWithController(context, {
+          teamId: request.context.teamId,
+          userId: request.context.userId,
+          prospectId: prospect.id,
+          prospectName: prospect.name,
+        })
+      : await runAgentDebate(context);
     output = debate.output;
     processingTimeMs = debate.processingTimeMs;
     usage = debate.usage;

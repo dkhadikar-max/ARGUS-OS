@@ -2,16 +2,8 @@ import { logger } from "../lib/logger.js";
 import { buildDecisionState, type BuildDecisionStateInput } from "./decision-state.js";
 import { decide, DEFAULT_CONTROLLER_POLICY } from "./controller.js";
 import { computeExpectedUtility } from "./expected-utility.js";
-import { deriveBudgetSnapshot } from "./budget-manager.js";
+import { deriveBudgetSnapshot, NO_REAL_COMPLEXITY_SCORE_AVAILABLE } from "./budget-manager.js";
 import type { CapabilityOutputsByStage } from "./reasoning-capability.js";
-
-// No real Decision Complexity score is computed synchronously at decision-
-// creation time -- the Decision Complexity Engine (complexity/decision-
-// complexity.ts) is consumed asynchronously by complexity-training-data.
-// repository.ts against already-completed decisions+outcomes, not available
-// here. 0 is the minimum, most conservative allocation this shadow
-// observation can honestly use, not a fabricated estimate.
-const NO_REAL_COMPLEXITY_SCORE_AVAILABLE = 0;
 
 /**
  * Controller & Capability Specification v3.0 -- records a DecisionState

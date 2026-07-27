@@ -6,7 +6,7 @@ import {
   FN_REDUCTION_VALUE_USD,
   calculateInferenceCostUsd,
 } from "./decision-value.service.js";
-import type { DecisionAgentInput, TokenUsageAccumulator } from "./orchestrator.js";
+import type { DecisionAgentInput, StageOutputs, TokenUsageAccumulator } from "./orchestrator.js";
 import { SALES_LEAD_QUALIFICATION_PACK } from "./decision-pack.js";
 
 // Controller & Capability Specification v3.0, Phase 1 -- recommended scope
@@ -52,9 +52,15 @@ export interface RawCost {
 export interface StateTransition {
   fromVersion: number;
   toVersion: number;
-  /** No real ControllerAction enum exists yet (no Controller). This one
-   *  literal value is all Phase 1 ever produces. */
-  action: "run_fixed_pipeline";
+  /** "run_fixed_pipeline" is every real decision's root transition (the
+   *  fixed 5-stage pipeline, Phase 1's only literal). "invoke_capability"
+   *  is Execution Runtime v1's one real non-root transition: a genuine
+   *  extra stage re-invocation the Controller's decide() actually
+   *  recommended (see execution-runtime.ts) -- not every ControllerAction
+   *  produces a new state, only ones that actually did more real work.
+   *  "stop"/"continue"/"escalate" don't append a version because nothing
+   *  new was actually run. */
+  action: "run_fixed_pipeline" | "invoke_capability";
   timestamp: string;
   latencyMs: number;
   cost: RawCost;
@@ -148,6 +154,12 @@ export interface BuildDecisionStateInput {
   usage: TokenUsageAccumulator;
   processingTimeMs: number;
   verdict: Verdict;
+  /** Real count of distinct reasoning stages actually run for this
+   *  decision. Defaults to 5 -- every decision built through the fixed
+   *  pipeline (runAgentDebate) genuinely runs exactly 5 stages. Only
+   *  Execution Runtime v1's invoke_capability path (one real extra stage
+   *  re-invocation) ever passes a different value. */
+  reasoningDepth?: number;
 }
 
 /** Builds the single (version 0, root) DecisionState for one real,
@@ -160,7 +172,7 @@ export function buildDecisionState(input: BuildDecisionStateInput): DecisionStat
     tokens: input.usage.inputTokens + input.usage.outputTokens,
     latencyMs: input.processingTimeMs,
     costUsd: calculateInferenceCostUsd(input.usage.inputTokens, input.usage.outputTokens),
-    reasoningDepth: 5,
+    reasoningDepth: input.reasoningDepth ?? 5,
   };
 
   const transition: StateTransition = {
@@ -217,6 +229,147 @@ export function buildDecisionState(input: BuildDecisionStateInput): DecisionStat
     verdict: { label: input.verdict, confidence: input.output.judge.confidence },
     action: input.output.judge.recommended_action,
     explanation: input.output.judge.reasoning,
+
+    outcome: undefined,
+    controllerMemory: {},
+
+    metadata: { latencySoFarMs: input.processingTimeMs, packId: SALES_LEAD_QUALIFICATION_PACK.id, capturedAt: createdAt },
+  };
+}
+
+export interface BuildInterimDecisionStateInput {
+  decisionId: string;
+  teamId: string;
+  userId: string;
+  prospectId: string;
+  prospectName: string;
+  input: DecisionAgentInput;
+  /** Whichever real stage outputs exist so far. Execution Runtime v1's one
+   *  real checkpoint calls this after research/icp/intent/risk (all four
+   *  present); typed as StageOutputs (all optional) rather than requiring
+   *  all four so this stays honestly reusable for an earlier checkpoint. */
+  stageOutputs: StageOutputs;
+  usage: TokenUsageAccumulator;
+  processingTimeMs: number;
+  reasoningDepth: number;
+  /** Omit for a real root (version 0, no parent) -- Execution Runtime v1's
+   *  one real non-root use passes the parent checkpoint's own version +
+   *  transitionHash after a genuine invoke_capability re-run, following
+   *  decision-state-graph.ts's own hash-chaining convention exactly. */
+  parent?: { version: number; transitionHash: string };
+  transitionAction?: StateTransition["action"];
+  transitionRationale?: string;
+}
+
+// A completed decision's Judge output doesn't exist yet at an interim
+// checkpoint -- Verdict (STRONG_YES/YES/WAIT/PASS/HARD_PASS) is an LLM
+// judgment, not a formula this codebase can honestly compute from partial
+// stage data (Judge is the only place that ever produces a weighted_score/
+// verdict; there is no deterministic combination of research/icp/intent/
+// risk's own scores that would produce one without fabricating new
+// business logic). WAIT is used below as an explicit, documented
+// placeholder -- the verdict band that already means "insufficient
+// signal" -- with confidence 0, NOT a claim that the model said WAIT.
+// Consequence: computeExpectedUtility's gain()/loss() (and therefore
+// ControllerDecision.utilityEstimate, computed inside controller.ts's
+// decide()) are NOT meaningful for an interim state -- only
+// confidence.overall (derived below from real per-stage confidences, a
+// completely separate DecisionState field) drives decide()'s actual
+// branching logic.
+const INTERIM_VERDICT_PLACEHOLDER: { label: Verdict; confidence: number } = { label: "WAIT", confidence: 0 };
+
+/**
+ * Builds a mid-pipeline DecisionState checkpoint -- Execution Runtime v1's
+ * (execution-runtime.ts) one real use of a DecisionState for a decision
+ * that ISN'T complete yet. Deliberately a separate function from
+ * buildDecisionState, not an optional-output overload of it:
+ * buildDecisionState's own contract ("the single (version 0, root)
+ * DecisionState for one real, already-completed decision... never called
+ * mid-decision") stays completely unchanged by this addition.
+ */
+export function buildInterimDecisionState(input: BuildInterimDecisionStateInput): DecisionState {
+  const createdAt = new Date().toISOString();
+  const rawCost: RawCost = {
+    tokens: input.usage.inputTokens + input.usage.outputTokens,
+    latencyMs: input.processingTimeMs,
+    costUsd: calculateInferenceCostUsd(input.usage.inputTokens, input.usage.outputTokens),
+    reasoningDepth: input.reasoningDepth,
+  };
+
+  const completedConfidences = [
+    input.stageOutputs.research?.confidence,
+    input.stageOutputs.icp?.confidence,
+    input.stageOutputs.intent?.confidence,
+    input.stageOutputs.risk?.confidence,
+  ].filter((c): c is number => c !== undefined);
+
+  // Real, not fabricated -- the mean of whatever real per-stage confidence
+  // values exist so far. 0 only if genuinely nothing has completed yet.
+  const overallConfidence =
+    completedConfidences.length > 0 ? completedConfidences.reduce((a, b) => a + b, 0) / completedConfidences.length : 0;
+
+  // A real proxy for agentConsensus, computed from the actual spread
+  // between completed stages' own confidences -- not a Judge-computed
+  // consensus (that doesn't exist yet). Documented as a proxy the same way
+  // controller.ts's own isStuck already documents itself as one for
+  // "stuck." Thresholds are explicit, non-spec placeholders, same honest
+  // treatment as controller.ts's own confidenceThreshold.
+  const spread = completedConfidences.length > 1 ? Math.max(...completedConfidences) - Math.min(...completedConfidences) : 0;
+  const agentConsensus: "high" | "medium" | "low" = spread > 30 ? "low" : spread > 15 ? "medium" : "high";
+
+  const version = input.parent ? input.parent.version + 1 : 0;
+  const parentStateId = input.parent ? input.parent.transitionHash : null;
+
+  const transition: StateTransition = {
+    fromVersion: input.parent?.version ?? 0,
+    toVersion: version,
+    action: input.transitionAction ?? "run_fixed_pipeline",
+    timestamp: createdAt,
+    latencyMs: input.processingTimeMs,
+    cost: rawCost,
+    rationale:
+      input.transitionRationale ??
+      `Execution Runtime v1 interim checkpoint after ${completedConfidences.length} real stage(s); Judge has not run yet.`,
+  };
+
+  return {
+    id: input.decisionId,
+    version,
+    parentStateId,
+    transitionHash: computeTransitionHash(parentStateId ?? "", transition),
+    createdAt,
+    transition,
+
+    packId: SALES_LEAD_QUALIFICATION_PACK.id,
+    teamId: input.teamId,
+    userId: input.userId,
+
+    objective: {
+      value: {
+        baseValue: AVG_DEAL_SIZE_USD,
+        falsePositiveCost: FP_REDUCTION_VALUE_USD,
+        falseNegativeCost: FN_REDUCTION_VALUE_USD,
+        timeHorizonHours: null,
+        timeDecayRate: null,
+      },
+    },
+
+    subject: { prospectId: input.prospectId, prospectName: input.prospectName },
+    context: input.input,
+
+    evidence: { nodes: [], edges: [] },
+    evidenceGaps: [],
+    reasoningHistory: [],
+    activeCapabilities: [],
+
+    confidence: { overall: overallConfidence, agentConsensus, trajectory: null },
+    disagreements: [],
+
+    budget: { raw: rawCost },
+
+    verdict: INTERIM_VERDICT_PLACEHOLDER,
+    action: "pending_judge",
+    explanation: "Interim checkpoint -- Judge has not run yet (Execution Runtime v1).",
 
     outcome: undefined,
     controllerMemory: {},

@@ -1,5 +1,14 @@
 import type { DecisionObjectiveValue, RawCost } from "./decision-state.js";
 
+// No real Decision Complexity score is computed synchronously at decision-
+// creation time -- the Decision Complexity Engine (complexity/decision-
+// complexity.ts) is consumed asynchronously by complexity-training-data.
+// repository.ts against already-completed decisions+outcomes, not
+// available to any real-time caller. 0 is the minimum, most conservative
+// allocate() input any real-time caller (decision-state-shadow.ts,
+// execution-runtime.ts) can honestly use -- not a fabricated estimate.
+export const NO_REAL_COMPLEXITY_SCORE_AVAILABLE = 0;
+
 // Controller & Capability Specification v3.0, Phase 2 -- scoped per the
 // gap analysis: normalization functions only (normalizeCost/
 // denormalizeCost/allocate), plus deriveBudgetSnapshot (added once

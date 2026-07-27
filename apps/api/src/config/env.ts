@@ -116,6 +116,19 @@ const envSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((v) => v === "true"),
+
+  // Execution Runtime v1, Phase 1 (docs/ARCHITECTURE_V4.md) -- gates
+  // running one real Controller cycle (stage -> state -> controller ->
+  // next stage) after Research/ICP/Intent/Risk, before Judge, instead of
+  // always calling Judge immediately (see agents/execution-runtime.ts).
+  // Default false: the existing fixed pipeline (runAgentDebate) stays the
+  // default path. When true, decision.service.ts calls
+  // runAgentDebateWithController instead -- same
+  // {output, processingTimeMs, usage} shape, so nothing downstream changes.
+  EXECUTION_RUNTIME_V1: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
 });
 
 export type Env = z.infer<typeof envSchema>;

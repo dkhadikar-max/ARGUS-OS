@@ -303,16 +303,143 @@ against reality, never force the code to match the document" rule.
   capability-selection score") is deliberately not built — `controller.ts`'s
   real `decide()` has no such score to compare against.
 
-**Deliberately not done**: actually *executing* a Controller loop —
-invoking a capability again and appending a new `DecisionState` version
-mid-decision — is a separate, unstarted milestone (`decide()`'s decision
-logic is real and covers `continue`/`invoke_capability`, but nothing calls
-it before a decision completes, and nothing acts on its output; wiring that
-in changes runtime behavior and needs its own explicit authorization,
-independent of cost). Also not done: oscillation/progress detection (needs
-real multi-round history), `ControllerPolicy` training, a second
-`DecisionPack`, and Decision State Graph branching
-(`getBranchPoint`/`replay`/`branchAt`). All of these need either a real
-iterative round to exist in production or a product decision that hasn't
-been made — building any of them now would mean simulating something that
-isn't real yet.
+**Deliberately not done** (superseded in part by Execution Runtime v1
+below, which executes exactly one real Controller cycle behind a flag):
+a real multi-round Controller *loop* (deciding again after a re-invocation,
+not just once); oscillation/progress detection (needs real multi-round
+history); `ControllerPolicy` training; a second `DecisionPack`; and
+Decision State Graph branching (`getBranchPoint`/`replay`/`branchAt`). All
+of these need either more real iterative rounds to exist in production or a
+product decision that hasn't been made — building any of them now would
+mean simulating something that isn't real yet.
+
+## Execution Runtime v1
+
+The Controller & Capability Spec v3.0 work above proved something concrete:
+against every real decision, `controller.ts`'s `decide()` always returned
+`"stop"`, because `deriveBudgetSnapshot`'s `remainingReasoning` was always
+exactly `5 − 5 = 0`. That's not a Controller bug — it's proof the runtime
+itself was still shaped like this, with the Controller sitting entirely
+*after* the pipeline, never in a position to influence it:
+
+```mermaid
+flowchart LR
+  R[Research] --> I[ICP + Intent] --> K[Risk] --> J[Judge] --> D[Done]
+  D -.shadow only, post-hoc.-> C[Controller decide]
+```
+
+Execution Runtime v1 is the architectural pivot: the Controller moves
+*inside* the loop, between real stages, instead of only observing after all
+of them finish.
+
+### Runtime interfaces
+
+```ts
+// execution-runtime.ts
+interface ExecutionIdentity {
+  teamId: string;
+  userId: string;
+  prospectId: string;
+  prospectName: string;
+}
+
+interface ExecutionRuntimeResult {
+  output: AgentDebateOutput;        // identical shape to runAgentDebate's own return
+  processingTimeMs: number;
+  usage: TokenUsageAccumulator;
+  executionTrace: {                 // additive -- existing callers can ignore this
+    graph: DecisionStateGraph;
+    controllerDecision: ControllerDecision;
+  };
+}
+
+function runAgentDebateWithController(
+  input: DecisionAgentInput,
+  identity: ExecutionIdentity,
+  policy?: ControllerPolicy,
+): Promise<ExecutionRuntimeResult>;
+```
+
+Everything `decide()` needs (`DecisionState`, `BudgetSnapshot`,
+`CapabilityOutputsByStage`) is built from data this one function already
+has in hand — no new persistence, no new service.
+
+### State transition diagram (Phase 1: exactly one real cycle)
+
+```mermaid
+flowchart TD
+  Start([runAgentDebateWithController]) --> Stages["runStagesResearchThroughRisk\n(unchanged: Research -> ICP+Intent -> Risk)"]
+  Stages --> V0["buildInterimDecisionState\nversion 0, WAIT/0 placeholder verdict,\nconfidence.overall = real mean of 4 stage confidences,\nreasoningDepth = 4"]
+  V0 --> Budget["deriveBudgetSnapshot\n(unchanged) -> remainingReasoning = 5-4 = 1"]
+  Budget --> Decide["controller.ts decide()\n(unchanged, pure)"]
+  Decide -->|stop / continue / escalate| Judge
+  Decide -->|invoke_capability targetCapability| Reinvoke["reinvokeStage(targetCapability)\none real extra LLM call"]
+  Reinvoke --> V1["buildInterimDecisionState\nversion 1, parent = V0.transitionHash,\naction: invoke_capability, reasoningDepth = 5"]
+  V1 --> Append["appendState(graph, V1)\ndecision-state-graph.ts's real integrity checks"]
+  Append --> Judge["Judge stage\n(unchanged buildStagePrompt/callAgent)"]
+  Judge --> Output["agentDebateOutputSchema.parse(...)\nsame shape as runAgentDebate"]
+```
+
+Only one cycle runs — after an `invoke_capability` re-run, Judge always
+follows next. A second `decide()` call after the re-run (a real loop, not
+one cycle) is explicitly future work, not built here.
+
+### Minimal migration plan
+
+1. **Phase 1 (this)** — flagged (`EXECUTION_RUNTIME_V1`, default `false`),
+   exactly one controller cycle, real confidence-gap detection from the
+   4 stages' own self-reported confidence, real `DecisionStateGraph`
+   versioning for the one possible extra stage. Existing pipeline
+   (`runAgentDebate`) is untouched and stays the default.
+2. **Phase 2 (not built)** — loop the cycle: after an `invoke_capability`
+   re-run, call `decide()` again (bounded by `BudgetSnapshot`/policy) instead
+   of always proceeding straight to Judge.
+3. **Phase 3 (not built)** — let `escalate` and `continue` actually change
+   downstream behavior (today both fall through to Judge unchanged — Phase 1
+   has no human-handoff delivery mechanism to route `escalate` to, and a
+   decision with no verdict at all is worse than one that proceeds).
+4. **Phase 4 (not built)** — replace `FIXED_PIPELINE_REASONING_STEPS = 5` as
+   the budget metric with a real capability-cost/utility-based one (flagged
+   by the user's own review as a deliberate later change, not a Phase 1 gap:
+   one expensive capability can cost the same budget as three cheap ones).
+
+### Compatibility strategy
+
+- `agentDebateOutputSchema.parse(...)` validates the final output
+  identically on both paths — same schema, same shape. Fixtures/tests are
+  unaffected when the flag is off (its default).
+- Research/ICP/Intent/Risk/Judge all run through the exact same
+  `buildStagePrompt`/`callAgent`/tool/schema/`maxTokens` the fixed pipeline
+  already uses — `execution-runtime.ts` calls them, never reimplements them.
+- `controller.ts`'s `decide()` is called completely unmodified — this is
+  the same pure function `controller.test.ts` already verifies in isolation,
+  not a fork of its logic.
+- Judge always runs last, on whatever `StageOutputs` resulted (4 originals,
+  or 3 originals + 1 real refreshed stage) — never skipped, so every
+  decision still gets a real verdict.
+- `decision.service.ts`'s only change is a 6-line branch on
+  `env.EXECUTION_RUNTIME_V1`; everything after that branch (verdict
+  derivation, policy flags, decision-value math, persistence) is completely
+  unaware which path ran, since both return the same
+  `{output, processingTimeMs, usage}` shape.
+- `buildDecisionState`'s existing contract is untouched (`reasoningDepth`
+  is a new *optional* field, defaulting to `5`) — every existing call site
+  and test keeps its old behavior exactly.
+
+### What's honestly not solved
+
+`buildInterimDecisionState` (`decision-state.ts`) needs a `verdict` field to
+exist, but Verdict is an LLM judgment, not a formula this codebase can
+compute from partial stage data — there's no real combination of
+research/icp/intent/risk's own scores that produces one without fabricating
+new business logic. It uses an explicit, documented placeholder (`{label:
+"WAIT", confidence: 0}`), which means `ControllerDecision.utilityEstimate`
+is not meaningful at the interim checkpoint — only `confidence.overall`
+(a real mean of the 4 stages' own confidences), the real `BudgetSnapshot`,
+and the real per-capability confidences actually drive `decide()`'s
+branching there. Confirmed working end-to-end in
+`execution-runtime.test.ts`: a real confidence gap (one stage mocked low,
+others high) correctly produces `invoke_capability`, a real second LLM call
+for that one stage, a real version-1 `DecisionState` chained onto version 0
+via `decision-state-graph.ts`'s own integrity checks, and a final output
+that reflects the second call's result, not the first.
