@@ -251,6 +251,14 @@ export const JUDGE_AGENT_PROMPT = `<agent name="judge">
   personalization_hooks an empty array, tone set to a plausible value --
   never return message as a plain string, and never omit any of its
   four required fields
+- linkedin and email may BOTH be null ONLY when recommended_action is
+  pass_and_move_on. For every other recommended_action (message_now/
+  research_more/wait_for_signal), at least one of linkedin or email must
+  be non-null -- even a shorter, more tentative message referencing
+  whatever signal does exist, rather than leaving both empty. If you
+  genuinely have nothing to say until more signal arrives, set
+  recommended_action to pass_and_move_on rather than research_more or
+  wait_for_signal with no message to accompany it
 - If verdict is PASS/HARD_PASS, explain what would change the verdict
 - Respect user preferences: if user prefers short messages, keep under 100 words
 </constraints>
