@@ -16,6 +16,8 @@
     "eval:compare-candidates": "tsx eval/compare-candidates.ts",
     "eval:run-model-routing": "tsx eval/run-model-routing.ts",
     "eval:compare-model-routing": "tsx eval/compare-model-routing.ts",
+    "eval:run-execution-runtime": "tsx eval/run-execution-runtime.ts",
+    "eval:compare-execution-runtime": "tsx eval/compare-execution-runtime.ts",
     "eval:snapshot-prompt-migration": "tsx eval/snapshot-prompt-migration.ts"
   },
   "dependencies": {
