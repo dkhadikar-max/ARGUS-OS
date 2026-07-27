@@ -26,12 +26,16 @@ import {
 import type { ToolSchema } from "./providers/types.js";
 import type { LLMProvider } from "./providers/llm-provider.interface.js";
 import { ClaudeProvider } from "./providers/claude-provider.js";
+import { CircuitBreakerProvider } from "./providers/circuit-breaker-provider.js";
 
 // v4 roadmap Phase 1: the only LLM call site in the pipeline goes through
 // this interface now, not a direct Anthropic SDK call -- see
 // providers/llm-provider.interface.ts for why (and why there's still only
-// one implementation).
-const llmProvider: LLMProvider = new ClaudeProvider();
+// one implementation). Bug fix (Critical #7): wrapped in a real circuit
+// breaker (module-level singleton, so its state is genuinely shared across
+// every request in this process) -- see circuit-breaker-provider.ts's own
+// module comment for what this does and doesn't fix.
+const llmProvider: LLMProvider = new CircuitBreakerProvider(new ClaudeProvider());
 
 /** Inputs referenced by the `{{placeholder}}` tokens across §8.3-§8.7. */
 export interface DecisionAgentInput {
