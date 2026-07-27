@@ -293,14 +293,39 @@ export async function createDecision(
     // false) -- runAgentDebateWithController returns the exact same
     // {output, processingTimeMs, usage} shape as runAgentDebate, so nothing
     // below this branch needs to know which path ran.
-    const debate = env.EXECUTION_RUNTIME_V1
-      ? await runAgentDebateWithController(context, {
-          teamId: request.context.teamId,
-          userId: request.context.userId,
-          prospectId: prospect.id,
-          prospectName: prospect.name,
-        })
-      : await runAgentDebate(context);
+    let debate: Awaited<ReturnType<typeof runAgentDebate>>;
+    try {
+      debate = env.EXECUTION_RUNTIME_V1
+        ? await runAgentDebateWithController(context, {
+            teamId: request.context.teamId,
+            userId: request.context.userId,
+            prospectId: prospect.id,
+            prospectName: prospect.name,
+          })
+        : await runAgentDebate(context);
+    } catch (err) {
+      // Bug fix (Critical #2): orchestrator.ts/execution-runtime.ts now
+      // attach the real usage accumulated before the failure to any
+      // AppError they throw (attachUsageAndRethrow) -- this is the one
+      // place that usage becomes a real, queryable trace instead of
+      // disappearing with the rejected promise. Rethrown unchanged
+      // afterward: this fix records the spend, it does not change what the
+      // caller of createDecision sees or how the request fails.
+      if (err instanceof AppError && err.extra?.usage) {
+        const failedUsage = err.extra.usage as { inputTokens: number; outputTokens: number };
+        logger.error(
+          {
+            err,
+            prospectId: prospect.id,
+            teamId: request.context.teamId,
+            usage: failedUsage,
+            inferenceCostUsd: calculateInferenceCostUsd(failedUsage.inputTokens, failedUsage.outputTokens),
+          },
+          "Decision generation failed after real API spend -- no Decision row created, cost recorded here",
+        );
+      }
+      throw err;
+    }
     output = debate.output;
     processingTimeMs = debate.processingTimeMs;
     usage = debate.usage;

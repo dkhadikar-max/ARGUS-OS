@@ -229,6 +229,20 @@ export async function callAgent<T>(
   );
 }
 
+// Bug fix (Critical #2): callAgent's own AppError, once it propagates out of
+// runStagesResearchThroughRisk/runAgentDebate/runAgentDebateWithController,
+// carries no record of the real tokens already spent on stages that
+// succeeded before the failure -- decision.service.ts had no try/catch
+// around the debate call either, so that spend was recorded nowhere: real
+// money spent, zero trace. Only AppError is annotated (the only error type
+// callAgent ever throws); anything else rethrows completely unchanged.
+export function attachUsageAndRethrow(err: unknown, usage: TokenUsageAccumulator): never {
+  if (err instanceof AppError) {
+    throw new AppError(err.code, err.message, err.details, { ...err.extra, usage: { ...usage } });
+  }
+  throw err;
+}
+
 // v4 roadmap Phase 9 -- exported for the same reason callAgent is: the
 // benchmark candidates need the real tool schemas, not reconstructed
 // duplicates that could drift from these.
@@ -472,49 +486,53 @@ export async function runStagesResearchThroughRisk(
 }> {
   const usage: TokenUsageAccumulator = { inputTokens: 0, outputTokens: 0 };
 
-  // Live-tested against a real prospect: 1024/800-token budgets (a rough
-  // even split of the old combined call's 4096 across 5 sections) truncated
-  // Research's response mid-`data_points` array before it reached
-  // `confidence`/`data_gaps`, failing schema validation on both attempts and
-  // exhausting the stage's retries -- Research is explicitly asked for
-  // "8-12 specific data points" (Bible §8.3), the most content-heavy
-  // specialist stage. max_tokens is a ceiling, not a target, so being more
-  // generous here costs nothing when a stage doesn't need it.
-  const researchPrompt = buildStagePrompt("research", RESEARCH_AGENT_PROMPT, input, {});
-  const research = await callAgent(
-    researchPrompt.system,
-    researchPrompt.userPrompt,
-    RESEARCH_TOOL,
-    researchAgentOutputSchema,
-    2048,
-    usage,
-  );
+  try {
+    // Live-tested against a real prospect: 1024/800-token budgets (a rough
+    // even split of the old combined call's 4096 across 5 sections) truncated
+    // Research's response mid-`data_points` array before it reached
+    // `confidence`/`data_gaps`, failing schema validation on both attempts and
+    // exhausting the stage's retries -- Research is explicitly asked for
+    // "8-12 specific data points" (Bible §8.3), the most content-heavy
+    // specialist stage. max_tokens is a ceiling, not a target, so being more
+    // generous here costs nothing when a stage doesn't need it.
+    const researchPrompt = buildStagePrompt("research", RESEARCH_AGENT_PROMPT, input, {});
+    const research = await callAgent(
+      researchPrompt.system,
+      researchPrompt.userPrompt,
+      RESEARCH_TOOL,
+      researchAgentOutputSchema,
+      2048,
+      usage,
+    );
 
-  const icpPrompt = buildStagePrompt("icp", ICP_AGENT_PROMPT, input, { research });
-  const intentPrompt = buildStagePrompt("intent", INTENT_AGENT_PROMPT, input, { research });
-  const [icp, intent] = await Promise.all([
-    callAgent(icpPrompt.system, icpPrompt.userPrompt, ICP_TOOL, icpAgentOutputSchema, 1536, usage),
-    callAgent(intentPrompt.system, intentPrompt.userPrompt, INTENT_TOOL, intentAgentOutputSchema, 1536, usage),
-  ]);
+    const icpPrompt = buildStagePrompt("icp", ICP_AGENT_PROMPT, input, { research });
+    const intentPrompt = buildStagePrompt("intent", INTENT_AGENT_PROMPT, input, { research });
+    const [icp, intent] = await Promise.all([
+      callAgent(icpPrompt.system, icpPrompt.userPrompt, ICP_TOOL, icpAgentOutputSchema, 1536, usage),
+      callAgent(intentPrompt.system, intentPrompt.userPrompt, INTENT_TOOL, intentAgentOutputSchema, 1536, usage),
+    ]);
 
-  // Live-tested twice against a real prospect: 1536 tokens (Risk's share of
-  // the original even split) truncated mid-response on BOTH attempts, always
-  // losing the same trailing fields (time_waste_probability/
-  // mitigation_strategies/confidence) -- Risk asks for 3-5 risk objects, each
-  // with 5 text fields (category/severity/description/evidence/mitigation),
-  // which is easily as verbose as Judge's own output. Matching Judge's 2560
-  // budget rather than guessing at another intermediate number.
-  const riskPrompt = buildStagePrompt("risk", RISK_AGENT_PROMPT, input, { research, icp, intent });
-  const risk = await callAgent(
-    riskPrompt.system,
-    riskPrompt.userPrompt,
-    RISK_TOOL,
-    riskAgentOutputSchema,
-    2560,
-    usage,
-  );
+    // Live-tested twice against a real prospect: 1536 tokens (Risk's share of
+    // the original even split) truncated mid-response on BOTH attempts, always
+    // losing the same trailing fields (time_waste_probability/
+    // mitigation_strategies/confidence) -- Risk asks for 3-5 risk objects, each
+    // with 5 text fields (category/severity/description/evidence/mitigation),
+    // which is easily as verbose as Judge's own output. Matching Judge's 2560
+    // budget rather than guessing at another intermediate number.
+    const riskPrompt = buildStagePrompt("risk", RISK_AGENT_PROMPT, input, { research, icp, intent });
+    const risk = await callAgent(
+      riskPrompt.system,
+      riskPrompt.userPrompt,
+      RISK_TOOL,
+      riskAgentOutputSchema,
+      2560,
+      usage,
+    );
 
-  return { research, icp, intent, risk, usage };
+    return { research, icp, intent, risk, usage };
+  } catch (err) {
+    attachUsageAndRethrow(err, usage);
+  }
 }
 
 /**
@@ -531,16 +549,20 @@ export async function runAgentDebate(
 
   const { research, icp, intent, risk, usage } = await runStagesResearchThroughRisk(input);
 
-  const judgePrompt = buildStagePrompt("judge", JUDGE_AGENT_PROMPT, input, { research, icp, intent, risk });
-  const judge = await callAgent(
-    judgePrompt.system,
-    judgePrompt.userPrompt,
-    JUDGE_TOOL,
-    judgeAgentOutputSchema,
-    2560,
-    usage,
-  );
+  try {
+    const judgePrompt = buildStagePrompt("judge", JUDGE_AGENT_PROMPT, input, { research, icp, intent, risk });
+    const judge = await callAgent(
+      judgePrompt.system,
+      judgePrompt.userPrompt,
+      JUDGE_TOOL,
+      judgeAgentOutputSchema,
+      2560,
+      usage,
+    );
 
-  const output = agentDebateOutputSchema.parse({ research, icp, intent, risk, judge });
-  return { output, processingTimeMs: Date.now() - startedAt, usage };
+    const output = agentDebateOutputSchema.parse({ research, icp, intent, risk, judge });
+    return { output, processingTimeMs: Date.now() - startedAt, usage };
+  } catch (err) {
+    attachUsageAndRethrow(err, usage);
+  }
 }

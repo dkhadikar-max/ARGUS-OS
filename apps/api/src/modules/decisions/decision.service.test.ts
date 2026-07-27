@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { AppError, type CreateDecisionRequest } from "@argus/shared";
 import type { AuthContext } from "../../middleware/auth.js";
+import { logger } from "../../lib/logger.js";
 
 const repo = {
   upsertProspect: vi.fn(),
@@ -210,6 +211,53 @@ describe("createDecision", () => {
         action: "created",
         actorId: "user_1",
       }),
+    );
+  });
+
+  // Bug fix (Critical #2): before this, a debate failure propagated
+  // uncaught -- no Decision row was created AND the real tokens already
+  // spent (orchestrator.ts/execution-runtime.ts now attach them via
+  // attachUsageAndRethrow) were recorded nowhere. This proves the log now
+  // captures the real cost, and that the fix does not change what the
+  // caller of createDecision sees -- the same error still rejects the call.
+  it("logs the real cost of a failed decision and still rejects with the original error", async () => {
+    repo.upsertProspect.mockResolvedValue({
+      id: "prospect_1",
+      name: "Sarah Chen",
+      title: "VP Engineering",
+      companyName: "DataFlow Inc.",
+      companyDomain: "dataflow.io",
+      linkedInUrl: request.prospect.linkedInUrl,
+      companySize: null,
+      companyIndustry: null,
+      companyFunding: null,
+      rawProfile: null,
+      enrichedData: null,
+    });
+    repo.getActiveIcp.mockResolvedValue(null);
+    repo.getCompanyMemory.mockResolvedValue(null);
+    repo.getUserPreferences.mockResolvedValue(null);
+    repo.getProspectDecisionHistory.mockResolvedValue([]);
+    repo.getTeamOutcomeHistory.mockResolvedValue([]);
+
+    const failure = new AppError("AI_UNAVAILABLE", "Unable to generate a decision right now. Please retry shortly.", undefined, {
+      cause: "judge exhausted retries",
+      usage: { inputTokens: 600, outputTokens: 600 },
+    });
+    runAgentDebate.mockRejectedValue(failure);
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation(() => logger);
+
+    await expect(createDecision(request, auth)).rejects.toBe(failure);
+
+    expect(repo.createDecisionRecord).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prospectId: "prospect_1",
+        teamId: "team_1",
+        usage: { inputTokens: 600, outputTokens: 600 },
+        inferenceCostUsd: expect.any(Number),
+      }),
+      "Decision generation failed after real API spend -- no Decision row created, cost recorded here",
     );
   });
 

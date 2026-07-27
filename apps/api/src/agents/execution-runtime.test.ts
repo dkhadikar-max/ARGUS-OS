@@ -176,4 +176,28 @@ describe("runAgentDebateWithController", () => {
       expect(params.messages[0].content).toContain(JSON.stringify(researchOutput(80)));
     }
   });
+
+  // Bug fix (Critical #2): the real tokens spent on the 4 successful stages
+  // (and, when applicable, a real re-invocation) must not disappear when
+  // the final Judge call fails -- this is execution-runtime.ts's own use of
+  // attachUsageAndRethrow, separate from orchestrator.ts's.
+  it("attaches the real usage accumulated so far when the final Judge call exhausts its retries", async () => {
+    createMock.mockImplementation(async (params: CreateParams) => {
+      const toolName = params.tools[0].name;
+      if (toolName === "submit_judge") {
+        return toolUseResponse("submit_judge", { not: "valid" }); // always malformed
+      }
+      const outputByTool: Record<string, unknown> = {
+        submit_research: researchOutput(80),
+        submit_icp: icpOutput(80),
+        submit_intent: intentOutput(75),
+        submit_risk: riskOutput(80),
+      };
+      return toolUseResponse(toolName, outputByTool[toolName]);
+    });
+
+    await expect(runAgentDebateWithController(sampleInput, sampleIdentity)).rejects.toMatchObject({
+      extra: { usage: { inputTokens: 600, outputTokens: 600 } }, // 4 real stages + 2 judge attempts
+    });
+  });
 });

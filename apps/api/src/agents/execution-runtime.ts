@@ -8,9 +8,11 @@ import {
   riskAgentOutputSchema,
   judgeAgentOutputSchema,
   type AgentDebateOutput,
+  type JudgeAgentOutput,
 } from "@argus/shared";
 import { logger } from "../lib/logger.js";
 import {
+  attachUsageAndRethrow,
   buildStagePrompt,
   callAgent,
   runStagesResearchThroughRisk,
@@ -199,31 +201,41 @@ export async function runAgentDebateWithController(
   let graph = createDecisionStateGraph(checkpointState);
   let finalReasoningDepth = 4;
 
-  if (controllerDecision.action === "invoke_capability" && isRealStageId(controllerDecision.targetCapability)) {
-    const targetCapability = controllerDecision.targetCapability;
-    stageOutputs = await reinvokeStage(targetCapability, input, stageOutputs, usage);
-    finalReasoningDepth = 5;
+  // Bug fix (Critical #2): both the re-invocation call and the final Judge
+  // call are real, billable LLM calls that can throw after runStages
+  // ResearchThroughRisk already succeeded -- without this, the tokens spent
+  // on all 4 (or 5) real stages so far would be lost the moment either
+  // call failed, same gap orchestrator.ts's own runAgentDebate had.
+  let judge: JudgeAgentOutput;
+  try {
+    if (controllerDecision.action === "invoke_capability" && isRealStageId(controllerDecision.targetCapability)) {
+      const targetCapability = controllerDecision.targetCapability;
+      stageOutputs = await reinvokeStage(targetCapability, input, stageOutputs, usage);
+      finalReasoningDepth = 5;
 
-    const nextState = buildInterimDecisionState({
-      decisionId: executionId,
-      teamId: identity.teamId,
-      userId: identity.userId,
-      prospectId: identity.prospectId,
-      prospectName: identity.prospectName,
-      input,
-      stageOutputs,
-      usage,
-      processingTimeMs: Date.now() - startedAt,
-      reasoningDepth: finalReasoningDepth,
-      parent: { version: checkpointState.version, transitionHash: checkpointState.transitionHash },
-      transitionAction: "invoke_capability",
-      transitionRationale: `Execution Runtime v1: re-invoked "${targetCapability}" per Controller decide() (${controllerDecision.reasons.join("; ")}).`,
-    });
-    graph = appendState(graph, nextState);
+      const nextState = buildInterimDecisionState({
+        decisionId: executionId,
+        teamId: identity.teamId,
+        userId: identity.userId,
+        prospectId: identity.prospectId,
+        prospectName: identity.prospectName,
+        input,
+        stageOutputs,
+        usage,
+        processingTimeMs: Date.now() - startedAt,
+        reasoningDepth: finalReasoningDepth,
+        parent: { version: checkpointState.version, transitionHash: checkpointState.transitionHash },
+        transitionAction: "invoke_capability",
+        transitionRationale: `Execution Runtime v1: re-invoked "${targetCapability}" per Controller decide() (${controllerDecision.reasons.join("; ")}).`,
+      });
+      graph = appendState(graph, nextState);
+    }
+
+    const judgePrompt = buildStagePrompt("judge", JUDGE_AGENT_PROMPT, input, stageOutputs);
+    judge = await callAgent(judgePrompt.system, judgePrompt.userPrompt, JUDGE_TOOL, judgeAgentOutputSchema, 2560, usage);
+  } catch (err) {
+    attachUsageAndRethrow(err, usage);
   }
-
-  const judgePrompt = buildStagePrompt("judge", JUDGE_AGENT_PROMPT, input, stageOutputs);
-  const judge = await callAgent(judgePrompt.system, judgePrompt.userPrompt, JUDGE_TOOL, judgeAgentOutputSchema, 2560, usage);
 
   const output = agentDebateOutputSchema.parse({
     research: stageOutputs.research,

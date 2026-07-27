@@ -173,4 +173,46 @@ describe("runAgentDebate", () => {
     // concurrently with icp before its failure surfaced) = 4.
     expect(createMock).toHaveBeenCalledTimes(4);
   });
+
+  // Bug fix (Critical #2): before this, the real tokens spent on research
+  // and intent (both succeeded) plus icp's own 2 failed attempts (callAgent
+  // counts every attempt, not just successful ones) were lost the moment
+  // the AppError propagated -- decision.service.ts had no way to know real
+  // money was spent on a decision that never got created.
+  it("attaches the real usage accumulated before the failure to the thrown AppError", async () => {
+    createMock.mockImplementation(async (params: CreateParams) => {
+      const toolName = params.tools[0].name;
+      if (toolName === "submit_risk" || toolName === "submit_judge") {
+        throw new Error(`${toolName} should never be called once icp has exhausted its retries`);
+      }
+      if (toolName === "submit_icp") {
+        return toolUseResponse("submit_icp", { not: "valid" }); // always malformed
+      }
+      return toolUseResponse(toolName, OUTPUT_BY_TOOL[toolName]);
+    });
+
+    await expect(runAgentDebate(sampleInput)).rejects.toMatchObject({
+      extra: { usage: { inputTokens: 400, outputTokens: 400 } }, // 4 real calls x 100/100 each
+    });
+  });
+
+  // Same fix, the other throw site: all 4 real stages succeed, only Judge
+  // (outside runStagesResearchThroughRisk, inside runAgentDebate itself)
+  // exhausts its retries.
+  it("attaches usage from all 4 successful stages plus judge's failed attempts when only judge fails", async () => {
+    let judgeAttempts = 0;
+    createMock.mockImplementation(async (params: CreateParams) => {
+      const toolName = params.tools[0].name;
+      if (toolName === "submit_judge") {
+        judgeAttempts += 1;
+        return toolUseResponse("submit_judge", { not: "valid" }); // always malformed
+      }
+      return toolUseResponse(toolName, OUTPUT_BY_TOOL[toolName]);
+    });
+
+    await expect(runAgentDebate(sampleInput)).rejects.toMatchObject({
+      extra: { usage: { inputTokens: 600, outputTokens: 600 } }, // 4 real stages + 2 judge attempts
+    });
+    expect(judgeAttempts).toBe(2);
+  });
 });
