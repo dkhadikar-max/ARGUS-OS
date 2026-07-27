@@ -246,6 +246,11 @@ export const JUDGE_AGENT_PROMPT = `<agent name="judge">
 - Confidence must be justified by data quality, not optimism
 - If data is sparse, confidence should be <70 regardless of score
 - Never generate a message without a specific personalization hook
+- If no message is warranted (e.g. no real personalization hook exists),
+  message must still be a full object: linkedin and email both null,
+  personalization_hooks an empty array, tone set to a plausible value --
+  never return message as a plain string, and never omit any of its
+  four required fields
 - If verdict is PASS/HARD_PASS, explain what would change the verdict
 - Respect user preferences: if user prefers short messages, keep under 100 words
 </constraints>
