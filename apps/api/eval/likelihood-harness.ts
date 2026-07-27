@@ -8,17 +8,20 @@
  * Intent -> Risk, same order as runStagesResearchThroughRisk) so ICP/
  * Intent/Risk see a real prior-stage output, not a blank placeholder.
  *
- * Records only what a local-only run can actually measure: does each
- * stage's raw output pass its real Zod schema (researchAgentOutputSchema
- * etc, imported from @argus/shared -- not a reimplementation), latency, and
- * token counts. Deliberately does NOT compute or claim any Ollama-vs-Claude
- * comparison: checked the existing eval/runs/*.json manifests before
- * writing this file and confirmed no per-stage Claude output is cached
- * anywhere (only judge-level aggregates), so there is nothing to compare
- * against yet. Every result is labeled LOCAL_ONLY_LABEL; the real
- * comparison is queued for whenever live Claude spend is separately
- * authorized (Bible's own "When API Credits Are Exhausted" protocol), not
- * fabricated here.
+ * Frozen as the benchmark harness for evaluating local models (2026-07-27):
+ * raw mode measures the model's real output as-generated; --repair mode
+ * additionally measures a bounded, documented set of primitive coercions
+ * (JSON-array-string parsing, number/boolean-string coercion) and reports a
+ * failure taxonomy, protocol-compliance metrics, and repair attribution so
+ * future model comparisons are objective and reproducible from the same
+ * harness, not from a one-off manual report. Deliberately does NOT compute
+ * or claim any Ollama-vs-Claude comparison: checked the existing
+ * eval/runs/*.json manifests before writing this file and confirmed no
+ * per-stage Claude output is cached anywhere (only judge-level aggregates),
+ * so there is nothing to compare against yet. Every result is labeled
+ * LOCAL_ONLY_LABEL; the real comparison is queued for whenever live Claude
+ * spend is separately authorized (Bible's own "When API Credits Are
+ * Exhausted" protocol), not fabricated here.
  *
  * Zero API cost (no Anthropic calls), but NOT zero wall-clock cost: this
  * machine's real, observed generation speed is ~4 tokens/sec on CPU
@@ -32,20 +35,22 @@
  *   gets a real prior-stage input) -- except --stage=research itself,
  *   which has no dependencies and is the cheapest possible pilot.
  *
- *   --repair answers a different question than the default (raw) mode. A
- *   2-fixture raw-mode pilot (2026-07-27, llama3.2:3b) found Research
- *   failing schema validation on both fixtures, both attempts, always the
- *   same way: array-typed fields (data_points, unfair_advantages, etc)
- *   came back as JSON-stringified strings instead of real arrays. Raw mode
- *   answers "is the model's tool-call output schema-valid as-is" (what
- *   production would actually get). --repair answers "is the underlying
- *   data correct once that one known, generic mis-typing is coerced away" --
- *   it JSON.parses any tool-schema-declared array field that came back as a
- *   string, then validates the result. This is NOT silently folded into the
- *   default mode: a result recorded under --repair is a different, weaker
- *   claim (schema-valid after coercion, not schema-valid as generated) and
- *   the manifest's `mode` field and each result's `wasRepaired` flag say so
- *   explicitly.
+ *   --repair answers a different question than the default (raw) mode.
+ *   Raw mode answers "is the model's tool-call output schema-valid as-is"
+ *   (what production would actually get, via the real callAgent). --repair
+ *   answers "is the underlying data correct once a bounded set of known,
+ *   generic mis-typings are coerced away" -- see REPAIR LAYER SCOPE below
+ *   for exactly what that does and does not include. This is NOT silently
+ *   folded into the default mode: a result recorded under --repair is a
+ *   different, weaker claim (schema-valid after coercion, not schema-valid
+ *   as generated), and the manifest's `mode` field and each result's
+ *   `wasRepaired`/`repairActions` say so explicitly.
+ *
+ *   attempts/toolCallProduced are only tracked in --repair mode:
+ *   callWithRepair owns its own retry loop, so it can observe both
+ *   directly. Raw mode reuses the real production callAgent (deliberately
+ *   -- see REPAIR LAYER SCOPE) which exposes neither, so those fields are
+ *   null there rather than guessed from timing.
  */
 import { execSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -60,7 +65,7 @@ import {
   type IcpAgentOutput,
   type IntentAgentOutput,
 } from "@argus/shared";
-import type { ZodType } from "zod";
+import { ZodError, type ZodType } from "zod";
 import { RESEARCH_AGENT_PROMPT, ICP_AGENT_PROMPT, INTENT_AGENT_PROMPT, RISK_AGENT_PROMPT } from "../src/agents/prompts.js";
 import {
   callAgent,
@@ -87,25 +92,80 @@ const LOCAL_ONLY_LABEL = "LOCAL ONLY -- PENDING CLAUDE VALIDATION";
 type StageId = "research" | "icp" | "intent" | "risk";
 const ALL_STAGES: StageId[] = ["research", "icp", "intent", "risk"];
 
+// FAILURE TAXONOMY (2026-07-27, 15-fixture repair-mode pilot, llama3.2:3b):
+// A-classes are serialization-layer (the model attempted to follow the
+// contract but the wire format is wrong); B-classes are model-reasoning
+// (the model didn't produce the right data at all); C1 is protocol-layer
+// (the model ignored tool_choice forcing entirely). A2 (serialized JSON,
+// successfully coerced) isn't derived from a Zod issue -- by construction
+// of repairPrimitiveFields, ANY "expected array, received string" that
+// SURVIVES into a final failure proves the string wasn't valid JSON (it
+// would have been coerced and removed from the error set otherwise), so
+// A2's count comes from repairAttribution.json_array_parse instead. See
+// classifyIssue/classifyFailureReason below for exactly how each Zod issue
+// maps to one of these.
+type FailureClass = "A1" | "A3" | "B1" | "B2" | "B3" | "B4" | "C1";
+type TaxonomyKey = "A1" | "A2" | "A3" | "B1" | "B2" | "B3" | "B4" | "C1";
+
+type RepairActionType = "json_array_parse" | "number_coercion" | "boolean_coercion";
+interface RepairAction {
+  field: string;
+  action: RepairActionType;
+}
+
 interface StageAttemptResult {
   fixture: string;
   stage: StageId;
   ollamaModel: string;
   schemaValid: boolean;
-  /** true only in --repair mode, and only when at least one array-typed
-   *  field actually needed coercion to validate. Always false in raw mode --
-   *  raw mode never mutates the model's output. */
+  /** true only when schemaValid and at least one repair action was applied
+   *  on the winning attempt. Always false in raw mode. */
   wasRepaired: boolean;
+  /** Real Ollama calls this stage consumed. Null in raw mode -- see module
+   *  comment. */
+  attempts: number | null;
+  /** Every primitive coercion applied on the LAST attempt (winning attempt
+   *  on success, final failed attempt on failure) -- so repair attribution
+   *  reflects real usage even on records that still ultimately failed for
+   *  an unrelated field. Always [] in raw mode. */
+  repairActions: RepairAction[];
+  /** Whether the model's last attempt included a tool_use block at all,
+   *  independent of whether its contents were schema-valid. Null in raw
+   *  mode -- see module comment. */
+  toolCallProduced: boolean | null;
+  /** Derived from failureReason via classifyFailureReason -- works in both
+   *  modes, since it's pure string/JSON classification, not something that
+   *  needs callWithRepair's internal state. Empty when schemaValid. */
+  failureClasses: FailureClass[];
   /** The real underlying failure reason (AppError.extra.cause, set by
    *  callAgent, in raw mode; the last attempt's raw error in --repair mode)
    *  when schemaValid is false -- could be a Zod validation message, a
-   *  fetch/timeout error, or an HTTP error from Ollama itself; this is not
-   *  classified further, the raw message is left for a human to read. */
+   *  fetch/timeout error, or an HTTP error from Ollama itself. */
   failureReason: string | null;
   processingTimeMs: number;
   inputTokens: number;
   outputTokens: number;
   label: typeof LOCAL_ONLY_LABEL;
+}
+
+interface ProtocolMetrics {
+  /** false in raw mode: toolCallProduced isn't observable there (see
+   *  module comment), so toolCallRate is null and the two schema-valid
+   *  rates below are identical (raw mode never repairs). */
+  trackable: boolean;
+  toolCallRate: { count: number; total: number } | null;
+  schemaValidBeforeRepair: { count: number; total: number };
+  schemaValidAfterRepair: { count: number; total: number };
+}
+
+interface PipelineCompletionEntry {
+  stage: StageId;
+  fixturesAttempted: number;
+  /** null in raw mode -- see module comment. "accepted" isn't a separate
+   *  step from schemaValid: nothing downstream of schema validation exists
+   *  in this harness yet to distinguish "valid" from "accepted". */
+  toolCallsProduced: number | null;
+  schemaValid: number;
 }
 
 interface LikelihoodHarnessManifest {
@@ -116,6 +176,10 @@ interface LikelihoodHarnessManifest {
   gitCommit: string | null;
   fixtureCount: number;
   results: StageAttemptResult[];
+  failureTaxonomy: Record<TaxonomyKey, number>;
+  repairAttribution: Record<RepairActionType, number>;
+  protocolMetrics: ProtocolMetrics;
+  pipelineCompletion: PipelineCompletionEntry[];
   note: string;
 }
 
@@ -150,68 +214,146 @@ function currentGitCommit(): string | null {
   }
 }
 
-// REPAIR LAYER SCOPE (2026-07-27 pilots, raw + repair, llama3.2:3b): the
-// larger 15-fixture repair-mode run surfaced more failure shapes than the
-// original 2-fixture sample -- not just a whole array field serialized as a
-// string (Class A: `"data_points": "[...]"`) but also array *items* coming
-// back as objects instead of strings (`hidden_risks[0]` an object, not a
-// string) and numeric fields serialized as strings (`confidence: "85"`).
-// This repair layer intentionally handles ONLY the top-level Class A shape.
-// It is a **serialization repair layer, not a semantic correction layer** --
-// scoped to primitive coercion (JSON-decoding a field that should already
-// be structured data), never to inventing missing fields, interpreting
-// prose, or guessing intent. The other observed shapes (array-item type
-// mismatches, stringified numbers) are left to fail validation as-is: they
-// are either also primitive-coercion candidates for a future, explicitly
-// separate rule, or -- if the model wrote actual prose instead of the
-// expected empty/typed value -- a model-capability or prompt problem no
-// amount of repair-layer coercion should paper over. Expanding this
-// function to swallow every observed shape would make it a second
-// inference engine and defeat the point of measuring the model at all.
+// REPAIR LAYER SCOPE (frozen 2026-07-27): a serialization repair layer, NOT
+// a semantic correction layer. Scoped to primitive coercion -- JSON-decoding
+// a top-level field that should already be structured data (arrays), and
+// parsing a top-level string that should already be a number or boolean.
+// Never: inventing missing fields, interpreting prose, guessing intent, or
+// reaching into array *items* (that's Class A3, a collection-element
+// mismatch, deliberately left alone -- coercing inside nested objects
+// blurs into "guessing structure", not primitive parsing). The 15-fixture
+// pilot's B1/B2/B3/B4/C1 failures are model-reasoning or protocol problems;
+// no amount of repair-layer coercion should paper over those, and none is
+// added here beyond the two primitive types (array, number) actually
+// observed. Boolean coercion is included for symmetry with the documented
+// "primitive coercion: number parsing, boolean parsing" scope even though
+// no current tool schema has a boolean-typed field -- harmless no-op today,
+// correct if one is ever added.
 
-/** Tool-schema-declared array fields (top-level only -- the one shape the
- *  2026-07-27 pilot found llama3.2:3b mis-typing). Driven by the real
- *  ToolSchema, not a hardcoded per-stage field list, so this stays correct
- *  if RESEARCH_TOOL/ICP_TOOL/INTENT_TOOL/RISK_TOOL ever change. */
-function arrayFieldNames(tool: ToolSchema): string[] {
-  return Object.entries(tool.input_schema.properties)
-    .filter(([, def]) => typeof def === "object" && def !== null && (def as { type?: unknown }).type === "array")
-    .map(([key]) => key);
+interface PrimitiveFieldGroups {
+  arrayFields: string[];
+  numberFields: string[];
+  booleanFields: string[];
 }
 
-/** Coerces any of the given fields that came back as a JSON-stringified
- *  array (`"[\"a\",\"b\"]"`) into a real array. Leaves anything that isn't a
- *  string, or a string that isn't valid JSON, or valid JSON that isn't an
- *  array, untouched -- so schema.parse still reports the real error for
- *  shapes this doesn't understand, rather than papering over them. */
-function repairArrayFields(raw: unknown, arrayFields: string[]): { repaired: unknown; changed: boolean } {
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return { repaired: raw, changed: false };
+/** Tool-schema-declared primitive fields (top-level only). Driven by the
+ *  real ToolSchema, not a hardcoded per-stage field list, so this stays
+ *  correct if RESEARCH_TOOL/ICP_TOOL/INTENT_TOOL/RISK_TOOL ever change. */
+function primitiveFieldsByType(tool: ToolSchema): PrimitiveFieldGroups {
+  const groups: PrimitiveFieldGroups = { arrayFields: [], numberFields: [], booleanFields: [] };
+  for (const [key, def] of Object.entries(tool.input_schema.properties)) {
+    if (typeof def !== "object" || def === null) continue;
+    const type = (def as { type?: unknown }).type;
+    if (type === "array") groups.arrayFields.push(key);
+    else if (type === "number") groups.numberFields.push(key);
+    else if (type === "boolean") groups.booleanFields.push(key);
+  }
+  return groups;
+}
+
+/** Applies every in-scope coercion (see REPAIR LAYER SCOPE) and reports
+ *  exactly which fields were changed and how -- so repair attribution
+ *  reflects real, individually-attributable actions, not just a boolean. */
+function repairPrimitiveFields(raw: unknown, fields: PrimitiveFieldGroups): { repaired: unknown; actions: RepairAction[] } {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return { repaired: raw, actions: [] };
   const repaired: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
-  let changed = false;
-  for (const field of arrayFields) {
+  const actions: RepairAction[] = [];
+
+  for (const field of fields.arrayFields) {
     const value = repaired[field];
     if (typeof value !== "string") continue;
     try {
       const parsedValue: unknown = JSON.parse(value);
       if (Array.isArray(parsedValue)) {
         repaired[field] = parsedValue;
-        changed = true;
+        actions.push({ field, action: "json_array_parse" });
       }
     } catch {
-      // not valid JSON -- leave the string as-is, schema.parse will report it
+      // not valid JSON -- leave as-is, schema.parse will report the real error
     }
   }
-  return { repaired, changed };
+
+  for (const field of fields.numberFields) {
+    const value = repaired[field];
+    if (typeof value !== "string" || value.trim() === "") continue;
+    const parsedValue = Number(value);
+    if (Number.isFinite(parsedValue)) {
+      repaired[field] = parsedValue;
+      actions.push({ field, action: "number_coercion" });
+    }
+  }
+
+  for (const field of fields.booleanFields) {
+    const value = repaired[field];
+    if (typeof value !== "string") continue;
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true" || normalized === "false") {
+      repaired[field] = normalized === "true";
+      actions.push({ field, action: "boolean_coercion" });
+    }
+  }
+
+  return { repaired, actions };
+}
+
+interface ZodIssueLike {
+  code: string;
+  expected?: unknown;
+  received?: unknown;
+  path: (string | number)[];
+}
+
+/** Maps one Zod issue to a failure class. `expected === "array" && received
+ *  === "string"` is guaranteed to be B1 (semantic substitution), never A2:
+ *  repairPrimitiveFields runs on every attempt before validation, so a
+ *  genuinely JSON-serialized array would already have been coerced and
+ *  wouldn't appear as a surviving issue -- only non-JSON content reaches
+ *  schema.parse still string-typed. Nested-path type mismatches (an array
+ *  *item* wrong, not the array field itself) are A3, not A1. */
+function classifyIssue(issue: ZodIssueLike): FailureClass {
+  if (issue.code === "invalid_enum_value") return "B4";
+  if (issue.code === "custom") return "B3"; // cross-field .refine() failures
+  if (issue.code === "invalid_type") {
+    if (issue.received === "undefined") return "B2"; // required field missing entirely
+    if (issue.expected === "array" && issue.received === "string") return "B1";
+    if (issue.path.length > 1) return "A3"; // mismatch inside a nested field/array item
+    return "A1"; // top-level scalar type mismatch
+  }
+  return "B1"; // conservative default for any Zod issue code this schema set hasn't exhibited yet
+}
+
+/** Classifies a stored failureReason string back into failure classes.
+ *  Works uniformly in both modes: raw mode's AppError.extra.cause is just
+ *  callAgent's lastError.message, which for a ZodError IS the same
+ *  JSON-encoded issues array --repair mode stores directly, so this one
+ *  function covers both without needing callWithRepair's internal state. */
+function classifyFailureReason(reason: string): FailureClass[] {
+  if (/contained no tool_use block/.test(reason)) return ["C1"];
+  try {
+    const parsed: unknown = JSON.parse(reason);
+    if (Array.isArray(parsed)) {
+      return (parsed as ZodIssueLike[]).map(classifyIssue);
+    }
+  } catch {
+    // not a JSON-encoded Zod issue array (e.g. a network/timeout error) -- fall through
+  }
+  return []; // unclassified rather than silently mis-bucketed
 }
 
 const REPAIR_MAX_ATTEMPTS = 2; // mirrors callAgent's own MAX_ATTEMPTS
+
+type RepairCallOutcome<T> =
+  | { ok: true; result: T; attempts: number; repairActions: RepairAction[]; toolCallProduced: true }
+  | { ok: false; attempts: number; toolCallProduced: boolean; repairActions: RepairAction[]; failureReason: string };
 
 /** callAgent's schema.parse runs on the raw provider response with no hook
  *  to fix known-bad shapes first, and callAgent is real, shared production
  *  logic -- not something to bend for a local-model-only quirk Claude has
  *  never exhibited. This is a small, harness-only parallel to callAgent's
  *  retry loop, used only in --repair mode: same real provider.call(), but
- *  repairArrayFields runs on the raw tool input before schema.parse. */
+ *  repairPrimitiveFields runs on the raw tool input before schema.parse, and
+ *  every attempt's outcome (tool call produced or not, actions applied) is
+ *  observable -- unlike callAgent, which only exposes success/failure. */
 async function callWithRepair<T>(
   system: string,
   userPrompt: string,
@@ -221,25 +363,42 @@ async function callWithRepair<T>(
   model: string,
   provider: OllamaProvider,
   usage: { inputTokens: number; outputTokens: number },
-): Promise<{ result: T; wasRepaired: boolean }> {
-  const arrayFields = arrayFieldNames(tool);
-  let lastError: unknown;
+): Promise<RepairCallOutcome<T>> {
+  const fields = primitiveFieldsByType(tool);
+  let lastFailureReason = "";
+  let lastToolCallProduced = false;
+  let lastActions: RepairAction[] = [];
+
   for (let attempt = 1; attempt <= REPAIR_MAX_ATTEMPTS; attempt += 1) {
+    const response = await provider.call({ model, maxTokens, system, userPrompt, tool });
+    usage.inputTokens += response.inputTokens;
+    usage.outputTokens += response.outputTokens;
+
+    if (response.toolInput === null) {
+      lastToolCallProduced = false;
+      lastActions = [];
+      lastFailureReason = `${tool.name}: Ollama response contained no tool_use block`;
+      continue;
+    }
+    lastToolCallProduced = true;
+
+    const { repaired, actions } = repairPrimitiveFields(response.toolInput, fields);
+    lastActions = actions;
     try {
-      const response = await provider.call({ model, maxTokens, system, userPrompt, tool });
-      usage.inputTokens += response.inputTokens;
-      usage.outputTokens += response.outputTokens;
-      if (response.toolInput === null) {
-        throw new Error(`${tool.name}: Ollama response contained no tool_use block`);
-      }
-      const { repaired, changed } = repairArrayFields(response.toolInput, arrayFields);
       const result = schema.parse(repaired);
-      return { result, wasRepaired: changed };
+      return { ok: true, result, attempts: attempt, repairActions: actions, toolCallProduced: true };
     } catch (err) {
-      lastError = err;
+      lastFailureReason = err instanceof ZodError ? JSON.stringify(err.issues) : err instanceof Error ? err.message : String(err);
     }
   }
-  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+
+  return {
+    ok: false,
+    attempts: REPAIR_MAX_ATTEMPTS,
+    toolCallProduced: lastToolCallProduced,
+    repairActions: lastActions,
+    failureReason: lastFailureReason,
+  };
 }
 
 /** Runs one stage against Ollama (via the real callAgent in raw mode, or
@@ -262,22 +421,60 @@ async function runStage<T>(
 ): Promise<T | null> {
   const usage = { inputTokens: 0, outputTokens: 0 };
   const startedAt = Date.now();
+
+  if (repair) {
+    const outcome = await callWithRepair(system, userPrompt, tool, schema, maxTokens, model, provider, usage);
+    if (outcome.ok) {
+      results.push({
+        fixture: fixtureName,
+        stage,
+        ollamaModel: model,
+        schemaValid: true,
+        wasRepaired: outcome.repairActions.length > 0,
+        attempts: outcome.attempts,
+        repairActions: outcome.repairActions,
+        toolCallProduced: true,
+        failureClasses: [],
+        failureReason: null,
+        processingTimeMs: Date.now() - startedAt,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        label: LOCAL_ONLY_LABEL,
+      });
+      return outcome.result;
+    }
+    results.push({
+      fixture: fixtureName,
+      stage,
+      ollamaModel: model,
+      schemaValid: false,
+      wasRepaired: false,
+      attempts: outcome.attempts,
+      repairActions: outcome.repairActions,
+      toolCallProduced: outcome.toolCallProduced,
+      failureClasses: classifyFailureReason(outcome.failureReason),
+      failureReason: outcome.failureReason,
+      processingTimeMs: Date.now() - startedAt,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      label: LOCAL_ONLY_LABEL,
+    });
+    return null;
+  }
+
+  // Raw mode -- the real callAgent, same production retry/validation path.
   try {
-    const { output, wasRepaired } = repair
-      ? await callWithRepair(system, userPrompt, tool, schema, maxTokens, model, provider, usage).then((r) => ({
-          output: r.result,
-          wasRepaired: r.wasRepaired,
-        }))
-      : await callAgent(system, userPrompt, tool, schema, maxTokens, usage, model, provider).then((result) => ({
-          output: result,
-          wasRepaired: false,
-        }));
+    const output = await callAgent(system, userPrompt, tool, schema, maxTokens, usage, model, provider);
     results.push({
       fixture: fixtureName,
       stage,
       ollamaModel: model,
       schemaValid: true,
-      wasRepaired,
+      wasRepaired: false,
+      attempts: null,
+      repairActions: [],
+      toolCallProduced: null,
+      failureClasses: [],
       failureReason: null,
       processingTimeMs: Date.now() - startedAt,
       inputTokens: usage.inputTokens,
@@ -298,6 +495,10 @@ async function runStage<T>(
       ollamaModel: model,
       schemaValid: false,
       wasRepaired: false,
+      attempts: null,
+      repairActions: [],
+      toolCallProduced: null,
+      failureClasses: classifyFailureReason(failureReason),
       failureReason,
       processingTimeMs: Date.now() - startedAt,
       inputTokens: usage.inputTokens,
@@ -406,6 +607,49 @@ function stageDependsOn(target: StageId, candidate: StageId): boolean {
   return false;
 }
 
+function buildFailureTaxonomy(results: StageAttemptResult[], repairAttribution: Record<RepairActionType, number>): Record<TaxonomyKey, number> {
+  const taxonomy: Record<TaxonomyKey, number> = { A1: 0, A2: 0, A3: 0, B1: 0, B2: 0, B3: 0, B4: 0, C1: 0 };
+  for (const r of results) {
+    for (const cls of r.failureClasses) taxonomy[cls] += 1;
+  }
+  taxonomy.A2 = repairAttribution.json_array_parse; // see FAILURE TAXONOMY comment above
+  return taxonomy;
+}
+
+function buildRepairAttribution(results: StageAttemptResult[]): Record<RepairActionType, number> {
+  const attribution: Record<RepairActionType, number> = { json_array_parse: 0, number_coercion: 0, boolean_coercion: 0 };
+  for (const r of results) {
+    for (const action of r.repairActions) attribution[action.action] += 1;
+  }
+  return attribution;
+}
+
+function buildProtocolMetrics(results: StageAttemptResult[], repair: boolean): ProtocolMetrics {
+  const total = results.length;
+  const toolCallCount = results.filter((r) => r.toolCallProduced === true).length;
+  const rawValidCount = results.filter((r) => r.schemaValid && !r.wasRepaired).length;
+  const afterRepairValidCount = results.filter((r) => r.schemaValid).length;
+  return {
+    trackable: repair,
+    toolCallRate: repair ? { count: toolCallCount, total } : null,
+    schemaValidBeforeRepair: { count: rawValidCount, total },
+    schemaValidAfterRepair: { count: afterRepairValidCount, total },
+  };
+}
+
+function buildPipelineCompletion(results: StageAttemptResult[], repair: boolean): PipelineCompletionEntry[] {
+  const presentStages = new Set(results.map((r) => r.stage));
+  return ALL_STAGES.filter((s) => presentStages.has(s)).map((stage) => {
+    const stageResults = results.filter((r) => r.stage === stage);
+    return {
+      stage,
+      fixturesAttempted: stageResults.length,
+      toolCallsProduced: repair ? stageResults.filter((r) => r.toolCallProduced === true).length : null,
+      schemaValid: stageResults.filter((r) => r.schemaValid).length,
+    };
+  });
+}
+
 async function main() {
   const { model, limit, stage, repair } = parseArgs();
   const fixtures = loadFixtures(limit);
@@ -414,7 +658,7 @@ async function main() {
   console.log(
     `Running ${fixtures.length} fixture(s) against Ollama model "${model}" (local only, no Claude calls)` +
       (stage ? ` -- recording stage "${stage}" only` : " -- recording all 4 stages") +
-      (repair ? " -- REPAIR MODE (schema-valid after array-string coercion, not as generated)\n" : "\n"),
+      (repair ? " -- REPAIR MODE (schema-valid after primitive coercion, not as generated)\n" : "\n"),
   );
   console.log("This machine's observed generation speed is ~4 tokens/sec on CPU -- expect minutes per stage call.\n");
 
@@ -425,10 +669,15 @@ async function main() {
     allResults.push(...fixtureResults);
     for (const r of fixtureResults) {
       console.log(
-        `    ${r.stage}: ${r.schemaValid ? `VALID${r.wasRepaired ? " (after repair)" : ""}` : `INVALID (${r.failureReason})`} (${r.processingTimeMs}ms, ${r.inputTokens}in/${r.outputTokens}out)`,
+        `    ${r.stage}: ${r.schemaValid ? `VALID${r.wasRepaired ? " (after repair)" : ""}` : `INVALID [${r.failureClasses.join(",") || "unclassified"}] (${r.failureReason})`} (${r.processingTimeMs}ms, ${r.inputTokens}in/${r.outputTokens}out)`,
       );
     }
   }
+
+  const repairAttribution = buildRepairAttribution(allResults);
+  const failureTaxonomy = buildFailureTaxonomy(allResults, repairAttribution);
+  const protocolMetrics = buildProtocolMetrics(allResults, repair);
+  const pipelineCompletion = buildPipelineCompletion(allResults, repair);
 
   const runId = `likelihood-harness_${model.replace(/[:/]/g, "-")}_${repair ? "repair_" : ""}${new Date().toISOString().replace(/[:.]/g, "-")}`;
   const manifest: LikelihoodHarnessManifest = {
@@ -439,9 +688,13 @@ async function main() {
     gitCommit: currentGitCommit(),
     fixtureCount: fixtures.length,
     results: allResults,
+    failureTaxonomy,
+    repairAttribution,
+    protocolMetrics,
+    pipelineCompletion,
     note: `${LOCAL_ONLY_LABEL}. No Ollama-vs-Claude comparison is computed here -- no cached per-stage Claude output exists to compare against. Queued for whenever live Claude spend is separately authorized.${
       repair
-        ? " REPAIR MODE: schemaValid here means 'valid after JSON-string array coercion', a weaker claim than raw mode's 'valid as generated' -- see each result's wasRepaired flag."
+        ? " REPAIR MODE: schemaValid here means 'valid after primitive coercion', a weaker claim than raw mode's 'valid as generated' -- see each result's wasRepaired/repairActions."
         : ""
     }`,
   };
@@ -451,12 +704,16 @@ async function main() {
   writeFileSync(outPath, JSON.stringify(manifest, null, 2));
 
   const validCount = allResults.filter((r) => r.schemaValid).length;
-  const repairedCount = allResults.filter((r) => r.wasRepaired).length;
-  console.log(
-    `\n${validCount}/${allResults.length} stage calls produced schema-valid output` +
-      (repair ? ` (${repairedCount} required coercion to pass)` : "") +
-      ".",
-  );
+  console.log(`\n${validCount}/${allResults.length} stage calls produced schema-valid output.`);
+  console.log(`Failure taxonomy: ${JSON.stringify(failureTaxonomy)}`);
+  console.log(`Repair attribution: ${JSON.stringify(repairAttribution)}`);
+  if (repair) {
+    console.log(
+      `Protocol compliance: tool call ${protocolMetrics.toolCallRate?.count}/${protocolMetrics.toolCallRate?.total}, ` +
+        `schema-valid before repair ${protocolMetrics.schemaValidBeforeRepair.count}/${protocolMetrics.schemaValidBeforeRepair.total}, ` +
+        `after repair ${protocolMetrics.schemaValidAfterRepair.count}/${protocolMetrics.schemaValidAfterRepair.total}`,
+    );
+  }
   console.log(`Wrote ${outPath}`);
 }
 
