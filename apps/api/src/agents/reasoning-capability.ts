@@ -43,6 +43,13 @@ export interface CapabilityOutput<TOutputs = unknown> {
   advisory?: CapabilityAdvisory;
 }
 
+/** One CapabilityOutput per stage -- the real shape capability-shadow.ts's
+ *  observeCapabilityOutputs() produces, and controller.ts's decide() reads
+ *  (optionally) to identify a specific weak capability. Defined here, not
+ *  in capability-shadow.ts, so controller.ts doesn't have to import from an
+ *  observational/shadow-logging module to get a type it needs. */
+export type CapabilityOutputsByStage = Record<string, CapabilityOutput<Evidence[]>>;
+
 /**
  * Capability isolation (Controller spec v3.0 Section 7.1 #3): a capability
  * never calls another capability. It receives an input, does its own

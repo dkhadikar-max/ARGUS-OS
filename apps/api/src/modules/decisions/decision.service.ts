@@ -350,30 +350,36 @@ export async function createDecision(
     throw new AppError("NOT_FOUND", "Decision could not be retrieved after creation");
   }
 
-  // Controller & Capability Specification v3.0 -- shadow-only: records a
-  // DecisionState (+ Expected Utility + Controller decision) for this
-  // now-fully-known decision, and separately, real per-capability output
-  // for this prospect's real (possibly empty) existing evidence pool.
-  // Neither influences anything above; see decision-state.ts's and
-  // capability-shadow.ts's own module comments for what's real vs.
-  // structurally-present-but-empty, and why this isn't "capability
-  // selection" (nothing selects -- all 4 real capabilities always run).
+  // Controller & Capability Specification v3.0 -- shadow-only: computes
+  // real per-capability output for this prospect's real (possibly empty)
+  // existing evidence pool first, then records a DecisionState (+ Expected
+  // Utility + Controller decision) for this now-fully-known decision, with
+  // that same real CapabilityOutputsByStage wired through so decide()'s
+  // invoke_capability targeting sees real data instead of an artificially
+  // withheld undefined. Neither influences anything above; see
+  // decision-state.ts's, capability-shadow.ts's, and controller.ts's own
+  // module comments for what's real vs. structurally-present-but-empty,
+  // and why this isn't "capability selection" (nothing selects -- all 4
+  // real capabilities always run).
   if (env.RECORD_DECISION_STATE) {
-    recordDecisionStateShadow({
-      decisionId: decision.id,
-      teamId: request.context.teamId,
-      userId: request.context.userId,
-      prospectId: prospect.id,
-      prospectName: prospect.name,
-      input: context,
-      output,
-      usage,
-      processingTimeMs,
-      verdict,
-    });
-
     const evidencePool = await getEvidenceForProspect(prospect.id);
-    await observeCapabilityOutputs(decision.id, evidencePool);
+    const capabilityOutputs = await observeCapabilityOutputs(decision.id, evidencePool);
+
+    recordDecisionStateShadow(
+      {
+        decisionId: decision.id,
+        teamId: request.context.teamId,
+        userId: request.context.userId,
+        prospectId: prospect.id,
+        prospectName: prospect.name,
+        input: context,
+        output,
+        usage,
+        processingTimeMs,
+        verdict,
+      },
+      capabilityOutputs,
+    );
   }
 
   await publishTeamEvent(request.context.teamId, {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allocate, denormalizeCost, normalizeCost } from "./budget-manager.js";
+import { allocate, denormalizeCost, deriveBudgetSnapshot, normalizeCost } from "./budget-manager.js";
 import { AVG_DEAL_SIZE_USD } from "./decision-value.service.js";
 import type { DecisionObjectiveValue, RawCost } from "./decision-state.js";
 
@@ -69,5 +69,43 @@ describe("allocate", () => {
     const value = objectiveValue({ baseValue: 25000 });
     const budget = allocate(0.5, value);
     expect(budget.rawEquivalent).toEqual(denormalizeCost(budget.initial, value));
+  });
+});
+
+describe("deriveBudgetSnapshot", () => {
+  it("returns 0 remainingReasoning for every real decision -- the fixed pipeline always spends all 5 real steps", () => {
+    const snapshot = deriveBudgetSnapshot(rawCost({ reasoningDepth: 5 }), objectiveValue(), 0.5);
+    expect(snapshot.remainingReasoning).toBe(0);
+  });
+
+  it("is positive when fewer than 5 reasoning steps were spent (not reachable against real data today, but a real, correct computation)", () => {
+    const snapshot = deriveBudgetSnapshot(rawCost({ reasoningDepth: 2 }), objectiveValue(), 0.5);
+    expect(snapshot.remainingReasoning).toBe(3);
+  });
+
+  it("returns Infinity for remainingLatency when no real timeDecayRate exists -- there is no real ceiling to run out of", () => {
+    const snapshot = deriveBudgetSnapshot(rawCost(), objectiveValue({ timeDecayRate: null }), 0.5);
+    expect(snapshot.remainingLatency).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it("returns a finite remainingLatency once a real timeDecayRate exists", () => {
+    const snapshot = deriveBudgetSnapshot(rawCost(), objectiveValue({ timeDecayRate: 0.01, timeHorizonHours: 24 }), 0.5);
+    expect(Number.isFinite(snapshot.remainingLatency)).toBe(true);
+  });
+
+  it("computes remainingCost as the dollar-equivalent of the unconsumed normalized budget", () => {
+    const value = objectiveValue({ baseValue: 25000 });
+    const raw = rawCost({ costUsd: 0.116, reasoningDepth: 5 });
+    const snapshot = deriveBudgetSnapshot(raw, value, 0.5);
+    const allocated = allocate(0.5, value);
+    const consumed = normalizeCost(raw, value);
+    expect(snapshot.remainingCost).toBeCloseTo(denormalizeCost(allocated.initial - consumed, value).costUsd, 10);
+  });
+
+  it("never returns a negative remainingCost when the decision overspent its allocated budget", () => {
+    const value = objectiveValue({ baseValue: 25000 });
+    const overspentRaw = rawCost({ costUsd: 1_000_000, reasoningDepth: 5 });
+    const snapshot = deriveBudgetSnapshot(overspentRaw, value, 0);
+    expect(snapshot.remainingCost).toBe(0);
   });
 });

@@ -1,6 +1,17 @@
 import { logger } from "../lib/logger.js";
 import { buildDecisionState, type BuildDecisionStateInput } from "./decision-state.js";
-import { decide } from "./controller.js";
+import { decide, DEFAULT_CONTROLLER_POLICY } from "./controller.js";
+import { computeExpectedUtility } from "./expected-utility.js";
+import { deriveBudgetSnapshot } from "./budget-manager.js";
+import type { CapabilityOutputsByStage } from "./reasoning-capability.js";
+
+// No real Decision Complexity score is computed synchronously at decision-
+// creation time -- the Decision Complexity Engine (complexity/decision-
+// complexity.ts) is consumed asynchronously by complexity-training-data.
+// repository.ts against already-completed decisions+outcomes, not available
+// here. 0 is the minimum, most conservative allocation this shadow
+// observation can honestly use, not a fabricated estimate.
+const NO_REAL_COMPLEXITY_SCORE_AVAILABLE = 0;
 
 /**
  * Controller & Capability Specification v3.0 -- records a DecisionState
@@ -12,16 +23,27 @@ import { decide } from "./controller.js";
  * production decisions yet -- the same reasoning Phase 16 Day 5 used for
  * its own shadow observation before trusting a schema with real storage.
  *
- * Also computes and logs the real Expected Utility breakdown and
- * Controller stop/escalate decision (controller.ts) for this same state --
- * still purely observational, same flag, same zero-behavior-change
- * guarantee. This is the first place those two pieces see real (if
- * currently narrow -- see controller.ts's own module comment) production
- * shape, rather than only synthetic test fixtures.
+ * Also computes and logs the real Expected Utility breakdown and a full
+ * controller.ts decide() call (stop/continue/invoke_capability/escalate,
+ * now budget- and capability-aware) for this same state -- still purely
+ * observational, same flag, same zero-behavior-change guarantee. The
+ * BudgetSnapshot is real (budget-manager.ts's deriveBudgetSnapshot, using
+ * this decision's own real RawCost), and capabilityOutputs -- when the
+ * caller has them (decision.service.ts passes the real
+ * observeCapabilityOutputs() result) -- are real per-stage data, not a
+ * synthetic stand-in.
+ *
+ * Against every real DecisionState today, decide() always returns "stop":
+ * deriveBudgetSnapshot's remainingReasoning is always exactly 0 (the fixed
+ * 5-stage pipeline has no adaptive step budget) -- see controller.ts's own
+ * module comment. Logged anyway, to prove the full wiring against real
+ * data rather than only against controller.test.ts's synthetic fixtures.
  */
-export function recordDecisionStateShadow(input: BuildDecisionStateInput): void {
+export function recordDecisionStateShadow(input: BuildDecisionStateInput, capabilityOutputs?: CapabilityOutputsByStage): void {
   const state = buildDecisionState(input);
-  const controllerDecision = decide(state);
+  const budgetSnapshot = deriveBudgetSnapshot(state.budget.raw, state.objective.value, NO_REAL_COMPLEXITY_SCORE_AVAILABLE);
+  const controllerDecision = decide(state, budgetSnapshot, capabilityOutputs);
+  const expectedUtility = computeExpectedUtility(state, DEFAULT_CONTROLLER_POLICY.weights);
 
   logger.info(
     {
@@ -34,9 +56,12 @@ export function recordDecisionStateShadow(input: BuildDecisionStateInput): void 
       confidence: state.confidence,
       disagreements: state.disagreements,
       budget: state.budget,
+      budgetSnapshot,
       action: state.action,
       controllerAction: controllerDecision.action,
-      expectedUtility: controllerDecision.expectedUtility,
+      controllerReasons: controllerDecision.reasons,
+      controllerTargetCapability: controllerDecision.targetCapability,
+      expectedUtility,
     },
     "DecisionState shadow-recorded (Controller spec v3.0)",
   );

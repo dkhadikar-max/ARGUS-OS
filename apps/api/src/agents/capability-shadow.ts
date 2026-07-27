@@ -1,6 +1,6 @@
 import type { Evidence } from "@argus/database";
 import { logger } from "../lib/logger.js";
-import { RETRIEVER_CAPABILITIES, type CapabilityOutput } from "./reasoning-capability.js";
+import { RETRIEVER_CAPABILITIES, type CapabilityOutputsByStage } from "./reasoning-capability.js";
 import { selectBestAdvisory } from "./advisory-scoring.js";
 
 // Controller & Capability Specification v3.0 -- "shadow capability
@@ -11,8 +11,6 @@ import { selectBestAdvisory } from "./advisory-scoring.js";
 // output log against a real (possibly empty) evidence pool. Gated by the
 // same RECORD_DECISION_STATE flag as decision-state-shadow.ts; purely
 // observational, never influences the real decision.
-
-export type CapabilityOutputsByStage = Record<string, CapabilityOutput<Evidence[]>>;
 
 /**
  * Invokes all 4 real RETRIEVER_CAPABILITIES against a real evidence pool

@@ -225,14 +225,34 @@ against reality, never force the code to match the document" rule.
   per-decision time-decay rate or disagreement severity score exists
   anywhere in ARGUS), each proven correct against synthetic states with
   real-shaped data for when that data eventually exists.
-- [`controller.ts`](../apps/api/src/agents/controller.ts) — the narrowest
-  honest Controller slice: a stop/escalate `decide()` over one completed
-  `DecisionState`. No `continue`/`invoke_capability` (no real next
-  capability to invoke) and no oscillation/progress detection (needs real
-  multi-round history that doesn't exist). Against real data today,
-  `baseValue` is always the fixed $25,000 constant — below the $100K
-  escalation threshold — so `decide()` always returns `"stop"`; a real,
-  deterministic finding, not a bug.
+- [`controller.ts`](../apps/api/src/agents/controller.ts) — the full
+  stop/continue/invoke_capability/escalate `decide()`, built as a **pure
+  policy function** over `(DecisionState, BudgetSnapshot,
+  CapabilityOutputsByStage?, ControllerPolicy) -> ControllerDecision`, per
+  explicit design direction: it has no knowledge of the orchestrator, no
+  knowledge of how a `BudgetSnapshot` or `CapabilityOutputsByStage` was
+  built, and performs no execution — the signature is already the "steer a
+  decision in progress" shape, so it won't need to change on the day a real
+  Controller loop starts calling it mid-decision instead of only after one
+  completes. `ControllerDecision` carries `reasons: string[]` (independent,
+  named statements — built for debugging/replay/analytics, never one
+  concatenated sentence) and, for `invoke_capability`, a `targetCapability`
+  naming the real weakest-confidence capability. `continue` and
+  `invoke_capability` are governed by explicit, separate policy branches
+  (never a residual "else, so continue" default) — decide() is also
+  deterministic (same inputs → same output every time, tested explicitly).
+  No oscillation/progress detection yet (needs real multi-round history
+  that doesn't exist). Against real data today, `decide()` always returns
+  `"stop"`: `budget-manager.ts`'s new `deriveBudgetSnapshot()` computes
+  `remainingReasoning` as `5 − raw.reasoningDepth`, and every real decision's
+  `reasoningDepth` is always 5 (the fixed pipeline's own real step count) —
+  so `remainingReasoning` is always exactly 0, and the budget-exhausted
+  branch fires before confidence or capability-targeting logic is ever
+  reached. `continue`/`invoke_capability` are real and reachable (proven in
+  `controller.test.ts` against synthetic `BudgetSnapshot`/
+  `CapabilityOutputsByStage`) but stay dormant until a real Controller loop
+  can actually afford a next step — a real, deterministic finding, not a
+  bug.
 - [`decision-pack.ts`](../apps/api/src/agents/decision-pack.ts) — engineering
   scaffolding only, per explicit scope: formalizes the one real domain
   (`SALES_LEAD_QUALIFICATION_PACK`) ARGUS implements today, with every
@@ -243,8 +263,15 @@ against reality, never force the code to match the document" rule.
   pack, not a real second vertical.
 - [`decision-state-shadow.ts`](../apps/api/src/agents/decision-state-shadow.ts) —
   ties the above together: for every real, shadow-captured decision, also
-  computes and logs the real Expected Utility breakdown and Controller
-  decision. Still purely observational, same flag, zero behavior change.
+  derives a real `BudgetSnapshot` (`budget-manager.ts`'s
+  `deriveBudgetSnapshot`), computes the real Expected Utility breakdown, and
+  calls the full `controller.ts` `decide()` — now with real
+  `CapabilityOutputsByStage` threaded in from `decision.service.ts` (which
+  computes capability outputs once, then passes them to both
+  `capability-shadow.ts`'s own log and this call), so `invoke_capability`'s
+  targeting logic sees real per-stage confidence rather than an artificially
+  withheld `undefined`. Still purely observational, same flag, zero
+  behavior change.
 - [`capability-shadow.ts`](../apps/api/src/agents/capability-shadow.ts) —
   not "capability selection" (nothing selects; the pipeline is fixed, so
   all 4 real retriever capabilities always run) but real per-capability
@@ -276,10 +303,16 @@ against reality, never force the code to match the document" rule.
   capability-selection score") is deliberately not built — `controller.ts`'s
   real `decide()` has no such score to compare against.
 
-**Deliberately not done**: the Controller loop itself (deciding
-continue-vs-stop across real rounds), oscillation/progress detection,
-`ControllerPolicy` training, a second `DecisionPack`, and Decision State
-Graph branching (`getBranchPoint`/`replay`/`branchAt`). All of these need
-either a real iterative round to exist in production or a product decision
-that hasn't been made — building any of them now would mean simulating
-something that isn't real yet.
+**Deliberately not done**: actually *executing* a Controller loop —
+invoking a capability again and appending a new `DecisionState` version
+mid-decision — is a separate, unstarted milestone (`decide()`'s decision
+logic is real and covers `continue`/`invoke_capability`, but nothing calls
+it before a decision completes, and nothing acts on its output; wiring that
+in changes runtime behavior and needs its own explicit authorization,
+independent of cost). Also not done: oscillation/progress detection (needs
+real multi-round history), `ControllerPolicy` training, a second
+`DecisionPack`, and Decision State Graph branching
+(`getBranchPoint`/`replay`/`branchAt`). All of these need either a real
+iterative round to exist in production or a product decision that hasn't
+been made — building any of them now would mean simulating something that
+isn't real yet.
