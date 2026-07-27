@@ -1,7 +1,8 @@
 import { agentDebateOutputSchema, AppError, scoreToVerdict, type AgentDebateOutput, type CreateActionRequest, type CreateActionResponse, type CreateDecisionRequest, type DecisionResponse, type EditMessageDraftRequest, type EditMessageDraftResponse, type OverrideDecisionRequest, type OverrideDecisionResponse, type PolicyFlag, type ShareDecisionResponse } from "@argus/shared";
 import type { AuthContext } from "../../middleware/auth.js";
 import { runAgentDebate } from "../../agents/orchestrator.js";
-import { runAgentDebateWithController } from "../../agents/execution-runtime.js";
+import { runAgentDebateWithController, type ExecutionRuntimeResult } from "../../agents/execution-runtime.js";
+import type { ControllerDecision } from "../../agents/controller.js";
 import { buildDecisionContext } from "../../agents/decision-context-builder.js";
 import { observePromptCaching } from "../../agents/prompt-cache-shadow.js";
 import { recordDecisionStateShadow } from "../../agents/decision-state-shadow.js";
@@ -216,6 +217,12 @@ function toDecisionResponse(
   };
 }
 
+function isExecutionRuntimeResult(
+  debate: Awaited<ReturnType<typeof runAgentDebate>> | Awaited<ReturnType<typeof runAgentDebateWithController>>,
+): debate is ExecutionRuntimeResult {
+  return "executionId" in debate;
+}
+
 export async function createDecision(
   request: CreateDecisionRequest,
   auth: AuthContext,
@@ -337,12 +344,24 @@ export async function createDecision(
     output = debate.output;
     processingTimeMs = debate.processingTimeMs;
     usage = debate.usage;
-    // The `in` check is a correct runtime discriminant between the two real
-    // return shapes, but TS's control-flow narrowing doesn't carry it
-    // through to `debate.executionId`'s type here -- the cast reflects
-    // ExecutionRuntimeResult's own real `executionId: string` field, not an
-    // assumption.
-    executionTraceId = "executionId" in debate ? (debate.executionId as string) : null;
+    // Explicit type predicate -- more reliable here than an inline `in`
+    // check, whose narrowing TS doesn't consistently carry through a
+    // `Awaited<ReturnType<...>>`-composed union.
+    const executionResult: ExecutionRuntimeResult | null = isExecutionRuntimeResult(debate) ? debate : null;
+    executionTraceId = executionResult?.executionId ?? null;
+    // Bug fix (Critical #5): "escalate" used to be a logged no-op -- the
+    // Controller could correctly conclude a decision needs human review and
+    // nothing would happen (fell through to Judge exactly like stop/
+    // continue). Reuses the exact same best-effort Slack-alert pattern
+    // checkOverrideRateGuardrail already establishes below; never fails
+    // decision creation over a Slack outage or missing integration.
+    if (executionResult?.executionTrace.controllerDecision.action === "escalate") {
+      await notifyControllerEscalation(request.context.teamId, prospect.id, executionResult.executionTrace.controllerDecision, meta).catch(
+        (err) => {
+          logger.warn({ err, prospectId: prospect.id, teamId: request.context.teamId }, "Controller escalation notification failed");
+        },
+      );
+    }
     await setCachedDebateOutput(prospect.id, request.context.teamId, icpVersion, runtimePath, output);
   }
 
@@ -499,6 +518,44 @@ export async function getDecision(
   // More" / deep inspection calls (Bible §6.5), unlike POST's initial,
   // deliberately leaner response.
   return toDecisionResponse(decision, true);
+}
+
+// Bug fix (Critical #5): the delivery mechanism controller.ts's own
+// "escalate" action never had. Real, not a new subsystem -- reuses the
+// exact same Slack integration + audit trail checkOverrideRateGuardrail
+// below already establishes for a different guardrail. Best-effort: a
+// Slack failure here must never fail the decision that triggered it.
+// Exported (unlike checkOverrideRateGuardrail) for direct unit testing --
+// EXECUTION_RUNTIME_V1 isn't mocked anywhere in this file's test suite, so
+// driving this through createDecision's real cache-miss/debate flow isn't
+// possible without env + execution-runtime.js mocking infrastructure this
+// file doesn't have; testing the function in isolation is the honest
+// alternative to only type-checking it.
+export async function notifyControllerEscalation(
+  teamId: string,
+  prospectId: string,
+  controllerDecision: ControllerDecision,
+  meta?: RequestMeta,
+): Promise<void> {
+  await recordAudit({
+    entityType: "controller_escalation",
+    entityId: prospectId,
+    action: "escalate",
+    actorId: "system",
+    afterState: { reasons: controllerDecision.reasons, confidence: controllerDecision.confidence },
+    meta,
+  });
+
+  const slack = await resolveSlackTeamByArgusTeamId(teamId).catch(() => null);
+  if (!slack) return;
+
+  await postSlackMessage(
+    slack.botToken,
+    slack.alertChannelId,
+    `🚩 *Controller escalation:* a decision needs human review -- ${controllerDecision.reasons.join("; ")}`,
+  ).catch((err) => {
+    logger.warn({ err, teamId, prospectId }, "Controller escalation Slack alert failed; audit entry still recorded");
+  });
 }
 
 // ARGUS Unanimous Policy v2.1 "Override Rate Guardrail" (not the Bible):

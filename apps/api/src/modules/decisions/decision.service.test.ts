@@ -61,9 +61,8 @@ vi.mock("../outcomes/outcome.repository.js", () => ({ getRecentOverrideCounts })
 const getTeam = vi.fn();
 vi.mock("../teams/team.repository.js", () => ({ getTeam }));
 
-const { createDecision, getDecision, overrideDecision, recordAction, shareDecision, editMessageDraft } = await import(
-  "./decision.service.js"
-);
+const { createDecision, getDecision, overrideDecision, recordAction, shareDecision, editMessageDraft, notifyControllerEscalation } =
+  await import("./decision.service.js");
 
 const auth: AuthContext = { type: "user", userId: "user_1", teamId: "team_1", planTier: "FREE" };
 
@@ -1222,5 +1221,69 @@ describe("editMessageDraft", () => {
       body: "Hi Sarah — second edit",
       editDiff: "Hi Sarah — original",
     });
+  });
+});
+
+// Bug fix (Critical #5): controller.ts's "escalate" action used to be a
+// logged no-op. Tested directly (see notifyControllerEscalation's own
+// export comment for why) rather than through createDecision's real
+// cache-miss/debate flow.
+describe("notifyControllerEscalation", () => {
+  const escalation = {
+    action: "escalate" as const,
+    reasons: ["baseValue (150000) exceeds highValueEscalationThreshold (100000)", "1 disagreement(s)"],
+    confidence: 55,
+    utilityEstimate: -12.5,
+  };
+
+  it("records an audit entry and alerts Slack when the team has Slack connected", async () => {
+    resolveSlackTeamByArgusTeamId.mockResolvedValue({
+      argusTeamId: "team_1",
+      apiKey: "key",
+      botToken: "xoxb-real-token",
+      botUserId: "U1",
+      alertChannelId: "C123",
+    });
+    postSlackMessage.mockResolvedValue(undefined);
+
+    await notifyControllerEscalation("team_1", "prospect_1", escalation);
+
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityType: "controller_escalation",
+        entityId: "prospect_1",
+        action: "escalate",
+        actorId: "system",
+        afterState: { reasons: escalation.reasons, confidence: 55 },
+      }),
+    );
+    expect(postSlackMessage).toHaveBeenCalledWith(
+      "xoxb-real-token",
+      "C123",
+      expect.stringContaining("baseValue (150000) exceeds highValueEscalationThreshold (100000)"),
+    );
+  });
+
+  it("still records the audit entry when the team has no Slack integration connected", async () => {
+    resolveSlackTeamByArgusTeamId.mockResolvedValue(null);
+
+    await notifyControllerEscalation("team_1", "prospect_1", escalation);
+
+    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ entityType: "controller_escalation" }));
+    expect(postSlackMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not throw when the Slack alert itself fails -- audit entry still stands", async () => {
+    resolveSlackTeamByArgusTeamId.mockResolvedValue({
+      argusTeamId: "team_1",
+      apiKey: "key",
+      botToken: "xoxb-real-token",
+      botUserId: "U1",
+      alertChannelId: "C123",
+    });
+    postSlackMessage.mockRejectedValue(new Error("Slack is down"));
+
+    await expect(notifyControllerEscalation("team_1", "prospect_1", escalation)).resolves.toBeUndefined();
+    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ entityType: "controller_escalation" }));
   });
 });

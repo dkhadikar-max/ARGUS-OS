@@ -171,11 +171,15 @@ async function reinvokeStage(
  * real, unmodified controller.ts decide(). Only "invoke_capability" changes
  * what runs next (one real extra stage call, then a real version-1
  * DecisionState appended to the graph); "stop"/"continue"/"escalate" all
- * fall through to Judge as today -- Phase 1 doesn't yet have anywhere to
- * route "escalate" (no human-handoff delivery mechanism exists), and a
- * decision that stalls with no verdict is worse than one that proceeds and
- * gets logged as escalate-worthy. Judge always runs last, exactly like the
- * fixed pipeline -- a decision without a verdict isn't useful to anyone.
+ * fall through to Judge here regardless -- a decision that stalls with no
+ * verdict is worse than one that proceeds and is separately flagged. This
+ * module stays side-effect-free by design (the Controller decides, it
+ * doesn't execute -- Section 7.1's own capability-isolation principle);
+ * decision.service.ts is what reads executionTrace.controllerDecision and
+ * delivers the real escalation notification (Critical Bug #5's fix,
+ * notifyControllerEscalation) once this function returns. Judge always
+ * runs last, exactly like the fixed pipeline -- a decision without a
+ * verdict isn't useful to anyone.
  */
 export async function runAgentDebateWithController(
   input: DecisionAgentInput,
