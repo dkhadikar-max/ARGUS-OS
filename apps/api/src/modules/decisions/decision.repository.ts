@@ -92,6 +92,11 @@ export interface CreateDecisionInput {
   inferenceCostUsd?: number;
   decisionValueUsd?: number;
   valueCostRatio?: number | null;
+  // Bug fix (Critical #3): real for a decision made via Execution Runtime
+  // v1 (execution-runtime.ts's own executionId, threaded through by
+  // decision.service.ts), null/undefined for the legacy pipeline -- see
+  // schema.prisma's own comment on this column.
+  executionTraceId?: string | null;
   evidence: Array<{
     type: "FIRMOGRAPHIC" | "DEMOGRAPHIC" | "TECHNOGRAPHIC" | "INTENT" | "MARKET" | "HISTORICAL" | "DERIVED";
     source: "LINKEDIN" | "APOLLO" | "CLEARBIT" | "CRM" | "MANUAL" | "INFERRED" | "USER_INPUT";
@@ -126,6 +131,7 @@ export function createDecisionRecord(input: CreateDecisionInput) {
       inferenceCostUsd: input.inferenceCostUsd,
       decisionValueUsd: input.decisionValueUsd,
       valueCostRatio: input.valueCostRatio,
+      executionTraceId: input.executionTraceId,
       evidence: {
         create: input.evidence.map((e) => ({
           type: e.type,

@@ -71,6 +71,16 @@ export interface ExecutionRuntimeResult {
   output: AgentDebateOutput;
   processingTimeMs: number;
   usage: TokenUsageAccumulator;
+  /** Bug fix (Critical #3): the same id executionTrace.graph is keyed under
+   *  (graph.decisionId), surfaced at the top level so a caller that only
+   *  needs to persist a correlation id (decision.service.ts) doesn't have
+   *  to reach into executionTrace for it. Real, but NOT the eventual
+   *  database Decision.id -- that doesn't exist until createDecisionRecord
+   *  runs, after this returns. Callers that want the real trace should
+   *  persist this value (Decision.executionTraceId) so a real Decision row
+   *  can be correlated back to the Controller's real per-decision history
+   *  (today, only reachable via structured logs otherwise). */
+  executionId: string;
   /** Real audit trail: the DecisionState checkpoint(s) this run actually
    *  produced (one, or two if invoke_capability genuinely re-ran a stage)
    *  and the one real ControllerDecision made along the way. Additive --
@@ -261,6 +271,7 @@ export async function runAgentDebateWithController(
     output,
     processingTimeMs: Date.now() - startedAt,
     usage,
+    executionId,
     executionTrace: { graph, controllerDecision },
   };
 }

@@ -264,6 +264,11 @@ export async function createDecision(
   // not a placeholder: no new API call was made, so there's genuinely no
   // new inference cost for this request.
   let usage = { inputTokens: 0, outputTokens: 0 };
+  // Bug fix (Critical #3): null on a cache hit (honest -- reusing a prior
+  // debate's output means there's no new execution trace for THIS request)
+  // and on the legacy pipeline (runAgentDebate never produces one); real,
+  // set below only when Execution Runtime v1 actually ran.
+  let executionTraceId: string | null = null;
 
   // Hoisted above the cache-hit/miss split (pure, no side effects) so both
   // paths can feed it to the Controller-spec Phase 1 shadow state below --
@@ -292,8 +297,11 @@ export async function createDecision(
     // Execution Runtime v1 Phase 1 (env.EXECUTION_RUNTIME_V1, default
     // false) -- runAgentDebateWithController returns the exact same
     // {output, processingTimeMs, usage} shape as runAgentDebate, so nothing
-    // below this branch needs to know which path ran.
-    let debate: Awaited<ReturnType<typeof runAgentDebate>>;
+    // below this branch needs to know which path ran. Typed as a union
+    // (not narrowed to runAgentDebate's own shape) so executionId --
+    // present only on the Execution Runtime v1 result -- stays reachable
+    // for Critical #3's fix below.
+    let debate: Awaited<ReturnType<typeof runAgentDebate>> | Awaited<ReturnType<typeof runAgentDebateWithController>>;
     try {
       debate = env.EXECUTION_RUNTIME_V1
         ? await runAgentDebateWithController(context, {
@@ -329,6 +337,12 @@ export async function createDecision(
     output = debate.output;
     processingTimeMs = debate.processingTimeMs;
     usage = debate.usage;
+    // The `in` check is a correct runtime discriminant between the two real
+    // return shapes, but TS's control-flow narrowing doesn't carry it
+    // through to `debate.executionId`'s type here -- the cast reflects
+    // ExecutionRuntimeResult's own real `executionId: string` field, not an
+    // assumption.
+    executionTraceId = "executionId" in debate ? (debate.executionId as string) : null;
     await setCachedDebateOutput(prospect.id, request.context.teamId, icpVersion, runtimePath, output);
   }
 
@@ -375,6 +389,7 @@ export async function createDecision(
     inferenceCostUsd,
     decisionValueUsd: decisionValue.decisionValueUsd,
     valueCostRatio,
+    executionTraceId,
     evidence: [
       ...output.research.data_points.map((dp) => ({
         type: RESEARCH_TYPE_TO_EVIDENCE_TYPE[dp.type] ?? "DERIVED",

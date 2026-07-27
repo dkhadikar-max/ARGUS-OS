@@ -182,6 +182,10 @@ describe("createDecision", () => {
           expect.objectContaining({ type: "FIRMOGRAPHIC" }),
           expect.objectContaining({ type: "DERIVED" }),
         ],
+        // Bug fix (Critical #3): null on the legacy pipeline -- runAgentDebate's
+        // real return shape has no executionId, so there's honestly nothing
+        // to correlate a legacy-path Decision row to.
+        executionTraceId: null,
       }),
     );
     expect(result.verdict).toBe("STRONG_YES");

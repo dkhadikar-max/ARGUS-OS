@@ -576,6 +576,17 @@ model Decision {
   decisionValueUsd Float?
   valueCostRatio   Float?
 
+  // Bug fix (Critical #3): Execution Runtime v1's DecisionStateGraph was
+  // built under its own executionId (execution-runtime.ts's
+  // runAgentDebateWithController -- a real identifier minted before this
+  // Decision row exists, since decision creation happens after the debate
+  // returns), with no link back to this row -- the Controller's real
+  // per-decision history existed only in structured logs, unreachable from
+  // persisted data. Null for every decision made via the legacy pipeline
+  // (runAgentDebate never produces one); real, queryable for every decision
+  // made via Execution Runtime v1.
+  executionTraceId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

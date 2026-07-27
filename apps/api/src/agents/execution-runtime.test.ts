@@ -121,6 +121,21 @@ describe("runAgentDebateWithController", () => {
     expect(result.executionTrace.graph.states.size).toBe(1);
   });
 
+  // Bug fix (Critical #3): a caller (decision.service.ts) needs a real,
+  // stable identifier for this run's Controller trace without reaching
+  // into executionTrace's internals -- it's what gets persisted as
+  // Decision.executionTraceId so a real Decision row can be correlated
+  // back to its own Controller history.
+  it("exposes a real executionId matching the trace graph's own decisionId", async () => {
+    mockAllStagesConfident();
+
+    const result = await runAgentDebateWithController(sampleInput, sampleIdentity);
+
+    expect(typeof result.executionId).toBe("string");
+    expect(result.executionId.length).toBeGreaterThan(0);
+    expect(result.executionTrace.graph.decisionId).toBe(result.executionId);
+  });
+
   it("returns the same {output, processingTimeMs, usage} shape runAgentDebate produces, validated against the real schema", async () => {
     mockAllStagesConfident();
 
