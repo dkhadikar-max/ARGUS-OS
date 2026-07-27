@@ -80,7 +80,7 @@ export const ICP_AGENT_PROMPT = `<agent name="icp">
 {{team_icp}} — Structured ICP definition with weights
 </input>
 <instructions>
-1. Evaluate each ICP criterion (typically 5-7 criteria)
+1. Evaluate every criterion provided in {{team_icp}} — do not skip any and do not invent ones that aren't listed
 2. Score each criterion: 0 (no match), 0.5 (partial), 1 (strong match)
 3. Calculate weighted score based on criterion importance
 4. Provide explicit reasoning for each score
