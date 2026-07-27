@@ -25,12 +25,27 @@
  * (llama3.2:3b smoke test, 2026-07-27), so a full run across every fixture
  * can take hours, not minutes -- use --limit for a pilot first.
  *
- * Usage: npx tsx eval/likelihood-harness.ts [--model=llama3.2:3b] [--limit=N] [--stage=research|icp|intent|risk]
+ * Usage: npx tsx eval/likelihood-harness.ts [--model=llama3.2:3b] [--limit=N] [--stage=research|icp|intent|risk] [--repair]
  *   --stage restricts which stage(s) are RECORDED in the output manifest,
  *   but the real chain up to and including that stage still runs (e.g.
  *   --stage=risk still runs research/icp/intent first, for real, so risk
  *   gets a real prior-stage input) -- except --stage=research itself,
  *   which has no dependencies and is the cheapest possible pilot.
+ *
+ *   --repair answers a different question than the default (raw) mode. A
+ *   2-fixture raw-mode pilot (2026-07-27, llama3.2:3b) found Research
+ *   failing schema validation on both fixtures, both attempts, always the
+ *   same way: array-typed fields (data_points, unfair_advantages, etc)
+ *   came back as JSON-stringified strings instead of real arrays. Raw mode
+ *   answers "is the model's tool-call output schema-valid as-is" (what
+ *   production would actually get). --repair answers "is the underlying
+ *   data correct once that one known, generic mis-typing is coerced away" --
+ *   it JSON.parses any tool-schema-declared array field that came back as a
+ *   string, then validates the result. This is NOT silently folded into the
+ *   default mode: a result recorded under --repair is a different, weaker
+ *   claim (schema-valid after coercion, not schema-valid as generated) and
+ *   the manifest's `mode` field and each result's `wasRepaired` flag say so
+ *   explicitly.
  */
 import { execSync } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -77,11 +92,15 @@ interface StageAttemptResult {
   stage: StageId;
   ollamaModel: string;
   schemaValid: boolean;
+  /** true only in --repair mode, and only when at least one array-typed
+   *  field actually needed coercion to validate. Always false in raw mode --
+   *  raw mode never mutates the model's output. */
+  wasRepaired: boolean;
   /** The real underlying failure reason (AppError.extra.cause, set by
-   *  callAgent) when schemaValid is false -- could be a Zod validation
-   *  message, a fetch/timeout error, or an HTTP error from Ollama itself;
-   *  this is not classified further, the raw message is left for a human
-   *  to read. */
+   *  callAgent, in raw mode; the last attempt's raw error in --repair mode)
+   *  when schemaValid is false -- could be a Zod validation message, a
+   *  fetch/timeout error, or an HTTP error from Ollama itself; this is not
+   *  classified further, the raw message is left for a human to read. */
   failureReason: string | null;
   processingTimeMs: number;
   inputTokens: number;
@@ -93,23 +112,25 @@ interface LikelihoodHarnessManifest {
   runId: string;
   createdAt: string;
   ollamaModel: string;
+  mode: "raw" | "repair";
   gitCommit: string | null;
   fixtureCount: number;
   results: StageAttemptResult[];
   note: string;
 }
 
-function parseArgs(): { model: string; limit: number | null; stage: StageId | null } {
+function parseArgs(): { model: string; limit: number | null; stage: StageId | null; repair: boolean } {
   const modelArg = process.argv.find((a) => a.startsWith("--model="))?.split("=")[1];
   const limitArg = process.argv.find((a) => a.startsWith("--limit="))?.split("=")[1];
   const stageArg = process.argv.find((a) => a.startsWith("--stage="))?.split("=")[1];
   if (stageArg && !ALL_STAGES.includes(stageArg as StageId)) {
-    throw new Error("Usage: [--model=llama3.2:3b] [--limit=N] [--stage=research|icp|intent|risk]");
+    throw new Error("Usage: [--model=llama3.2:3b] [--limit=N] [--stage=research|icp|intent|risk] [--repair]");
   }
   return {
     model: modelArg ?? DEFAULT_OLLAMA_MODEL,
     limit: limitArg ? Number(limitArg) : null,
     stage: (stageArg as StageId | undefined) ?? null,
+    repair: process.argv.includes("--repair"),
   };
 }
 
@@ -129,11 +150,84 @@ function currentGitCommit(): string | null {
   }
 }
 
-/** Runs one stage against Ollama via the real callAgent (same retry/
- *  validation logic every production stage call goes through), records a
- *  StageAttemptResult either way, and returns the parsed output on success
- *  or null on failure so the caller can decide whether downstream stages
- *  in the chain can still run for real. */
+/** Tool-schema-declared array fields (top-level only -- the one shape the
+ *  2026-07-27 pilot found llama3.2:3b mis-typing). Driven by the real
+ *  ToolSchema, not a hardcoded per-stage field list, so this stays correct
+ *  if RESEARCH_TOOL/ICP_TOOL/INTENT_TOOL/RISK_TOOL ever change. */
+function arrayFieldNames(tool: ToolSchema): string[] {
+  return Object.entries(tool.input_schema.properties)
+    .filter(([, def]) => typeof def === "object" && def !== null && (def as { type?: unknown }).type === "array")
+    .map(([key]) => key);
+}
+
+/** Coerces any of the given fields that came back as a JSON-stringified
+ *  array (`"[\"a\",\"b\"]"`) into a real array. Leaves anything that isn't a
+ *  string, or a string that isn't valid JSON, or valid JSON that isn't an
+ *  array, untouched -- so schema.parse still reports the real error for
+ *  shapes this doesn't understand, rather than papering over them. */
+function repairArrayFields(raw: unknown, arrayFields: string[]): { repaired: unknown; changed: boolean } {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return { repaired: raw, changed: false };
+  const repaired: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
+  let changed = false;
+  for (const field of arrayFields) {
+    const value = repaired[field];
+    if (typeof value !== "string") continue;
+    try {
+      const parsedValue: unknown = JSON.parse(value);
+      if (Array.isArray(parsedValue)) {
+        repaired[field] = parsedValue;
+        changed = true;
+      }
+    } catch {
+      // not valid JSON -- leave the string as-is, schema.parse will report it
+    }
+  }
+  return { repaired, changed };
+}
+
+const REPAIR_MAX_ATTEMPTS = 2; // mirrors callAgent's own MAX_ATTEMPTS
+
+/** callAgent's schema.parse runs on the raw provider response with no hook
+ *  to fix known-bad shapes first, and callAgent is real, shared production
+ *  logic -- not something to bend for a local-model-only quirk Claude has
+ *  never exhibited. This is a small, harness-only parallel to callAgent's
+ *  retry loop, used only in --repair mode: same real provider.call(), but
+ *  repairArrayFields runs on the raw tool input before schema.parse. */
+async function callWithRepair<T>(
+  system: string,
+  userPrompt: string,
+  tool: ToolSchema,
+  schema: ZodType<T>,
+  maxTokens: number,
+  model: string,
+  provider: OllamaProvider,
+  usage: { inputTokens: number; outputTokens: number },
+): Promise<{ result: T; wasRepaired: boolean }> {
+  const arrayFields = arrayFieldNames(tool);
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= REPAIR_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await provider.call({ model, maxTokens, system, userPrompt, tool });
+      usage.inputTokens += response.inputTokens;
+      usage.outputTokens += response.outputTokens;
+      if (response.toolInput === null) {
+        throw new Error(`${tool.name}: Ollama response contained no tool_use block`);
+      }
+      const { repaired, changed } = repairArrayFields(response.toolInput, arrayFields);
+      const result = schema.parse(repaired);
+      return { result, wasRepaired: changed };
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+/** Runs one stage against Ollama (via the real callAgent in raw mode, or
+ *  callWithRepair in --repair mode), records a StageAttemptResult either
+ *  way, and returns the parsed output on success or null on failure so the
+ *  caller can decide whether downstream stages in the chain can still run
+ *  for real. */
 async function runStage<T>(
   fixtureName: string,
   stage: StageId,
@@ -144,17 +238,27 @@ async function runStage<T>(
   maxTokens: number,
   model: string,
   provider: OllamaProvider,
+  repair: boolean,
   results: StageAttemptResult[],
 ): Promise<T | null> {
   const usage = { inputTokens: 0, outputTokens: 0 };
   const startedAt = Date.now();
   try {
-    const output = await callAgent(system, userPrompt, tool, schema, maxTokens, usage, model, provider);
+    const { output, wasRepaired } = repair
+      ? await callWithRepair(system, userPrompt, tool, schema, maxTokens, model, provider, usage).then((r) => ({
+          output: r.result,
+          wasRepaired: r.wasRepaired,
+        }))
+      : await callAgent(system, userPrompt, tool, schema, maxTokens, usage, model, provider).then((result) => ({
+          output: result,
+          wasRepaired: false,
+        }));
     results.push({
       fixture: fixtureName,
       stage,
       ollamaModel: model,
       schemaValid: true,
+      wasRepaired,
       failureReason: null,
       processingTimeMs: Date.now() - startedAt,
       inputTokens: usage.inputTokens,
@@ -174,6 +278,7 @@ async function runStage<T>(
       stage,
       ollamaModel: model,
       schemaValid: false,
+      wasRepaired: false,
       failureReason,
       processingTimeMs: Date.now() - startedAt,
       inputTokens: usage.inputTokens,
@@ -192,6 +297,7 @@ async function runFixture(
   fixture: EvalFixture,
   model: string,
   onlyStage: StageId | null,
+  repair: boolean,
   provider: OllamaProvider,
 ): Promise<StageAttemptResult[]> {
   const results: StageAttemptResult[] = [];
@@ -210,6 +316,7 @@ async function runFixture(
         2048,
         model,
         provider,
+        repair,
         results,
       )
     : null;
@@ -230,6 +337,7 @@ async function runFixture(
           1536,
           model,
           provider,
+          repair,
           results,
         )
       : Promise.resolve(null),
@@ -244,6 +352,7 @@ async function runFixture(
           1536,
           model,
           provider,
+          repair,
           results,
         )
       : Promise.resolve(null),
@@ -262,6 +371,7 @@ async function runFixture(
     2560,
     model,
     provider,
+    repair,
     results,
   );
 
@@ -278,37 +388,43 @@ function stageDependsOn(target: StageId, candidate: StageId): boolean {
 }
 
 async function main() {
-  const { model, limit, stage } = parseArgs();
+  const { model, limit, stage, repair } = parseArgs();
   const fixtures = loadFixtures(limit);
   const provider = new OllamaProvider();
 
   console.log(
     `Running ${fixtures.length} fixture(s) against Ollama model "${model}" (local only, no Claude calls)` +
-      (stage ? ` -- recording stage "${stage}" only\n` : " -- recording all 4 stages\n"),
+      (stage ? ` -- recording stage "${stage}" only` : " -- recording all 4 stages") +
+      (repair ? " -- REPAIR MODE (schema-valid after array-string coercion, not as generated)\n" : "\n"),
   );
   console.log("This machine's observed generation speed is ~4 tokens/sec on CPU -- expect minutes per stage call.\n");
 
   const allResults: StageAttemptResult[] = [];
   for (const fixture of fixtures) {
     console.log(`  ${fixture.name} ...`);
-    const fixtureResults = await runFixture(fixture, model, stage, provider);
+    const fixtureResults = await runFixture(fixture, model, stage, repair, provider);
     allResults.push(...fixtureResults);
     for (const r of fixtureResults) {
       console.log(
-        `    ${r.stage}: ${r.schemaValid ? "VALID" : `INVALID (${r.failureReason})`} (${r.processingTimeMs}ms, ${r.inputTokens}in/${r.outputTokens}out)`,
+        `    ${r.stage}: ${r.schemaValid ? `VALID${r.wasRepaired ? " (after repair)" : ""}` : `INVALID (${r.failureReason})`} (${r.processingTimeMs}ms, ${r.inputTokens}in/${r.outputTokens}out)`,
       );
     }
   }
 
-  const runId = `likelihood-harness_${model.replace(/[:/]/g, "-")}_${new Date().toISOString().replace(/[:.]/g, "-")}`;
+  const runId = `likelihood-harness_${model.replace(/[:/]/g, "-")}_${repair ? "repair_" : ""}${new Date().toISOString().replace(/[:.]/g, "-")}`;
   const manifest: LikelihoodHarnessManifest = {
     runId,
     createdAt: new Date().toISOString(),
     ollamaModel: model,
+    mode: repair ? "repair" : "raw",
     gitCommit: currentGitCommit(),
     fixtureCount: fixtures.length,
     results: allResults,
-    note: `${LOCAL_ONLY_LABEL}. No Ollama-vs-Claude comparison is computed here -- no cached per-stage Claude output exists to compare against. Queued for whenever live Claude spend is separately authorized.`,
+    note: `${LOCAL_ONLY_LABEL}. No Ollama-vs-Claude comparison is computed here -- no cached per-stage Claude output exists to compare against. Queued for whenever live Claude spend is separately authorized.${
+      repair
+        ? " REPAIR MODE: schemaValid here means 'valid after JSON-string array coercion', a weaker claim than raw mode's 'valid as generated' -- see each result's wasRepaired flag."
+        : ""
+    }`,
   };
 
   mkdirSync(RUNS_DIR, { recursive: true });
@@ -316,7 +432,12 @@ async function main() {
   writeFileSync(outPath, JSON.stringify(manifest, null, 2));
 
   const validCount = allResults.filter((r) => r.schemaValid).length;
-  console.log(`\n${validCount}/${allResults.length} stage calls produced schema-valid output.`);
+  const repairedCount = allResults.filter((r) => r.wasRepaired).length;
+  console.log(
+    `\n${validCount}/${allResults.length} stage calls produced schema-valid output` +
+      (repair ? ` (${repairedCount} required coercion to pass)` : "") +
+      ".",
+  );
   console.log(`Wrote ${outPath}`);
 }
 
