@@ -1,7 +1,10 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import type { Evidence } from "@argus/database";
 import { observeCapabilityOutputs } from "./capability-shadow.js";
+import type { ExecutionIdentity } from "./reasoning-capability.js";
 import { logger } from "../lib/logger.js";
+
+const fakeIdentity: ExecutionIdentity = { teamId: "team_1", userId: "user_1", prospectId: "p1", prospectName: "Acme Co" };
 
 function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
@@ -26,7 +29,7 @@ describe("observeCapabilityOutputs", () => {
   it("invokes all 4 real retriever capabilities and returns their real outputs, keyed by stage", async () => {
     const pool = [makeEvidence({ id: "firmo", type: "FIRMOGRAPHIC" }), makeEvidence({ id: "intent-sig", type: "INTENT" })];
 
-    const result = await observeCapabilityOutputs("dec_1", pool);
+    const result = await observeCapabilityOutputs("dec_1", pool, fakeIdentity);
 
     expect(Object.keys(result).sort()).toEqual(["icp", "intent", "research", "risk"]);
     // ResearchRetriever's real type-scoped filter should keep only FIRMOGRAPHIC here.
@@ -34,7 +37,7 @@ describe("observeCapabilityOutputs", () => {
   });
 
   it("honestly returns confidence 0 and no evidence when the real pool is empty (a new prospect with no prior decisions)", async () => {
-    const result = await observeCapabilityOutputs("dec_1", []);
+    const result = await observeCapabilityOutputs("dec_1", [], fakeIdentity);
     for (const output of Object.values(result)) {
       expect(output.confidence).toBe(0);
       expect(output.evidenceProduced).toEqual([]);
@@ -43,7 +46,7 @@ describe("observeCapabilityOutputs", () => {
 
   it("logs a summary (confidence/evidenceCount/latencyMs) for every stage, not fabricated 'selection'", async () => {
     const infoSpy = vi.spyOn(logger, "info").mockImplementation(() => logger);
-    await observeCapabilityOutputs("dec_1", [makeEvidence()]);
+    await observeCapabilityOutputs("dec_1", [makeEvidence()], fakeIdentity);
 
     expect(infoSpy).toHaveBeenCalledTimes(1);
     const call = infoSpy.mock.calls[0] ?? [];

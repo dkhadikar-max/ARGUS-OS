@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { priorityWeight, scoreRecommendedAction, selectBestAdvisory } from "./advisory-scoring.js";
-import type { CapabilityOutput, RecommendedAction } from "./reasoning-capability.js";
+import type { CapabilityOutput, ExecutionContext, RecommendedAction } from "./reasoning-capability.js";
 import { RETRIEVER_CAPABILITIES } from "./reasoning-capability.js";
+
+const fakeCtx: ExecutionContext = {
+  identity: { teamId: "team_1", userId: "user_1", prospectId: "p1", prospectName: "Acme Co" },
+  budget: { remainingReasoning: 5, remainingLatency: 100_000, remainingCost: 10 },
+};
 
 function action(overrides: Partial<RecommendedAction> = {}): RecommendedAction {
   return {
@@ -68,7 +73,7 @@ describe("selectBestAdvisory", () => {
 
   it("returns null against real capability outputs today -- no real capability emits an advisory yet", async () => {
     const outputs = await Promise.all(
-      Object.values(RETRIEVER_CAPABILITIES).map((capability) => capability.invoke({ evidencePool: [] })),
+      Object.values(RETRIEVER_CAPABILITIES).map((capability) => capability.invoke({ evidencePool: [] }, fakeCtx)),
     );
     expect(selectBestAdvisory(outputs)).toBeNull();
   });

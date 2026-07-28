@@ -10,7 +10,7 @@ import {
 } from "./orchestrator.js";
 import { RESEARCH_AGENT_PROMPT, ICP_AGENT_PROMPT, INTENT_AGENT_PROMPT, RISK_AGENT_PROMPT, JUDGE_AGENT_PROMPT } from "./prompts.js";
 import { AVG_DEAL_SIZE_USD, FP_REDUCTION_VALUE_USD, FN_REDUCTION_VALUE_USD } from "./decision-value.service.js";
-import { RETRIEVER_CAPABILITIES } from "./reasoning-capability.js";
+import { RETRIEVER_CAPABILITIES, buildAgentStageCapabilities } from "./reasoning-capability.js";
 
 // Controller & Capability Specification v3.0 -- Decision Pack, built as
 // engineering scaffolding only (per explicit scoping): formalizes the ONE
@@ -94,3 +94,15 @@ export const SALES_LEAD_QUALIFICATION_PACK: DecisionPack = {
 export function deriveDecisionPack(base: DecisionPack, overrides: Partial<DecisionPack>): DecisionPack {
   return { ...base, ...overrides };
 }
+
+/**
+ * The 4 real agent stages (research/icp/intent/risk) for
+ * SALES_LEAD_QUALIFICATION_PACK, wrapped as ReasoningCapability via
+ * reasoning-capability.ts's buildAgentStageCapabilities. Built here, not
+ * in reasoning-capability.ts: that module already imports
+ * RETRIEVER_CAPABILITIES from this one, so importing the real
+ * SALES_LEAD_QUALIFICATION_PACK value back into reasoning-capability.ts
+ * would be a circular module dependency. Standalone and unwired, same as
+ * RETRIEVER_CAPABILITIES itself -- nothing calls this yet.
+ */
+export const AGENT_STAGE_CAPABILITIES = buildAgentStageCapabilities(SALES_LEAD_QUALIFICATION_PACK);

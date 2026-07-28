@@ -30,7 +30,7 @@ import { buildInterimDecisionState } from "./decision-state.js";
 import { decide, DEFAULT_CONTROLLER_POLICY, type ControllerDecision, type ControllerPolicy } from "./controller.js";
 import { deriveBudgetSnapshot, NO_REAL_COMPLEXITY_SCORE_AVAILABLE } from "./budget-manager.js";
 import { createDecisionStateGraph, appendState, type DecisionStateGraph } from "./decision-state-graph.js";
-import type { CapabilityOutput, CapabilityOutputsByStage } from "./reasoning-capability.js";
+import type { CapabilityOutput, CapabilityOutputsByStage, ExecutionIdentity } from "./reasoning-capability.js";
 
 // Execution Runtime v1, Phase 1 (docs/ARCHITECTURE_V4.md) -- the first real
 // (stage -> state -> controller -> next stage) cycle, replacing the fixed
@@ -60,12 +60,15 @@ import type { CapabilityOutput, CapabilityOutputsByStage } from "./reasoning-cap
 // meaningful at this checkpoint -- only confidence/budget/capability
 // signals drive decide()'s actual branching, and those are all real.
 
-export interface ExecutionIdentity {
-  teamId: string;
-  userId: string;
-  prospectId: string;
-  prospectName: string;
-}
+// ExecutionIdentity moved to reasoning-capability.ts (Increment 1, v5.0
+// scaffolding): reasoning-capability.ts is the lower layer in the real
+// dependency graph (this file already imports CapabilityOutput/
+// CapabilityOutputsByStage from it), and ExecutionContext there needed
+// this same real identity shape -- re-defining it in reasoning-capability.ts
+// instead of importing it from here would have meant either a duplicate
+// type or a circular import. Re-exported so nothing importing
+// ExecutionIdentity from this file (its original home) breaks.
+export type { ExecutionIdentity } from "./reasoning-capability.js";
 
 export interface ExecutionRuntimeResult {
   output: AgentDebateOutput;

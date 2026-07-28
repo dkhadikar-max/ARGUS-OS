@@ -439,7 +439,12 @@ export async function createDecision(
   // real capabilities always run).
   if (env.RECORD_DECISION_STATE) {
     const evidencePool = await getEvidenceForProspect(prospect.id);
-    const capabilityOutputs = await observeCapabilityOutputs(decision.id, evidencePool);
+    const capabilityOutputs = await observeCapabilityOutputs(decision.id, evidencePool, {
+      teamId: request.context.teamId,
+      userId: request.context.userId,
+      prospectId: prospect.id,
+      prospectName: prospect.name,
+    });
 
     recordDecisionStateShadow(
       {

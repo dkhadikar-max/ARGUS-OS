@@ -1,6 +1,6 @@
 import type { Evidence } from "@argus/database";
 import { logger } from "../lib/logger.js";
-import { RETRIEVER_CAPABILITIES, type CapabilityOutputsByStage } from "./reasoning-capability.js";
+import { RETRIEVER_CAPABILITIES, type CapabilityOutputsByStage, type ExecutionContext, type ExecutionIdentity } from "./reasoning-capability.js";
 import { selectBestAdvisory } from "./advisory-scoring.js";
 
 // Controller & Capability Specification v3.0 -- "shadow capability
@@ -18,10 +18,28 @@ import { selectBestAdvisory } from "./advisory-scoring.js";
  * prospect with no prior decisions, non-empty for a repeat one; both are
  * honest, not a bug) and logs each one's real CapabilityOutput.
  */
-export async function observeCapabilityOutputs(decisionId: string, evidencePool: Evidence[]): Promise<CapabilityOutputsByStage> {
+export async function observeCapabilityOutputs(
+  decisionId: string,
+  evidencePool: Evidence[],
+  identity: ExecutionIdentity,
+): Promise<CapabilityOutputsByStage> {
+  // Retrievers never consume ctx.budget (wrapRetrieverAsCapability's own
+  // module comment: no per-retriever budget concept exists -- real cost is
+  // always $0/0 tokens). "Unconstrained" here is an honest placeholder,
+  // not a guessed real number -- same spirit as budget-manager.ts's own
+  // NO_REAL_COMPLEXITY_SCORE_AVAILABLE. A real BudgetSnapshot isn't
+  // cheaply available at this call site: every real example
+  // (decision-state-shadow.ts, execution-runtime.ts) derives it from a
+  // DecisionState, which recordDecisionStateShadow only builds AFTER this
+  // function returns -- reordering that is out of scope for this
+  // shadow-only observation path.
+  const ctx: ExecutionContext = {
+    identity,
+    budget: { remainingReasoning: Number.POSITIVE_INFINITY, remainingLatency: Number.POSITIVE_INFINITY, remainingCost: Number.POSITIVE_INFINITY },
+  };
   const entries = await Promise.all(
     Object.entries(RETRIEVER_CAPABILITIES).map(async ([stage, capability]) => {
-      const output = await capability.invoke({ evidencePool });
+      const output = await capability.invoke({ evidencePool }, ctx);
       return [stage, output] as const;
     }),
   );
