@@ -3,14 +3,16 @@ import { agentDebateOutputSchema, type AgentDebateOutput } from "@argus/shared";
 import { attachUsageAndRethrow, type DecisionAgentInput, type StageId, type StageOutputs, type TokenUsageAccumulator } from "./orchestrator.js";
 import type { DecisionPack } from "./decision-pack.js";
 import { buildAgentStageCapabilities } from "./reasoning-capability.js";
-import type { ExecutionContext, ExecutionIdentity, ReasoningCapability, AgentStageCapabilityInput } from "./reasoning-capability.js";
+import type { ExecutionContext, ExecutionIdentity, ReasoningCapability, AgentStageCapabilityInput, CapabilityOutputsByStage } from "./reasoning-capability.js";
 import { plan } from "./planner.js";
 import { runPlan, type CapabilityResolver } from "./executor.js";
 import { createCallAgentDecisionSynthesizer, type DecisionSynthesizer } from "./decision-synthesizer.js";
 import { buildInterimDecisionState } from "./decision-state.js";
-import { decide, DEFAULT_CONTROLLER_POLICY, type ControllerDecision, type ControllerPolicy } from "./controller.js";
+import { decide, DEFAULT_CONTROLLER_POLICY, type ControllerPolicy } from "./controller.js";
 import { deriveBudgetSnapshot, NO_REAL_COMPLEXITY_SCORE_AVAILABLE } from "./budget-manager.js";
-import { createDecisionStateGraph, appendState, type DecisionStateGraph } from "./decision-state-graph.js";
+import { createDecisionStateGraph, appendState } from "./decision-state-graph.js";
+import { calculateInferenceCostUsd } from "./decision-value.service.js";
+import type { ExecutionTrace, StageTiming, StageCost } from "./execution-trace.js";
 import { logger } from "../lib/logger.js";
 
 // v5.0 scaffolding, Increment 2 -- the single public entry point wiring
@@ -41,10 +43,15 @@ export interface DecisionEngineResult {
    *  (that doesn't exist until a caller persists this result). Same
    *  semantics as execution-runtime.ts's own executionId. */
   executionId: string;
-  executionTrace: {
-    graph: DecisionStateGraph;
-    controllerDecision: ControllerDecision;
-  };
+  executionTrace: ExecutionTrace;
+}
+
+function stageTimingsFrom(capabilityOutputsByStage: CapabilityOutputsByStage): StageTiming[] {
+  return Object.entries(capabilityOutputsByStage).map(([stage, output]) => ({ stage: stage as StageId, latencyMs: output.latencyMs }));
+}
+
+function stageCostsFrom(capabilityOutputsByStage: CapabilityOutputsByStage): StageCost[] {
+  return Object.entries(capabilityOutputsByStage).map(([stage, output]) => ({ stage: stage as StageId, tokens: output.cost.tokens, costUsd: output.cost.costUsd }));
 }
 
 const AGENT_STAGE_IDS: ReadonlySet<string> = new Set(["research", "icp", "intent", "risk"]);
@@ -93,6 +100,10 @@ export async function evaluate(
   };
 
   const { stageOutputs, usage, capabilityOutputsByStage } = await runPlan(executionPlan, resolveCapability, input, ctx);
+  // Mutated (not replaced) if invoke_capability re-runs a stage below, so
+  // the trace's timings/costs always reflect the real, latest attempt for
+  // that stage -- not a stale first-attempt value.
+  const finalCapabilityOutputsByStage: CapabilityOutputsByStage = { ...capabilityOutputsByStage };
 
   const checkpointState = buildInterimDecisionState({
     decisionId: executionId,
@@ -115,11 +126,14 @@ export async function evaluate(
   let finalStageOutputs: StageOutputs = stageOutputs;
 
   let output: AgentDebateOutput;
+  let synthesisTiming: StageTiming = { stage: "judge", latencyMs: 0 };
+  let synthesisCost: StageCost = { stage: "judge", tokens: 0, costUsd: 0 };
   try {
     if (controllerDecision.action === "invoke_capability" && isAgentStageId(controllerDecision.targetCapability)) {
       const targetStage: StageId = controllerDecision.targetCapability;
       const capabilityOutput = await capabilities[targetStage].invoke({ input, priorOutputs: finalStageOutputs }, ctx);
       finalStageOutputs = { ...finalStageOutputs, [targetStage]: capabilityOutput.outputs };
+      finalCapabilityOutputsByStage[targetStage] = capabilityOutput;
       usage.inputTokens += capabilityOutput.cost.tokens; // see executor.ts's own comment on the same combined-total limitation
       finalReasoningDepth = 5;
 
@@ -144,6 +158,12 @@ export async function evaluate(
     const synthesis = await synthesizer.synthesize({ input, stageOutputs: finalStageOutputs }, ctx);
     usage.inputTokens += synthesis.usage.inputTokens;
     usage.outputTokens += synthesis.usage.outputTokens;
+    synthesisTiming = { stage: "judge", latencyMs: synthesis.durationMs };
+    synthesisCost = {
+      stage: "judge",
+      tokens: synthesis.usage.inputTokens + synthesis.usage.outputTokens,
+      costUsd: calculateInferenceCostUsd(synthesis.usage.inputTokens, synthesis.usage.outputTokens),
+    };
 
     output = agentDebateOutputSchema.parse({
       research: finalStageOutputs.research,
@@ -168,11 +188,29 @@ export async function evaluate(
     "DecisionEngine v5.0: one controller cycle completed",
   );
 
+  const executedNodes = Object.keys(finalCapabilityOutputsByStage) as StageId[];
+  const skippedNodes = executionPlan
+    .toGraph()
+    .nodes.map((node) => node.id)
+    .filter((id) => !executedNodes.includes(id));
+
+  const executionTrace: ExecutionTrace = {
+    requestId: executionId,
+    packId: pack.id,
+    graph,
+    controllerDecisions: [controllerDecision],
+    executedNodes,
+    skippedNodes,
+    synthesizerOutput: output.judge,
+    timings: [...stageTimingsFrom(finalCapabilityOutputsByStage), synthesisTiming],
+    costs: [...stageCostsFrom(finalCapabilityOutputsByStage), synthesisCost],
+  };
+
   return {
     output,
     processingTimeMs: Date.now() - startedAt,
     usage,
     executionId,
-    executionTrace: { graph, controllerDecision },
+    executionTrace,
   };
 }

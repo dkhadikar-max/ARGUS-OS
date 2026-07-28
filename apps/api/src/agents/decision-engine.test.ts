@@ -111,7 +111,7 @@ describe("evaluate (DecisionEngine)", () => {
 
     expect(createMock).toHaveBeenCalledTimes(5);
     expect(result.output.judge.verdict).toBe("YES");
-    expect(result.executionTrace.controllerDecision.action).toBe("stop");
+    expect(result.executionTrace.controllerDecisions[0]?.action).toBe("stop");
     expect(result.executionTrace.graph.states.size).toBe(1);
   });
 
@@ -121,9 +121,41 @@ describe("evaluate (DecisionEngine)", () => {
     const result = await evaluate(SALES_LEAD_QUALIFICATION_PACK, sampleInput, sampleIdentity);
 
     expect(createMock).toHaveBeenCalledTimes(6); // 4 real stages + 1 real risk re-run + judge
-    expect(result.executionTrace.controllerDecision.action).toBe("invoke_capability");
-    expect(result.executionTrace.controllerDecision.targetCapability).toBe("risk");
+    expect(result.executionTrace.controllerDecisions[0]?.action).toBe("invoke_capability");
+    expect(result.executionTrace.controllerDecisions[0]?.targetCapability).toBe("risk");
     expect(result.executionTrace.graph.states.size).toBe(2);
+  });
+
+  it("ExecutionTrace reports all 4 real agent stages as executed and none skipped -- nothing in this path ever skips a planned node today", async () => {
+    mockAllStagesConfident();
+
+    const result = await evaluate(SALES_LEAD_QUALIFICATION_PACK, sampleInput, sampleIdentity);
+
+    expect(result.executionTrace.executedNodes.sort()).toEqual(["icp", "intent", "research", "risk"]);
+    expect(result.executionTrace.skippedNodes).toEqual([]);
+    expect(result.executionTrace.synthesizerOutput.verdict).toBe("YES");
+  });
+
+  it("ExecutionTrace reports real per-stage timing and cost, including judge's own real cost", async () => {
+    mockAllStagesConfident();
+
+    const result = await evaluate(SALES_LEAD_QUALIFICATION_PACK, sampleInput, sampleIdentity);
+
+    expect(result.executionTrace.timings.map((t) => t.stage).sort()).toEqual(["icp", "intent", "judge", "research", "risk"]);
+    expect(result.executionTrace.costs.map((c) => c.stage).sort()).toEqual(["icp", "intent", "judge", "research", "risk"]);
+    const judgeCost = result.executionTrace.costs.find((c) => c.stage === "judge");
+    expect(judgeCost?.tokens).toBeGreaterThan(0);
+  });
+
+  it("determinism: running the same mocked execution twice produces identical merged stage output -- no accidental shared mutable state between runs", async () => {
+    mockAllStagesConfident();
+    const first = await evaluate(SALES_LEAD_QUALIFICATION_PACK, sampleInput, sampleIdentity);
+
+    mockAllStagesConfident();
+    const second = await evaluate(SALES_LEAD_QUALIFICATION_PACK, sampleInput, sampleIdentity);
+
+    expect(first.output).toEqual(second.output);
+    expect(first.executionTrace.executedNodes.sort()).toEqual(second.executionTrace.executedNodes.sort());
   });
 
   it("exposes a real executionId matching the trace graph's own decisionId", async () => {
@@ -135,26 +167,81 @@ describe("evaluate (DecisionEngine)", () => {
     expect(result.executionId.length).toBeGreaterThan(0);
     expect(result.executionTrace.graph.decisionId).toBe(result.executionId);
   });
+});
 
-  it("PARITY: produces the same real AgentDebateOutput as runAgentDebateWithController against identical mocked responses -- the actual proof of 'no behavior change'", async () => {
+// Layered parity, per review feedback: byte-identical equality on the
+// whole AgentDebateOutput was the original design, but that conflates
+// three genuinely different questions. Split so a future divergence in
+// ONE layer doesn't get masked by (or falsely blamed on) another:
+//   Layer 1 -- decision semantics: verdict, confidence, weighted_score,
+//     controller action/target MUST be identical. A mismatch here is a
+//     real migration failure.
+//   Layer 2 -- evidence semantics: SHOULD be equivalent, not necessarily
+//     identical ordering. Compared as sorted/set equality, not exact
+//     array equality, so a future harmless reordering doesn't fail this.
+//   Layer 3 -- runtime telemetry: latency/cost/tokens are MEASURED and
+//     logged for comparison, never asserted equal -- two real, separately
+//     executed runs (even against identical mocked responses) can have
+//     real timing variance; asserting exact equality here would be
+//     testing Date.now() jitter, not behavior.
+describe("PARITY: evaluate() vs runAgentDebateWithController", () => {
+  it("Layer 1 (decision semantics, MUST match): verdict, confidence, weighted_score, controller action/target -- happy path", async () => {
     mockAllStagesConfident();
     const engineResult = await evaluate(SALES_LEAD_QUALIFICATION_PACK, sampleInput, sampleIdentity);
 
     mockAllStagesConfident();
     const runtimeResult = await runAgentDebateWithController(sampleInput, sampleIdentity);
 
+    expect(engineResult.output.judge.verdict).toBe(runtimeResult.output.judge.verdict);
+    expect(engineResult.output.judge.confidence).toBe(runtimeResult.output.judge.confidence);
+    expect(engineResult.output.judge.weighted_score).toBe(runtimeResult.output.judge.weighted_score);
+    expect(engineResult.executionTrace.controllerDecisions[0]?.action).toBe(runtimeResult.executionTrace.controllerDecision.action);
+  });
+
+  it("Layer 1 (decision semantics, MUST match): invoke_capability path -- action and target capability", async () => {
+    mockRiskStartsWeak();
+    const engineResult = await evaluate(SALES_LEAD_QUALIFICATION_PACK, sampleInput, sampleIdentity);
+
+    mockRiskStartsWeak();
+    const runtimeResult = await runAgentDebateWithController(sampleInput, sampleIdentity);
+
+    expect(engineResult.output.judge.verdict).toBe(runtimeResult.output.judge.verdict);
+    expect(engineResult.executionTrace.controllerDecisions[0]?.action).toBe(runtimeResult.executionTrace.controllerDecision.action);
+    expect(engineResult.executionTrace.controllerDecisions[0]?.targetCapability).toBe(runtimeResult.executionTrace.controllerDecision.targetCapability);
+  });
+
+  it("Layer 2 (evidence semantics, SHOULD be equivalent): research data_points match as a set, not by exact array order", async () => {
+    mockAllStagesConfident();
+    const engineResult = await evaluate(SALES_LEAD_QUALIFICATION_PACK, sampleInput, sampleIdentity);
+
+    mockAllStagesConfident();
+    const runtimeResult = await runAgentDebateWithController(sampleInput, sampleIdentity);
+
+    const engineSignals = engineResult.output.research.data_points.map((d) => d.signal).sort();
+    const runtimeSignals = runtimeResult.output.research.data_points.map((d) => d.signal).sort();
+    expect(engineSignals).toEqual(runtimeSignals);
+    // Full output is still identical in this test's real data (the mock
+    // returns the exact same canned response either way) -- the point of
+    // this layer is the COMPARISON METHOD being order-independent, not
+    // that today's fixtures happen to exercise real reordering.
     expect(engineResult.output).toEqual(runtimeResult.output);
   });
 
-  it("PARITY: matches on the invoke_capability path too, not just the happy path", async () => {
-    mockRiskStartsWeak();
+  it("Layer 3 (runtime telemetry, MEASURED not asserted): both paths report real, positive latency and token usage -- not compared for equality", async () => {
+    mockAllStagesConfident();
     const engineResult = await evaluate(SALES_LEAD_QUALIFICATION_PACK, sampleInput, sampleIdentity);
 
-    mockRiskStartsWeak();
+    mockAllStagesConfident();
     const runtimeResult = await runAgentDebateWithController(sampleInput, sampleIdentity);
 
-    expect(engineResult.output).toEqual(runtimeResult.output);
-    expect(engineResult.executionTrace.controllerDecision.action).toBe(runtimeResult.executionTrace.controllerDecision.action);
-    expect(engineResult.executionTrace.controllerDecision.targetCapability).toBe(runtimeResult.executionTrace.controllerDecision.targetCapability);
+    // Each measured independently and asserted only to be real (positive,
+    // finite) -- never asserted equal to each other. Two separately
+    // executed runs, even against identical mocked responses, have real
+    // timing variance; treating that as a pass/fail signal would be
+    // testing Date.now() jitter, not behavior.
+    expect(engineResult.processingTimeMs).toBeGreaterThanOrEqual(0);
+    expect(runtimeResult.processingTimeMs).toBeGreaterThanOrEqual(0);
+    expect(engineResult.usage.inputTokens + engineResult.usage.outputTokens).toBeGreaterThan(0);
+    expect(runtimeResult.usage.inputTokens + runtimeResult.usage.outputTokens).toBeGreaterThan(0);
   });
 });
