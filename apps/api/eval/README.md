@@ -6,6 +6,14 @@ registry (`registry.ts`), and the local-model validation harness
 (`likelihood-harness.ts` + `aggregate-likelihood-runs.ts`). This file
 covers the two things that apply across all of it, not just one script.
 
+**Known evaluation gap**: qwen2.5:3b cannot currently be benchmarked
+against this pipeline's real prompts via Ollama -- a provider/runtime
+compatibility issue (Ollama's qwen2.5 tool-call template breaks down past
+~1100 prompt tokens; every real fixture here exceeds that). Not a model
+capability finding. See `qwen2.5-3b-provider-compatibility.md` for the full
+investigation before re-attempting or drawing any conclusion about this
+model.
+
 ## Benchmark results are distributions, not point estimates
 
 **Do not quote a single run's number as "the" result for a model.** This
