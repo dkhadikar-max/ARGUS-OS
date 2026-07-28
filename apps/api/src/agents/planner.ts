@@ -11,6 +11,13 @@ import type { DecisionPack } from "./decision-pack.js";
 // doesn't require redesigning the type, even though execution stays linear
 // for now. Standalone and unwired -- nothing calls plan()/topologicalBatches()
 // from any live path.
+//
+// ExecutionPlan's internal representation (nodes/edges) is deliberately not
+// exposed as public fields -- only through query methods (rootStages,
+// dependencies, nextReadyStages) plus one explicit escape hatch (toGraph,
+// for serialization/logging/testing). This means the internal shape can
+// still change later without breaking every caller, before there IS a
+// second caller to break.
 
 export interface PlanNode {
   id: StageId;
@@ -24,10 +31,77 @@ export interface PlanEdge {
   to: StageId;
 }
 
-export interface ExecutionPlan {
-  packId: string;
+export interface PlanGraph {
   nodes: PlanNode[];
   edges: PlanEdge[];
+}
+
+export interface ExecutionPlan {
+  readonly packId: string;
+  /** Stages with no dependencies -- the first real batch an executor could run. */
+  rootStages(): StageId[];
+  /** Direct dependencies of one stage (not transitive). */
+  dependencies(stage: StageId): StageId[];
+  /** Stages not yet in `completed` whose every dependency already is --
+   *  the real primitive topologicalBatches (below) is built on. */
+  nextReadyStages(completed: readonly StageId[]): StageId[];
+  /** The one sanctioned way to inspect raw nodes/edges (serialization,
+   *  logging, tests) -- not the primary way to query the plan. */
+  toGraph(): PlanGraph;
+  /** Throws if the graph references an unknown node, or contains a cycle. */
+  validate(): void;
+}
+
+/** Exported so validate()'s dangling-edge/cycle checks are directly
+ *  testable against a hand-built graph -- plan() itself can never actually
+ *  produce a dangling edge (it derives edges from known dependencies
+ *  filtered to nodes that exist), so that path is otherwise unreachable
+ *  from the public API. */
+export function buildExecutionPlan(packId: string, nodes: PlanNode[], edges: PlanEdge[]): ExecutionPlan {
+  const nodeIds = new Set(nodes.map((n) => n.id));
+
+  function dependencies(stage: StageId): StageId[] {
+    return edges.filter((edge) => edge.to === stage).map((edge) => edge.from);
+  }
+
+  function rootStages(): StageId[] {
+    return nodes
+      .map((node) => node.id)
+      .filter((id) => dependencies(id).length === 0)
+      .sort();
+  }
+
+  function nextReadyStages(completed: readonly StageId[]): StageId[] {
+    const completedSet = new Set(completed);
+    return nodes
+      .map((node) => node.id)
+      .filter((id) => !completedSet.has(id) && dependencies(id).every((dep) => completedSet.has(dep)))
+      .sort();
+  }
+
+  function validate(): void {
+    for (const edge of edges) {
+      if (!nodeIds.has(edge.from)) throw new Error(`ExecutionPlan edge references unknown node "${edge.from}"`);
+      if (!nodeIds.has(edge.to)) throw new Error(`ExecutionPlan edge references unknown node "${edge.to}"`);
+    }
+    let completedCount = 0;
+    const completed: StageId[] = [];
+    while (completedCount < nodes.length) {
+      const ready = nextReadyStages(completed).filter((id) => !completed.includes(id));
+      if (ready.length === 0) throw new Error(`ExecutionPlan for pack "${packId}" has a cycle`);
+      completed.push(...ready);
+      completedCount += ready.length;
+    }
+  }
+
+  return {
+    packId,
+    rootStages,
+    dependencies,
+    nextReadyStages,
+    toGraph: () => ({ nodes, edges }),
+    validate,
+  };
 }
 
 /** The real dependency graph already implemented and comment-documented in
@@ -64,27 +138,27 @@ export function plan(pack: DecisionPack): ExecutionPlan {
     }
   }
 
-  return { packId: pack.id, nodes, edges };
+  return buildExecutionPlan(pack.id, nodes, edges);
 }
 
-/** Derived from the graph (not stored redundantly on ExecutionPlan itself)
- *  -- groups nodes into sequential batches an executor could run in order,
- *  each batch internally parallelizable. Real precedent:
- *  [["research"], ["icp","intent"], ["risk"]] for the Sales pack, matching
- *  runStagesResearchThroughRisk exactly. No execution logic here -- this
- *  only describes order; nothing runs a plan yet. */
+/** Groups an ExecutionPlan's stages into sequential batches an executor
+ *  could run in order, each batch internally parallelizable -- built
+ *  entirely on nextReadyStages, the same primitive any future real
+ *  executor would use, rather than re-deriving order from raw nodes/edges.
+ *  Real precedent: [["research"], ["icp","intent"], ["risk"]] for the
+ *  Sales pack, matching runStagesResearchThroughRisk exactly. No execution
+ *  logic here -- this only describes order; nothing runs a plan yet. */
 export function topologicalBatches(executionPlan: ExecutionPlan): StageId[][] {
-  const remaining = new Set(executionPlan.nodes.map((n) => n.id));
+  const total = executionPlan.toGraph().nodes.length;
+  const completed: StageId[] = [];
   const batches: StageId[][] = [];
 
-  while (remaining.size > 0) {
-    const ready = [...remaining]
-      .filter((id) => executionPlan.edges.every((edge) => edge.to !== id || !remaining.has(edge.from)))
-      .sort();
+  while (completed.length < total) {
+    const ready = executionPlan.nextReadyStages(completed);
     if (ready.length === 0) {
-      throw new Error("ExecutionPlan has a cycle -- cannot compute topological batches");
+      throw new Error(`ExecutionPlan for pack "${executionPlan.packId}" has a cycle -- cannot compute topological batches`);
     }
-    for (const id of ready) remaining.delete(id);
+    completed.push(...ready);
     batches.push(ready);
   }
 
