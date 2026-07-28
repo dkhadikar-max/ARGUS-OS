@@ -1,5 +1,35 @@
 import type { LLMProvider, LLMCallParams, LLMCallResult } from "./llm-provider.interface.js";
 
+export const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434";
+
+/** Real /api/show response shape (confirmed 2026-07-28, Ollama 0.32.4) --
+ *  only the field this function reads is typed. */
+interface OllamaShowResponse {
+  capabilities?: string[];
+}
+
+/** Queries Ollama's own declared capabilities for a model -- a cheap,
+ *  no-inference check (a single HTTP call, no generation) that can rule a
+ *  model out before spending any real wall-clock time on it. Real,
+ *  confirmed examples: gemma3:4b -> ["completion","vision"] (no tool
+ *  support at all -- Ollama's /api/chat outright rejects a tools request
+ *  for it with a 400); phi3:3.8b -> ["completion"] (same); llama3.2:3b ->
+ *  ["completion","tools"]. Used by eval/likelihood-harness.ts's pre-flight
+ *  check, but lives here (not in the harness) since it's Ollama API
+ *  surface, same as OllamaProvider.call itself. */
+export async function getModelCapabilities(model: string, baseUrl: string = DEFAULT_OLLAMA_BASE_URL): Promise<string[]> {
+  const response = await fetch(`${baseUrl}/api/show`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ model }),
+  });
+  if (!response.ok) {
+    throw new Error(`Ollama /api/show returned ${response.status}: ${await response.text()}`);
+  }
+  const body = (await response.json()) as OllamaShowResponse;
+  return body.capabilities ?? [];
+}
+
 /** Ollama's real /api/chat response shape, confirmed via a live smoke test
  *  against llama3.2:3b (2026-07-27) -- not assumed from Ollama's docs. Only
  *  the fields this provider actually reads are typed; everything else
@@ -33,7 +63,7 @@ interface OllamaChatResponse {
  * is a real hardware ceiling, not something this provider can paper over. */
 export class OllamaProvider implements LLMProvider {
   constructor(
-    private readonly baseUrl: string = "http://localhost:11434",
+    private readonly baseUrl: string = DEFAULT_OLLAMA_BASE_URL,
     // Generous: a single stage call can legitimately take several minutes
     // at ~4 tokens/sec once max_tokens climbs into the thousands (Risk's
     // budget is 2560). Timing out too early would misreport a slow-but-

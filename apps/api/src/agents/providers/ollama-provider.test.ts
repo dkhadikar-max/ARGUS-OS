@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { OllamaProvider } from "./ollama-provider.js";
+import { OllamaProvider, getModelCapabilities } from "./ollama-provider.js";
 import type { LLMCallParams } from "./llm-provider.interface.js";
 
 const sampleParams: LLMCallParams = {
@@ -72,5 +72,33 @@ describe("OllamaProvider", () => {
     const provider = new OllamaProvider();
 
     await expect(provider.call(sampleParams)).rejects.toThrow(/500.*model not found/);
+  });
+});
+
+describe("getModelCapabilities", () => {
+  it("returns the real declared capabilities array (used by the pre-flight check to rule out tool-incapable models)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ capabilities: ["completion", "tools"] }) }));
+
+    expect(await getModelCapabilities("llama3.2:3b")).toEqual(["completion", "tools"]);
+  });
+
+  it("returns an empty array when Ollama's response has no capabilities field at all, rather than throwing", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) }));
+
+    expect(await getModelCapabilities("some-model")).toEqual([]);
+  });
+
+  it("real, confirmed example (2026-07-28): gemma3:4b declares completion+vision, no tools", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ capabilities: ["completion", "vision"] }) }));
+
+    const capabilities = await getModelCapabilities("gemma3:4b");
+
+    expect(capabilities).not.toContain("tools");
+  });
+
+  it("throws with the response body when /api/show returns a non-ok HTTP status", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404, text: () => Promise.resolve("model not found") }));
+
+    await expect(getModelCapabilities("nonexistent")).rejects.toThrow(/404.*model not found/);
   });
 });

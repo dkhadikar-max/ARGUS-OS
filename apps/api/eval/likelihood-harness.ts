@@ -79,7 +79,7 @@ import {
   type StageOutputs,
 } from "../src/agents/orchestrator.js";
 import type { ToolSchema } from "../src/agents/providers/types.js";
-import { OllamaProvider } from "../src/agents/providers/ollama-provider.js";
+import { OllamaProvider, getModelCapabilities } from "../src/agents/providers/ollama-provider.js";
 import type { EvalFixture } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -670,10 +670,110 @@ function buildPipelineCompletion(results: StageAttemptResult[], repair: boolean)
   });
 }
 
+interface PreflightResult {
+  status: "PASS" | "NOT_BENCHMARKABLE";
+  checks: {
+    toolSupport: "PASS" | "FAIL";
+    forcedToolCall: "PASS" | "FAIL" | "SKIP";
+    researchSmokeTest: "PASS" | "FAIL" | "SKIP";
+  };
+  reason: string | null;
+}
+
+/** Three cheap, ordered checks -- each skipped once an earlier one fails --
+ *  run before spending 40+ minutes on a full fixture benchmark:
+ *   1. Does Ollama even declare "tools" capability for this model? A single
+ *      /api/show call, no inference at all.
+ *   2. Does a trivial forced tool call actually return a tool_use block?
+ *      Catches a model that declares support but doesn't honor forcing.
+ *   3. Does the REAL research-stage prompt (not a trivial one) still
+ *      produce a tool_use block? Catches template/prompt-length
+ *      interactions the trivial check can't see -- this is exactly the
+ *      failure mode qwen2.5:3b hit (works at 310 tokens, silently fails
+ *      past ~1100; every real fixture here is 1300+). Checks PROTOCOL
+ *      compliance only (a tool_use block exists), not schema validity --
+ *      that's what the real benchmark measures.
+ *
+ *  Real precedent for all three (2026-07-28): gemma3:4b and phi3:3.8b both
+ *  fail check 1 outright (capabilities ["completion","vision"] /
+ *  ["completion"]); qwen2.5:3b passes 1 and 2 but fails 3 under this
+ *  pipeline's real prompt length (see
+ *  eval/qwen2.5-3b-provider-compatibility.md for the full investigation). */
+async function runPreflight(model: string, provider: OllamaProvider): Promise<PreflightResult> {
+  const capabilities = await getModelCapabilities(model);
+  if (!capabilities.includes("tools")) {
+    return {
+      status: "NOT_BENCHMARKABLE",
+      checks: { toolSupport: "FAIL", forcedToolCall: "SKIP", researchSmokeTest: "SKIP" },
+      reason: `Model does not declare "tools" capability (capabilities: [${capabilities.join(", ")}])`,
+    };
+  }
+
+  const trivialTool: ToolSchema = {
+    name: "submit_color",
+    description: "Submit the observed color",
+    input_schema: { type: "object", properties: { color: { type: "string" } }, required: ["color"] },
+  };
+  const trivialResponse = await provider.call({
+    model,
+    maxTokens: 100,
+    system: "You are a helpful assistant.",
+    userPrompt: "The sky is blue. Call the submit_color tool with the color you observed.",
+    tool: trivialTool,
+  });
+  if (trivialResponse.toolInput === null) {
+    return {
+      status: "NOT_BENCHMARKABLE",
+      checks: { toolSupport: "PASS", forcedToolCall: "FAIL", researchSmokeTest: "SKIP" },
+      reason: "Model declares tools capability but did not return a tool_use block for a trivial forced tool call",
+    };
+  }
+
+  const [firstFixtureFile] = readdirSync(FIXTURES_DIR).filter((f) => f.endsWith(".json")).sort();
+  if (!firstFixtureFile) throw new Error("No fixtures found for the research smoke test.");
+  const smokeFixture = JSON.parse(readFileSync(join(FIXTURES_DIR, firstFixtureFile), "utf-8")) as EvalFixture;
+  const smokeInput: DecisionAgentInput = smokeFixture.input;
+  const smokeResponse = await provider.call({
+    model,
+    maxTokens: 2048,
+    system: systemPromptFor("research", smokeInput.companyContext),
+    userPrompt: fillPlaceholders(RESEARCH_AGENT_PROMPT, smokeInput, {}),
+    tool: RESEARCH_TOOL,
+  });
+  if (smokeResponse.toolInput === null) {
+    return {
+      status: "NOT_BENCHMARKABLE",
+      checks: { toolSupport: "PASS", forcedToolCall: "PASS", researchSmokeTest: "FAIL" },
+      reason: `Model produced a trivial tool call but not a real research-stage tool call (fixture: ${smokeFixture.name}) -- likely a template/prompt-length interaction, not a capability gap`,
+    };
+  }
+
+  return { status: "PASS", checks: { toolSupport: "PASS", forcedToolCall: "PASS", researchSmokeTest: "PASS" }, reason: null };
+}
+
 async function main() {
   const { model, limit, stage, repair } = parseArgs();
-  const fixtures = loadFixtures(limit);
   const provider = new OllamaProvider();
+
+  console.log(`Pre-flight checks for "${model}"...`);
+  const preflight = await runPreflight(model, provider);
+  console.log(
+    `  Tool support:        ${preflight.checks.toolSupport}\n` +
+      `  Forced tool call:    ${preflight.checks.forcedToolCall}\n` +
+      `  Research smoke test: ${preflight.checks.researchSmokeTest}`,
+  );
+  if (preflight.status === "NOT_BENCHMARKABLE") {
+    console.log(`\nStatus: NOT_BENCHMARKABLE\nReason: ${preflight.reason}\nBenchmark aborted before fixture execution.`);
+    mkdirSync(RUNS_DIR, { recursive: true });
+    const outPath = join(RUNS_DIR, `preflight_${model.replace(/[:/]/g, "-")}_${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
+    writeFileSync(outPath, JSON.stringify({ model, timestamp: new Date().toISOString(), ...preflight }, null, 2));
+    console.log(`Wrote ${outPath}`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log("Status: PASS -- proceeding to fixture benchmark.\n");
+
+  const fixtures = loadFixtures(limit);
 
   console.log(
     `Running ${fixtures.length} fixture(s) against Ollama model "${model}" (local only, no Claude calls)` +
