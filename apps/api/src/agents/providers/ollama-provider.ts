@@ -62,6 +62,17 @@ export class OllamaProvider implements LLMProvider {
             },
           },
         ],
+        // Bug found 2026-07-28: without forcing, qwen2.5:3b never called
+        // the tool at all (0/4 real attempts across two runs) -- it wrote
+        // prose instead, unlike llama3.2:3b which happened to call the
+        // tool anyway most of the time without being forced. Verified via
+        // a real curl call: the identical request without tool_choice got
+        // no tool_calls from qwen2.5:3b; adding tool_choice:"required" made
+        // it call the tool correctly. Every likelihood-harness run before
+        // this fix (llama3.2:3b included) ran without this -- their
+        // protocol-compliance numbers reflect the model's behavior with an
+        // unforced request, not a forced one; not retroactively corrected.
+        tool_choice: "required",
         stream: false,
       }),
     });
