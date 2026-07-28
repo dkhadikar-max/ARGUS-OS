@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from "vitest";
+import { assertNoPII } from "../test/pii-check.js";
 
 const createMock = vi.fn();
 
@@ -172,11 +173,13 @@ describe("evaluate (DecisionEngine)", () => {
     mockAllStagesConfident();
 
     const result = await evaluate(SALES_LEAD_QUALIFICATION_PACK, sampleInput, sampleIdentity);
-    const serializedTrace = JSON.stringify(result.executionTrace);
 
-    // sampleIdentity's real PII values must not appear anywhere in the trace.
-    expect(serializedTrace).not.toContain(sampleIdentity.prospectName);
-    expect(serializedTrace).not.toContain(sampleIdentity.prospectId);
+    // Reusable check (src/test/pii-check.ts), not just an inline assertion
+    // -- structural (no forbidden key names anywhere) AND value-based
+    // (sampleIdentity's real prospectName/prospectId don't appear anywhere
+    // in the serialized trace).
+    expect(() => assertNoPII(result.executionTrace, { forbiddenValues: [sampleIdentity.prospectName, sampleIdentity.prospectId] })).not.toThrow();
+
     // The full judge output (drafted message, reasoning, key_evidence) must
     // not leak through -- only the narrow SynthesizerVerdictSummary should.
     expect(result.executionTrace.synthesizerOutput).not.toHaveProperty("message");
