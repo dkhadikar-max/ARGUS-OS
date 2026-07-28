@@ -89,6 +89,17 @@ const RUNS_DIR = join(__dirname, "runs");
 const DEFAULT_OLLAMA_MODEL = "llama3.2:3b";
 const LOCAL_ONLY_LABEL = "LOCAL ONLY -- PENDING CLAUDE VALIDATION";
 
+// Bump whenever a field is added, removed, or changes meaning on
+// StageAttemptResult/LikelihoodHarnessManifest -- e.g. schemaVersion 1 is
+// the first version WITH attempts/toolCallProduced/repairActions/
+// failureClasses; two real manifests already on disk predate this entirely
+// and simply have no schemaVersion field (treated as legacy/version 0 by
+// eval/aggregate-likelihood-runs.ts, not retroactively rewritten). A
+// version bump is a signal for humans and tooling that older manifests may
+// not have every field the newer ones do -- see aggregate-likelihood-runs.ts's
+// own version-mismatch warning.
+export const MANIFEST_SCHEMA_VERSION = 1;
+
 // Exported (StageId, LikelihoodHarnessManifest) for eval/aggregate-likelihood-runs.ts
 // to import as TYPE-ONLY -- `import type` is fully erased at compile time,
 // so it does not trigger this file's own main() (which runs unconditionally
@@ -173,6 +184,11 @@ interface PipelineCompletionEntry {
 }
 
 export interface LikelihoodHarnessManifest {
+  /** See MANIFEST_SCHEMA_VERSION's own comment. Optional because two real
+   *  manifests on disk predate this field and genuinely lack it -- legacy,
+   *  not zero; readers should treat a missing value as "unknown/pre-
+   *  versioning", not silently default it to 0 as if that were meaningful. */
+  schemaVersion?: number;
   runId: string;
   createdAt: string;
   ollamaModel: string;
@@ -685,6 +701,7 @@ async function main() {
 
   const runId = `likelihood-harness_${model.replace(/[:/]/g, "-")}_${repair ? "repair_" : ""}${new Date().toISOString().replace(/[:.]/g, "-")}`;
   const manifest: LikelihoodHarnessManifest = {
+    schemaVersion: MANIFEST_SCHEMA_VERSION,
     runId,
     createdAt: new Date().toISOString(),
     ollamaModel: model,

@@ -161,6 +161,21 @@ async function main() {
     );
   }
 
+  // A warning, not a refusal: per-field checks below (hasToolCallField) are
+  // what actually protect each metric's correctness field-by-field. A
+  // schemaVersion mismatch is a signal for a human to double check, not
+  // proof the aggregation itself is wrong -- two of the real manifests this
+  // script was built against predate the field entirely (schemaVersion
+  // undefined = "unknown/pre-versioning"), and hard-refusing would make
+  // them permanently unusable for historical comparison.
+  const schemaVersions = new Set(manifests.map((m) => m.schemaVersion ?? "unversioned"));
+  if (schemaVersions.size > 1) {
+    console.warn(
+      `Warning: aggregating manifests with different schemaVersion values (${[...schemaVersions].join(", ")}). ` +
+        `Field-level checks (e.g. hasToolCallField) still apply per metric, but double check the manifests are actually comparable.`,
+    );
+  }
+
   const resolvedModel = [...models][0] as string;
   const resolvedMode = [...modes][0] as "raw" | "repair";
   const variance = aggregate(manifests);
