@@ -105,8 +105,15 @@ export interface CapabilityOutput<TOutputs = unknown> {
  *  observeCapabilityOutputs() produces, and controller.ts's decide() reads
  *  (optionally) to identify a specific weak capability. Defined here, not
  *  in capability-shadow.ts, so controller.ts doesn't have to import from an
- *  observational/shadow-logging module to get a type it needs. */
-export type CapabilityOutputsByStage = Record<string, CapabilityOutput<Evidence[]>>;
+ *  observational/shadow-logging module to get a type it needs.
+ *
+ *  Widened to CapabilityOutput<unknown> (v5.0 scaffolding, Increment 2):
+ *  was Evidence[]-specific, correct for retriever capabilities but wrong
+ *  for agent-stage capabilities (CapabilityOutput<StageOutputMap[S]>).
+ *  decide() only ever reads `.confidence` off each entry, never `.outputs`
+ *  -- this was always meant to be capability-kind-agnostic, Evidence[] was
+ *  just the only kind that existed when it was written. */
+export type CapabilityOutputsByStage = Record<string, CapabilityOutput<unknown>>;
 
 /**
  * Capability isolation (Controller spec v3.0 Section 7.1 #3): a capability

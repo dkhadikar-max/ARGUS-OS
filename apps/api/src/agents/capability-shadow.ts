@@ -1,7 +1,15 @@
 import type { Evidence } from "@argus/database";
 import { logger } from "../lib/logger.js";
-import { RETRIEVER_CAPABILITIES, type CapabilityOutputsByStage, type ExecutionContext, type ExecutionIdentity } from "./reasoning-capability.js";
+import { RETRIEVER_CAPABILITIES, type CapabilityOutput, type ExecutionContext, type ExecutionIdentity } from "./reasoning-capability.js";
 import { selectBestAdvisory } from "./advisory-scoring.js";
+
+/** Narrower than the general CapabilityOutputsByStage (CapabilityOutput<unknown>,
+ *  widened in Increment 2 to also fit agent-stage capabilities) -- this
+ *  function only ever wraps RETRIEVER_CAPABILITIES, so its real return
+ *  shape is honestly Evidence[]-typed, not unknown. Still assignable
+ *  anywhere a CapabilityOutputsByStage is expected (decision-state-shadow.ts,
+ *  controller.ts's decide()). */
+export type RetrieverCapabilityOutputsByStage = Record<string, CapabilityOutput<Evidence[]>>;
 
 // Controller & Capability Specification v3.0 -- "shadow capability
 // selection logging," narrowed to what's honest: nothing in ARGUS
@@ -22,7 +30,7 @@ export async function observeCapabilityOutputs(
   decisionId: string,
   evidencePool: Evidence[],
   identity: ExecutionIdentity,
-): Promise<CapabilityOutputsByStage> {
+): Promise<RetrieverCapabilityOutputsByStage> {
   // Retrievers never consume ctx.budget (wrapRetrieverAsCapability's own
   // module comment: no per-retriever budget concept exists -- real cost is
   // always $0/0 tokens). "Unconstrained" here is an honest placeholder,
@@ -43,7 +51,7 @@ export async function observeCapabilityOutputs(
       return [stage, output] as const;
     }),
   );
-  const outputsByStage = Object.fromEntries(entries) as CapabilityOutputsByStage;
+  const outputsByStage = Object.fromEntries(entries) as RetrieverCapabilityOutputsByStage;
 
   // Real aggregation across real CapabilityOutputs -- honestly null today,
   // since none of the 4 retriever capabilities emit an advisory (see

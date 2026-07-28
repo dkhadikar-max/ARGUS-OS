@@ -107,7 +107,17 @@ describe("wrapRetrieverAsCapability", () => {
     const a = await capability.invoke({ evidencePool: [] }, fakeCtx());
     const b = await capability.invoke({ evidencePool: [] }, { identity: { teamId: "other", userId: "x", prospectId: "y", prospectName: "z" }, budget: { remainingReasoning: 0, remainingLatency: 0, remainingCost: 0 } });
 
-    expect(a).toEqual(b);
+    // Excludes latencyMs/cost.latencyMs -- real wall-clock measurements
+    // around two genuinely separate async calls, which can differ by a
+    // millisecond of real timing jitter even when ctx has zero effect on
+    // behavior (caught as a real, if rare, flake under system load; not
+    // what this test is actually verifying).
+    const { latencyMs: _aLatency, cost: aCost, ...aRest } = a;
+    const { latencyMs: _bLatency, cost: bCost, ...bRest } = b;
+    expect(aRest).toEqual(bRest);
+    expect(aCost.tokens).toBe(bCost.tokens);
+    expect(aCost.costUsd).toBe(bCost.costUsd);
+    expect(aCost.reasoningDepth).toBe(bCost.reasoningDepth);
   });
 });
 
