@@ -159,6 +159,16 @@ export interface ExecutionRuntimeRunManifest {
 // reported, never asserted equal between two separately-executed runs.
 
 export interface ReplayMetadata {
+  /** The one immutable identifier every artifact from this run should
+   *  carry -- the report itself, any logs, any separately-exported
+   *  metrics/cost records. A real UUID (crypto.randomUUID()), generated
+   *  once when the run starts, not derived from the other fields (a
+   *  derived id would collide across two runs with identical provenance,
+   *  e.g. two Replay attempts on the same commit/fixture-hash/model after
+   *  a transient failure). "Why did Replay run X fail" becomes a lookup
+   *  by this one value instead of reconstructing which combination of
+   *  commit+hash+timestamp a given log line came from. */
+  replayId: string;
   /** The overall codebase commit at run time (git rev-parse HEAD) --
    *  distinct from promptsCommit below, which is the last commit that
    *  specifically touched prompts.ts. Without this, two reports run
