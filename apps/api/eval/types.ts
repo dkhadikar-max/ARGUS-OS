@@ -159,6 +159,12 @@ export interface ExecutionRuntimeRunManifest {
 // reported, never asserted equal between two separately-executed runs.
 
 export interface ReplayMetadata {
+  /** The overall codebase commit at run time (git rev-parse HEAD) --
+   *  distinct from promptsCommit below, which is the last commit that
+   *  specifically touched prompts.ts. Without this, two reports run
+   *  against different code states are hard to tell apart even if every
+   *  other provenance field happens to match. */
+  codebaseCommit: string | null;
   /** Matches GATE2_REPLAY_AUTHORIZATION.md's own frozen fixture hash --
    *  a mismatch here means the corpus changed since that document was
    *  written and the freeze needs to be regenerated before trusting this
@@ -175,6 +181,19 @@ export interface ReplayMetadata {
    *  GATE2_REPLAY_AUTHORIZATION.md's ~$10-15 estimate after the fact. */
   actualCostUsd: number;
 }
+
+// Per review feedback: a scorecard ("49 passed, 2 failed") tells you
+// THAT the engines disagreed; a category breakdown tells you WHY, which
+// is what turns Replay into a diagnostic tool. Deliberately a closed set
+// (not a free-text reason string) so the aggregate breakdown below can be
+// a real count per category, not a bag of unique strings to eyeball.
+export type DisagreementCategory =
+  | "verdict_mismatch"
+  | "confidence_threshold_exceeded"
+  | "controller_action_mismatch"
+  | "runtime_error"
+  | "schema_error"
+  | "missing_capability_output";
 
 export interface ReplayFixtureResult {
   fixture: string;
@@ -200,6 +219,22 @@ export interface ReplayFixtureResult {
    *  non-empty error here should be handled (schema mismatch: stop the
    *  whole run immediately; anything else: recorded, run continues). */
   error: string | null;
+  /** Every category this fixture's real result falls into (can be more
+   *  than one -- e.g. a verdict mismatch AND a confidence delta past
+   *  threshold on the same fixture are two separate, real facts about
+   *  it). Empty when this fixture agreed on everything measured. The
+   *  report-level breakdown is computed by aggregating this field across
+   *  all fixtures, not maintained as a separate parallel count that could
+   *  drift from what each fixture actually shows. */
+  disagreementCategories: DisagreementCategory[];
+}
+
+export interface DisagreementBreakdownEntry {
+  category: DisagreementCategory;
+  count: number;
+  /** Which real fixtures contributed to this category -- traceable back
+   *  to perFixtureResults, not just an opaque number. */
+  fixtures: string[];
 }
 
 export interface ReplayAggregateMetrics {
@@ -233,6 +268,12 @@ export interface ReplayReport {
   thresholds: ReplayThresholds;
   aggregateMetrics: ReplayAggregateMetrics;
   perFixtureResults: ReplayFixtureResult[];
+  /** Category -> count -> which fixtures, computed by aggregating every
+   *  perFixtureResults[].disagreementCategories entry -- not a separately
+   *  maintained parallel structure, so it can't drift from what each
+   *  fixture's own real result shows. Turns "49 passed, 2 failed" into a
+   *  diagnostic (which category, which fixtures) rather than a scorecard. */
+  disagreementBreakdown: DisagreementBreakdownEntry[];
   /** Real, computed from aggregateMetrics vs. thresholds -- never manually
    *  set, so this can't silently drift from what the numbers actually say. */
   passed: boolean;

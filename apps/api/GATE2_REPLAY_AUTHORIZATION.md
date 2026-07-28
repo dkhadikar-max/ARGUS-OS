@@ -137,16 +137,23 @@ Per review feedback -- design the output before the implementation.
 now real, typechecked TypeScript in `eval/types.ts`, not just this
 document's prose. Structure:
 
-- **metadata**: fixture hash (must match this document's frozen hash --
-  a mismatch means the corpus changed and the freeze needs regenerating),
-  model, prompts/pack/policy versions, and the real (not estimated) $ actually
-  spent.
+- **metadata**: full provenance -- codebase commit (`git rev-parse HEAD`
+  at run time, distinct from the prompts-specific commit), fixture hash
+  (must match this document's frozen hash -- a mismatch means the corpus
+  changed and the freeze needs regenerating), model, pack/policy
+  versions, and the real (not estimated) $ actually spent.
 - **perFixtureResults**: one row per fixture -- old vs. new verdict,
   confidence delta, controller action agreement, Layer 2 evidence
   agreement (set-based, not exact order), latency/cost for both runtimes,
-  and a real error field for any fixture that failed on either side.
+  a real error field for any fixture that failed on either side, and
+  which `DisagreementCategory` values (if any) this fixture falls into.
 - **aggregateMetrics**: real computed rates/percentiles across all 51
   fixtures.
+- **disagreementBreakdown**: category → count → contributing fixtures,
+  computed by aggregating every fixture's own `disagreementCategories` --
+  not a separately maintained count that could drift. Turns "49 passed, 2
+  failed" into "2 verdict mismatches, both on fixtures X and Y" -- a
+  diagnostic, not just a scorecard.
 - **thresholds**: the actual thresholds this run was judged against --
   populated from whatever this document's metrics table is agreed to be
   at run time, not hardcoded, so a future threshold change doesn't
@@ -154,6 +161,24 @@ document's prose. Structure:
 - **passed**/**failureReasons**: computed from aggregateMetrics vs.
   thresholds, never manually set -- can't silently drift from what the
   real numbers say.
+
+## Checklist status (honest, against what's actually built vs. only documented)
+
+| Item | Status |
+|---|---|
+| Fixture corpus frozen and versioned | Real -- hash computed above |
+| Prompt templates frozen | Real -- commit pinned above |
+| Decision Pack frozen | Real -- version `"1"`, commit pinned above |
+| Policy definitions frozen | Real -- version `0`, commit pinned above |
+| Claude model version pinned | Real -- `CLAUDE_MODEL` constant, both runtimes share it |
+| Replay thresholds documented | Done, but **proposed, not agreed** -- needs your sign-off |
+| Replay stop conditions implemented | **Documented only** (the table above) -- not yet real code, since `run-replay.ts` doesn't exist. Would be built as part of that script, not before. |
+| ReplayReport schema finalized | Real -- typechecked in `eval/types.ts`, includes disagreement categorization and full provenance |
+
+Two items are genuinely not done yet: agreeing the thresholds, and writing
+the script that would enforce the stop conditions in real execution. Both
+are explicitly part of what authorization unlocks below, not silently
+assumed complete.
 
 ## What authorization would unlock
 
