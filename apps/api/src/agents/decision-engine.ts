@@ -8,11 +8,12 @@ import { plan } from "./planner.js";
 import { runPlan, type CapabilityResolver } from "./executor.js";
 import { createCallAgentDecisionSynthesizer, type DecisionSynthesizer } from "./decision-synthesizer.js";
 import { buildInterimDecisionState } from "./decision-state.js";
-import { decide, DEFAULT_CONTROLLER_POLICY, type ControllerPolicy } from "./controller.js";
+import { decide, DEFAULT_CONTROLLER_POLICY, type ControllerDecision, type ControllerPolicy } from "./controller.js";
 import { deriveBudgetSnapshot, NO_REAL_COMPLEXITY_SCORE_AVAILABLE } from "./budget-manager.js";
-import { createDecisionStateGraph, appendState } from "./decision-state-graph.js";
+import { createDecisionStateGraph, appendState, type DecisionStateGraph } from "./decision-state-graph.js";
 import { calculateInferenceCostUsd } from "./decision-value.service.js";
-import type { ExecutionTrace, StageTiming, StageCost } from "./execution-trace.js";
+import { CLAUDE_MODEL } from "./claude-client.js";
+import type { ExecutionTrace, StageTiming, StageCost, SynthesizerVerdictSummary } from "./execution-trace.js";
 import { logger } from "../lib/logger.js";
 
 // v5.0 scaffolding, Increment 2 -- the single public entry point wiring
@@ -43,6 +44,19 @@ export interface DecisionEngineResult {
    *  (that doesn't exist until a caller persists this result). Same
    *  semantics as execution-runtime.ts's own executionId. */
   executionId: string;
+  /** Full real audit chain (DecisionState history + the one real
+   *  ControllerDecision) -- kept separate from executionTrace precisely
+   *  because it DOES contain real prospect data (DecisionState.context is
+   *  the full DecisionAgentInput; DecisionState.subject.prospectName is
+   *  real PII). A caller that needs the full audit trail (e.g. a future
+   *  persistence layer, which already handles real prospect data via the
+   *  database) uses this; anything meant to be retained/compared as an
+   *  operational artifact (Replay, Shadow) uses executionTrace instead. */
+  graph: DecisionStateGraph;
+  controllerDecision: ControllerDecision;
+  /** PII/raw-evidence-free operational record -- see execution-trace.ts's
+   *  own module comment for the explicit contents checklist. Safe to
+   *  retain long-term, log, or compare across Replay/Shadow runs. */
   executionTrace: ExecutionTrace;
 }
 
@@ -194,14 +208,26 @@ export async function evaluate(
     .nodes.map((node) => node.id)
     .filter((id) => !executedNodes.includes(id));
 
+  // Deliberately narrow projection of output.judge -- see
+  // SynthesizerVerdictSummary's own doc comment for exactly what's
+  // excluded and why (reasoning/key_evidence/message/confidence_explanation
+  // can embed prospect-specific content).
+  const synthesizerSummary: SynthesizerVerdictSummary = {
+    verdict: output.judge.verdict,
+    confidence: output.judge.confidence,
+    weightedScore: output.judge.weighted_score,
+    agentConsensus: output.judge.agent_consensus,
+    recommendedAction: output.judge.recommended_action,
+  };
+
   const executionTrace: ExecutionTrace = {
     requestId: executionId,
     packId: pack.id,
-    graph,
+    model: CLAUDE_MODEL,
     controllerDecisions: [controllerDecision],
     executedNodes,
     skippedNodes,
-    synthesizerOutput: output.judge,
+    synthesizerOutput: synthesizerSummary,
     timings: [...stageTimingsFrom(finalCapabilityOutputsByStage), synthesisTiming],
     costs: [...stageCostsFrom(finalCapabilityOutputsByStage), synthesisCost],
   };
@@ -211,6 +237,8 @@ export async function evaluate(
     processingTimeMs: Date.now() - startedAt,
     usage,
     executionId,
+    graph,
+    controllerDecision,
     executionTrace,
   };
 }

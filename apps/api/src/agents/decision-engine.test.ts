@@ -112,7 +112,7 @@ describe("evaluate (DecisionEngine)", () => {
     expect(createMock).toHaveBeenCalledTimes(5);
     expect(result.output.judge.verdict).toBe("YES");
     expect(result.executionTrace.controllerDecisions[0]?.action).toBe("stop");
-    expect(result.executionTrace.graph.states.size).toBe(1);
+    expect(result.graph.states.size).toBe(1);
   });
 
   it("re-invokes exactly the weak capability on invoke_capability, same as execution-runtime.ts's own real behavior", async () => {
@@ -123,7 +123,7 @@ describe("evaluate (DecisionEngine)", () => {
     expect(createMock).toHaveBeenCalledTimes(6); // 4 real stages + 1 real risk re-run + judge
     expect(result.executionTrace.controllerDecisions[0]?.action).toBe("invoke_capability");
     expect(result.executionTrace.controllerDecisions[0]?.targetCapability).toBe("risk");
-    expect(result.executionTrace.graph.states.size).toBe(2);
+    expect(result.graph.states.size).toBe(2);
   });
 
   it("ExecutionTrace reports all 4 real agent stages as executed and none skipped -- nothing in this path ever skips a planned node today", async () => {
@@ -165,7 +165,33 @@ describe("evaluate (DecisionEngine)", () => {
 
     expect(typeof result.executionId).toBe("string");
     expect(result.executionId.length).toBeGreaterThan(0);
-    expect(result.executionTrace.graph.decisionId).toBe(result.executionId);
+    expect(result.graph.decisionId).toBe(result.executionId);
+  });
+
+  it("ExecutionTrace excludes PII and raw evidence -- no prospect name, no raw prospect data, no drafted message text", async () => {
+    mockAllStagesConfident();
+
+    const result = await evaluate(SALES_LEAD_QUALIFICATION_PACK, sampleInput, sampleIdentity);
+    const serializedTrace = JSON.stringify(result.executionTrace);
+
+    // sampleIdentity's real PII values must not appear anywhere in the trace.
+    expect(serializedTrace).not.toContain(sampleIdentity.prospectName);
+    expect(serializedTrace).not.toContain(sampleIdentity.prospectId);
+    // The full judge output (drafted message, reasoning, key_evidence) must
+    // not leak through -- only the narrow SynthesizerVerdictSummary should.
+    expect(result.executionTrace.synthesizerOutput).not.toHaveProperty("message");
+    expect(result.executionTrace.synthesizerOutput).not.toHaveProperty("reasoning");
+    expect(result.executionTrace.synthesizerOutput).not.toHaveProperty("key_evidence");
+    expect(result.executionTrace.synthesizerOutput).toEqual({
+      verdict: "YES",
+      confidence: 82,
+      weightedScore: 78,
+      agentConsensus: "high",
+      recommendedAction: "message_now",
+    });
+    // The real, PII-bearing audit chain is still available -- just not
+    // inside executionTrace.
+    expect(result.graph.states.size).toBeGreaterThan(0);
   });
 });
 
