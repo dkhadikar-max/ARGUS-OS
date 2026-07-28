@@ -209,13 +209,38 @@ agreement) shows something the noise floor didn't reproduce, on one
 specific fixture, and is a real, individually investigable finding rather
 than a general concern about the architecture.
 
-**Not yet done**: manual inspection of `conflicting-signals-hiring-freeze`'s
-actual reasoning on both runtimes (only summary fields were captured, not
-full output) to determine whether the verdict flip is a genuine
-architectural difference or itself explainable (e.g. a borderline
-raw-evidence read that happened to tip differently). Fixing the research-
-signal-agreement metric so it produces a real signal instead of always
-reading 0% is also unresolved.
+**Update -- diagnostic rerun completed** (`eval/diagnose-fixture.ts`, one
+fixture, both pipelines, full structured artifacts captured, ~$0.20 real
+spend): classified the divergence at the earliest stage the two pipelines
+actually differ. Confirmed first that prompts/tools/schemas/maxTokens are
+byte-identical between the old and new stage-calling paths (`decision-pack.ts`'s
+`stagePrompts`/`stageTools` are the literal same constants
+`execution-runtime.ts` imports directly) -- ruling out a hidden wiring
+difference as the mechanism. The actual divergence: the ICP stage's "title
+contains VP" criterion was scored `match: 0` for "Head of Growth" on the
+old run and `match: 0.5` (partial credit, "'Head of' roles often carry
+comparable authority") on the new run -- a genuine, subjective judgment
+call two independent Claude calls made differently on a fixture that sits
+close to this pack's PASS/WAIT weighted-score boundary (38 vs 48.5). Ruled
+Planner/Executor/Controller/Synthesizer wiring out directly (identical
+prompts, identical controller re-invoke logic, identical judge weighting
+formula on both sides) -- this is model variance amplified by proximity to
+a decision boundary, not an implementation bug. One honest caveat: all 4
+independent old-runtime samples on this fixture landed PASS and both
+new-engine samples landed WAIT (n=2 for new specifically) -- doesn't prove
+a systematic tilt, but doesn't fully rule one out either at this sample
+size.
+
+Fixing the research-signal-agreement metric so it produces a real signal
+instead of always reading 0% is still unresolved.
+
+**Permanent improvement made** (not just this one fixture): `run-replay.ts`
+now persists full structured artifacts automatically for any fixture that
+disagrees, so a future unexplained disagreement during the real 51-fixture
+run won't require a second paid diagnostic rerun the way this one did. See
+`REPLAY_METHODOLOGY.md` v3 §5 for the scope caveat (safe for Replay's
+synthetic fixtures; does not carry over to Shadow's real prospect data
+without its own explicit decision).
 
 ## What authorization would unlock
 

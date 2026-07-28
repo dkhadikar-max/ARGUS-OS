@@ -1,13 +1,27 @@
-# Replay Methodology (v2)
+# Replay Methodology (v3)
 
 **This is an experiment protocol, not documentation of code. Once a Replay
 run begins under this version, this document does not change for the
-duration of that run. A methodology change is a new version (v3), applied
+duration of that run. A methodology change is a new version (v4), applied
 to the next Replay run -- never edited retroactively into an in-progress or
 completed one.**
 
 ## Changelog
 
+- **v3**: `run-replay.ts` now persists full structured artifacts
+  (`output`, `graph`, `controllerDecision`, `executionTrace`, for both
+  runtimes) for any fixture that lands in a disagreement category --
+  agreement fixtures stay summary-only. Added after diagnosing
+  `conflicting-signals-hiring-freeze`'s verdict mismatch required a
+  separate, paid diagnostic rerun (`eval/diagnose-fixture.ts`) specifically
+  because the original sample only kept the normalized comparison and
+  discarded the real result objects. Also fixed a real bug found during
+  that diagnosis: `DecisionStateGraph.states` is a `Map`, which
+  `JSON.stringify` silently serializes as `{}` -- `run-replay.ts` now
+  converts it to an array before persisting. See §5's revised wording and
+  the important scope caveat there (this behavior is Replay-specific, safe
+  only because Replay fixtures are synthetic -- it must not be assumed to
+  carry over unchanged into Shadow, which touches real prospect data).
 - **v2**: added §1a (Gate 2a -- Noise Baseline), required before the full
   51-fixture run. v1 had no way to distinguish disagreement caused by the
   new engine from disagreement caused by ordinary independent-LLM-sampling
@@ -134,7 +148,8 @@ order.
 
 Per fixture (`ReplayFixtureResult`): old/new verdict, confidence,
 controller action, latency, cost (real tokens + $), research signal set,
-error (if any), disagreement categories.
+error (if any), disagreement categories. Recorded for **every** fixture,
+agreement or not.
 
 Aggregate (`ReplayAggregateMetrics`): verdict/controller-action/research-
 signal agreement rates, confidence delta P50/P95, avg latency and total
@@ -146,6 +161,26 @@ artifact from this run carries), codebase commit, fixture hash, fixture
 count, model, prompts commit, Decision Pack version, Controller policy
 version, run timestamp, real (not estimated) total cost.
 
+**Disagreement-only, additional (v3+)**: for any fixture landing in a
+disagreement category, `run-replay.ts` also persists the full raw result
+from both pipelines (`output`, `graph`, `controllerDecision`,
+`executionTrace`) to `eval/runs/artifacts/<replayId>_<fixture>.json` --
+not just the summary. Purpose: classify a disagreement at the earliest
+pipeline stage where the two paths actually diverge
+(CapabilityOutputsByStage -> DecisionState -> ControllerDecision ->
+SynthesizerResult) without needing a second, paid diagnostic rerun. Only
+for fixtures that disagree -- an agreeing fixture's summary already says
+everything needed, and persisting full artifacts for all 51 would retain
+far more operational detail than the experiment needs.
+
+**Important scope caveat**: this is safe specifically because Replay's 51
+fixtures are synthetic test data, not real prospects -- the full artifacts
+contain no real PII. This behavior is Replay-specific and must NOT be
+assumed to carry over unchanged into Shadow (Gate 3), which runs against
+real production prospect data; a Shadow methodology needs its own explicit
+decision about what, if anything, gets persisted beyond the PII-safe
+`ExecutionTrace`.
+
 ## 6. What is explicitly not recorded / ignored?
 
 - **Exact equality of free-text fields** (`reasoning`, `key_evidence`, the
@@ -156,6 +191,11 @@ version, run timestamp, real (not estimated) total cost.
 - **Absolute latency as pass/fail** -- Layer 3's own established principle
   (`decision-engine.test.ts`): measured and reported, never asserted equal
   or used as a threshold. Informational only.
-- **Any PII or raw evidence** -- never captured in a Replay artifact at
-  all, per `ExecutionTrace`'s own allowlist-enforced design
-  (`src/test/pii-check.ts`).
+- **Real PII or raw evidence in the aggregate `ReplayReport` itself** --
+  `ReplayFixtureResult`/`ReplayAggregateMetrics`/`ReplayMetadata` stay
+  exactly as PII-free as `ExecutionTrace`'s own allowlist-enforced design
+  (`src/test/pii-check.ts`); this is unchanged by v3. The disagreement-only
+  full artifacts above are a separate, side file, not part of the
+  `ReplayReport` -- and are PII-free in practice only because Replay's
+  fixtures are synthetic (see the scope caveat in §5), not because of any
+  enforced redaction.

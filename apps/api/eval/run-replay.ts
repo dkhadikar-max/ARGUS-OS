@@ -25,6 +25,7 @@ import { fileURLToPath } from "node:url";
 import type { AgentDebateOutput } from "@argus/shared";
 import { runAgentDebateWithController, type ExecutionRuntimeResult } from "../src/agents/execution-runtime.js";
 import { evaluate, type DecisionEngineResult } from "../src/agents/decision-engine.js";
+import type { DecisionStateGraph } from "../src/agents/decision-state-graph.js";
 import { SALES_LEAD_QUALIFICATION_PACK } from "../src/agents/decision-pack.js";
 import { CLAUDE_MODEL } from "../src/agents/claude-client.js";
 import { DEFAULT_CONTROLLER_POLICY } from "../src/agents/controller.js";
@@ -44,6 +45,7 @@ import type {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(__dirname, "fixtures");
 const RUNS_DIR = join(__dirname, "runs");
+const ARTIFACTS_DIR = join(RUNS_DIR, "artifacts");
 
 // --- Pure logic (zero API calls) -- unit tested in run-replay.test.ts ---
 
@@ -240,6 +242,42 @@ function loadFixtures(files: string[]): EvalFixture[] {
   return files.map((f) => JSON.parse(readFileSync(join(FIXTURES_DIR, f), "utf-8")) as EvalFixture);
 }
 
+/** DecisionStateGraph.states is a ReadonlyMap -- JSON.stringify silently
+ *  serializes a Map as `{}` (discovered diagnosing conflicting-signals-
+ *  hiring-freeze by hand: the raw dump looked fine but `states` came back
+ *  empty on both sides). Converts to a plain array of [version, state]
+ *  entries so the graph a disagreement artifact captures is actually
+ *  inspectable, not silently empty. */
+function serializeGraph(graph: DecisionStateGraph) {
+  return { decisionId: graph.decisionId, states: Array.from(graph.states.entries()) };
+}
+
+/** REPLAY_METHODOLOGY.md v3 §5: full structured artifacts (capability
+ *  outputs, DecisionState history, ControllerDecision, SynthesizerResult)
+ *  are only persisted for fixtures that land in a disagreement category --
+ *  an agreeing fixture's summary already says everything needed. Keeps
+ *  storage bounded to the cases actually worth investigating, and means a
+ *  future unexplained disagreement doesn't require paying for another
+ *  diagnostic rerun just because the intermediate state was discarded
+ *  (exactly what happened investigating conflicting-signals-hiring-freeze
+ *  in this Gate 2a round). */
+function persistDisagreementArtifacts(replayId: string, fixtureName: string, old: ExecutionRuntimeResult, fresh: DecisionEngineResult): void {
+  mkdirSync(ARTIFACTS_DIR, { recursive: true });
+  const outPath = join(ARTIFACTS_DIR, `${replayId}_${fixtureName}.json`);
+  writeFileSync(
+    outPath,
+    JSON.stringify(
+      {
+        fixtureName,
+        old: { ...old, executionTrace: { graph: serializeGraph(old.executionTrace.graph), controllerDecision: old.executionTrace.controllerDecision } },
+        new: { ...fresh, graph: serializeGraph(fresh.graph) },
+      },
+      null,
+      2,
+    ),
+  );
+}
+
 function currentGitCommit(): string | null {
   try {
     return execSync("git rev-parse --short HEAD", { cwd: __dirname }).toString().trim();
@@ -273,19 +311,25 @@ async function runReplay(identity: ExecutionIdentity): Promise<ReplayReport> {
   const fixtures = loadFixtures(fixtureFiles);
   const perFixtureResults: ReplayFixtureResult[] = [];
 
+  const replayId = randomUUID();
+
   for (const fixture of fixtures) {
     console.log(`  ${fixture.name} ...`);
 
+    let oldRaw: ExecutionRuntimeResult | null = null;
     let oldNorm: NormalizedRunOutcome;
     try {
-      oldNorm = normalizeOldResult(await runAgentDebateWithController(fixture.input, identity));
+      oldRaw = await runAgentDebateWithController(fixture.input, identity);
+      oldNorm = normalizeOldResult(oldRaw);
     } catch (err) {
       oldNorm = errorOutcome(err);
     }
 
+    let newRaw: DecisionEngineResult | null = null;
     let newNorm: NormalizedRunOutcome;
     try {
-      newNorm = normalizeNewResult(await evaluate(SALES_LEAD_QUALIFICATION_PACK, fixture.input, identity));
+      newRaw = await evaluate(SALES_LEAD_QUALIFICATION_PACK, fixture.input, identity);
+      newNorm = normalizeNewResult(newRaw);
     } catch (err) {
       newNorm = errorOutcome(err);
     }
@@ -293,6 +337,15 @@ async function runReplay(identity: ExecutionIdentity): Promise<ReplayReport> {
     const result = compareResults(fixture.name, oldNorm, newNorm, CONFIDENCE_DELTA_FLAG_THRESHOLD);
     perFixtureResults.push(result);
     console.log(`    verdict: ${result.verdictAgreement ? "agree" : "DISAGREE"} (${result.oldVerdict} vs ${result.newVerdict})`);
+
+    // REPLAY_METHODOLOGY.md v3 §1a/§5: a disagreeing fixture gets its full
+    // structured artifacts persisted immediately, not just the summary --
+    // only possible when both sides actually produced a real result (a
+    // runtime_error fixture has nothing structured to save beyond the
+    // error message already in `result`).
+    if (result.disagreementCategories.length > 0 && oldRaw && newRaw) {
+      persistDisagreementArtifacts(replayId, fixture.name, oldRaw, newRaw);
+    }
 
     // REPLAY_METHODOLOGY.md §3: abort immediately on a real schema_error.
     if (result.disagreementCategories.includes("schema_error")) {
@@ -302,7 +355,7 @@ async function runReplay(identity: ExecutionIdentity): Promise<ReplayReport> {
   }
 
   const metadata: ReplayMetadata = {
-    replayId: randomUUID(),
+    replayId,
     codebaseCommit: currentGitCommit(),
     fixtureSetHash: computeFixtureSetHash(fixtureFiles),
     fixtureCount: fixtures.length,
