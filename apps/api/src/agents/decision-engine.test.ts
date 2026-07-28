@@ -174,11 +174,22 @@ describe("evaluate (DecisionEngine)", () => {
 
     const result = await evaluate(SALES_LEAD_QUALIFICATION_PACK, sampleInput, sampleIdentity);
 
-    // Reusable check (src/test/pii-check.ts), not just an inline assertion
-    // -- structural (no forbidden key names anywhere) AND value-based
-    // (sampleIdentity's real prospectName/prospectId don't appear anywhere
-    // in the serialized trace).
-    expect(() => assertNoPII(result.executionTrace, { forbiddenValues: [sampleIdentity.prospectName, sampleIdentity.prospectId] })).not.toThrow();
+    // Reusable check (src/test/pii-check.ts), two complementary modes:
+    // allowlist (fails closed on ANY unexpected top-level field, not just
+    // ones matching a known-dangerous name) for the trace's real shape,
+    // plus a denylist value check for sampleIdentity's real prospectName/
+    // prospectId specifically (allowlist mode only checks key names, not
+    // values, so a leaked value under an allowed key name wouldn't be
+    // caught by allowlist mode alone).
+    expect(() =>
+      assertNoPII(result.executionTrace, {
+        mode: "allowlist",
+        allowedKeys: ["requestId", "packId", "model", "controllerDecisions", "executedNodes", "skippedNodes", "synthesizerOutput", "timings", "costs"],
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertNoPII(result.executionTrace, { mode: "denylist", forbiddenValues: [sampleIdentity.prospectName, sampleIdentity.prospectId] }),
+    ).not.toThrow();
 
     // The full judge output (drafted message, reasoning, key_evidence) must
     // not leak through -- only the narrow SynthesizerVerdictSummary should.
