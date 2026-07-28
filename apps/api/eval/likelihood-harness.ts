@@ -89,7 +89,11 @@ const RUNS_DIR = join(__dirname, "runs");
 const DEFAULT_OLLAMA_MODEL = "llama3.2:3b";
 const LOCAL_ONLY_LABEL = "LOCAL ONLY -- PENDING CLAUDE VALIDATION";
 
-type StageId = "research" | "icp" | "intent" | "risk";
+// Exported (StageId, LikelihoodHarnessManifest) for eval/aggregate-likelihood-runs.ts
+// to import as TYPE-ONLY -- `import type` is fully erased at compile time,
+// so it does not trigger this file's own main() (which runs unconditionally
+// on module load, below) as a side effect of the import.
+export type StageId = "research" | "icp" | "intent" | "risk";
 const ALL_STAGES: StageId[] = ["research", "icp", "intent", "risk"];
 
 // FAILURE TAXONOMY (2026-07-27, 15-fixture repair-mode pilot, llama3.2:3b):
@@ -168,7 +172,7 @@ interface PipelineCompletionEntry {
   schemaValid: number;
 }
 
-interface LikelihoodHarnessManifest {
+export interface LikelihoodHarnessManifest {
   runId: string;
   createdAt: string;
   ollamaModel: string;

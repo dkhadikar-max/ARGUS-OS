@@ -21,7 +21,8 @@
     "eval:snapshot-prompt-migration": "tsx eval/snapshot-prompt-migration.ts",
     "eval:record-benchmark": "tsx eval/record-benchmark.ts",
     "eval:query-benchmark-registry": "tsx eval/query-benchmark-registry.ts",
-    "eval:likelihood-harness": "tsx eval/likelihood-harness.ts"
+    "eval:likelihood-harness": "tsx eval/likelihood-harness.ts",
+    "eval:aggregate-likelihood-runs": "tsx eval/aggregate-likelihood-runs.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.3",
