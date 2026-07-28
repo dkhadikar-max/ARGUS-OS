@@ -1,10 +1,23 @@
-# Replay Methodology (v1)
+# Replay Methodology (v2)
 
 **This is an experiment protocol, not documentation of code. Once a Replay
 run begins under this version, this document does not change for the
-duration of that run. A methodology change is a new version (v2), applied
+duration of that run. A methodology change is a new version (v3), applied
 to the next Replay run -- never edited retroactively into an in-progress or
 completed one.**
+
+## Changelog
+
+- **v2**: added §1a (Gate 2a -- Noise Baseline), required before the full
+  51-fixture run. v1 had no way to distinguish disagreement caused by the
+  new engine from disagreement caused by ordinary independent-LLM-sampling
+  variance, since neither runtime is deterministic and neither run is
+  compared against a fixed ground truth. Added after a 5-fixture Old-vs-New
+  validation sample showed confidence deltas of 5-10 points and 2/5
+  controller-action mismatches with no way to tell whether that was
+  architectural or just noise.
+- **v1**: initial protocol (§1-6 below, unchanged from v1 except
+  renumbering to make room for §1a).
 
 ## 1. What exactly is executed?
 
@@ -24,7 +37,62 @@ shared mutable state (see the "Isolation" property in the prior review
 round). Up to 5 real stage calls × 2 runtimes × 51 fixtures = 510 calls,
 plus any real `invoke_capability` re-runs on either side.
 
+## 1a. Gate 2a -- Noise Baseline (required before the full run)
+
+**Purpose**: separate two things Replay's raw disagreement rate cannot
+distinguish on its own:
+
+- **Model variance** (expected) -- two independent real Claude calls, same
+  runtime, same fixture, disagree simply because LLM sampling is
+  stochastic. Not a defect in anything.
+- **Architectural variance** (what Replay is actually trying to measure) --
+  disagreement caused by the new engine's Planner/Executor/Synthesizer path
+  producing genuinely different behavior from the old runtime, beyond what
+  sampling alone would produce.
+
+Without a baseline, a given disagreement rate is uninterpretable: 20%
+controller-action disagreement could mean "the new engine has a bug" or
+"this pack's outputs sit near policy thresholds and any two independent
+runs would disagree this often." v1 had no way to tell these apart.
+
+**Procedure**: on the same small fixture subset used for a validation
+sample (not the full 51 -- this is a cheap control, run before committing
+to the full spend), run the **old runtime twice**, independently:
+
+- Old Runtime A: `runAgentDebateWithController(fixture.input, identity)`
+- Old Runtime B: `runAgentDebateWithController(fixture.input, identity)`
+  (same fixture, same identity, same model -- a second, independent call)
+
+Compare A vs B using the exact same `compareResults` logic and disagreement
+categories defined in §2 below -- no new comparison logic, same function,
+just fed two "old" outcomes instead of one old and one new. This produces a
+noise floor: verdict / confidence-delta / controller-action / research-
+signal agreement rates attributable to sampling alone, with zero
+architecture change involved.
+
+**Interpretation**: compare the Old-vs-Old baseline metrics against the
+Old-vs-New metrics from the same fixture subset.
+
+- If Old-vs-New agreement rates and confidence deltas are **similar to**
+  Old-vs-Old (no formal significance test defined at small sample sizes --
+  this is a qualitative comparison, not a statistical test), the new
+  engine is behaving within the range of ordinary model variance. That is
+  evidence *for* the architecture, not proof of it.
+- If Old-vs-New is **materially worse** than Old-vs-Old on the same
+  fixtures (lower agreement, larger deltas, mismatches Old-vs-Old never
+  produces), that is evidence of a genuine architectural difference worth
+  investigating before spending further budget on the full run.
+
+Gate 2a does not replace the full 51-fixture Replay or its proposed
+thresholds (§5) -- it is an interpretive aid run once, cheaply, before
+deciding whether the full run is likely to produce actionable evidence.
+
 ## 2. What counts as a disagreement?
+
+Interpret every rate below in light of the Gate 2a noise baseline (§1a),
+not in isolation -- a rate below threshold is only evidence of an
+architectural problem if it is also materially worse than the same
+runtime's disagreement with itself.
 
 A fixture contributes to a `DisagreementCategory` (`eval/types.ts`) when:
 

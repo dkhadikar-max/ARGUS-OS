@@ -174,11 +174,48 @@ document's prose. Structure:
 | Replay thresholds documented | Done, but **proposed, not agreed** -- needs your sign-off |
 | Replay stop conditions implemented | **Documented only** (the table above) -- not yet real code, since `run-replay.ts` doesn't exist. Would be built as part of that script, not before. |
 | ReplayReport schema finalized | Real -- typechecked in `eval/types.ts`, includes disagreement categorization and full provenance |
+| Gate 2a noise baseline run | Real -- 5-fixture Old-vs-Old and Old-vs-New samples run against real Claude, see "Gate 2a results" above |
 
 Two items are genuinely not done yet: agreeing the thresholds, and writing
-the script that would enforce the stop conditions in real execution. Both
-are explicitly part of what authorization unlocks below, not silently
-assumed complete.
+a full-51-fixture run (only a 5-fixture sample has been executed so far).
+Both are explicitly part of what authorization unlocks below, not silently
+assumed complete. `run-replay.ts` itself is now built and unit-tested, so
+"stop conditions implemented" is real for the schema_error case at least
+(see `run-replay.ts`'s own abort-on-schema_error logic) -- not merely
+documented prose as an earlier version of this checklist stated.
+
+## Gate 2a results (real data -- noise baseline vs. Old-vs-New sample)
+
+Per `REPLAY_METHODOLOGY.md` v2 §1a, before committing to the full 46
+remaining fixtures: ran a 5-fixture Old-vs-New validation sample
+(`eval/run-replay-sample.ts`), then a 5-fixture noise baseline -- old
+runtime vs. itself, same fixtures (`eval/run-replay-noise-baseline.ts`).
+Both real Claude calls, `claude-sonnet-4-6`. Combined real cost: $2.14.
+Raw reports: `eval/runs/replay_sample_feb8a541-....json`,
+`eval/runs/replay_noise_baseline_93c4745f-....json`.
+
+| Metric | Old-vs-Old (noise floor) | Old-vs-New (sample) | Read |
+|---|---:|---:|---|
+| Verdict agreement | 100% (5/5) | 80% (4/5) | **Not explained by noise** -- the one mismatch (`conflicting-signals-hiring-freeze`: PASS↔WAIT) did not occur between two independent old-runtime runs on that same fixture. |
+| Confidence delta P50 / P95 | 4 / 15 | 7 / 10 | Old-vs-New's deltas fall *inside* the noise floor's own range (baseline P95 is higher). Not distinguishable from sampling variance. |
+| Controller action agreement | 60% (3/5) | 60% (3/5) | Identical rate to the noise floor. Not distinguishable from sampling variance -- likely reflects confidence values sitting near the 70-point policy threshold, not an engine defect. |
+| Research signal agreement | 0% (0/5) | 0% (0/5) | Identical (zero) in both conditions. This indicates the metric itself -- exact-string set comparison on free-text `signal` fields -- doesn't survive independent LLM calls even on the *same* runtime, and is not currently usable as a Gate criterion. A methodology/metric-design gap, not something either runtime does wrong. |
+
+**Reading**: at n=5, three of the four dimensions (confidence delta,
+controller action, research signal) show no distinguishable difference
+between the new engine and the old runtime disagreeing with itself --
+consistent with the architecture, not proof of it. One dimension (verdict
+agreement) shows something the noise floor didn't reproduce, on one
+specific fixture, and is a real, individually investigable finding rather
+than a general concern about the architecture.
+
+**Not yet done**: manual inspection of `conflicting-signals-hiring-freeze`'s
+actual reasoning on both runtimes (only summary fields were captured, not
+full output) to determine whether the verdict flip is a genuine
+architectural difference or itself explainable (e.g. a borderline
+raw-evidence read that happened to tip differently). Fixing the research-
+signal-agreement metric so it produces a real signal instead of always
+reading 0% is also unresolved.
 
 ## What authorization would unlock
 
