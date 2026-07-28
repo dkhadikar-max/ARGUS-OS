@@ -91,6 +91,30 @@ plus a margin for `invoke_capability` re-runs (adds one real stage call for
 whichever fixtures trigger it) -- **budget ~$15 total** as a safe upper
 estimate, not a guarantee.
 
+**Treat this as an estimate to be validated, not a commitment.** Token
+usage varies with real input complexity; a small representative sample
+(e.g. 3-5 fixtures against real Claude, both runtimes) before committing
+to the full 102-decision run would both validate this estimate and be a
+first real data point on the engine itself. That sample is itself a real,
+small API spend -- not run here, requires the same explicit authorization
+as the full run.
+
+## Stop conditions
+
+Not every failure during Replay should be handled the same way -- some
+justify aborting immediately, others justify finishing the run to collect
+diagnostic data while still blocking progression to Gate 3.
+
+| Condition | Action |
+|---|---|
+| Replay infrastructure error (script crash, fixture load failure, network/auth failure unrelated to the engine itself) | Stop immediately |
+| Schema mismatch (either runtime produces output that fails its own real Zod schema) | Stop immediately |
+| API failure rate above threshold (proposed: >10% of calls fail) | Stop and investigate |
+| Verdict agreement below the predefined threshold (see metrics below) | Complete the run, then block Gate 3 |
+
+Thresholds above are proposed, not decided -- same status as the metrics
+table below.
+
 ## Proposed success metrics (not yet agreed -- for your review)
 
 | Metric | Proposed target |
@@ -104,6 +128,32 @@ estimate, not a guarantee.
 
 These are proposed, not decided -- flagged explicitly rather than treated
 as already-agreed thresholds.
+
+## Output artifact (designed, real code -- built before `run-replay.ts` itself)
+
+Per review feedback -- design the output before the implementation.
+`ReplayReport` and its constituent types (`ReplayMetadata`,
+`ReplayFixtureResult`, `ReplayAggregateMetrics`, `ReplayThresholds`) are
+now real, typechecked TypeScript in `eval/types.ts`, not just this
+document's prose. Structure:
+
+- **metadata**: fixture hash (must match this document's frozen hash --
+  a mismatch means the corpus changed and the freeze needs regenerating),
+  model, prompts/pack/policy versions, and the real (not estimated) $ actually
+  spent.
+- **perFixtureResults**: one row per fixture -- old vs. new verdict,
+  confidence delta, controller action agreement, Layer 2 evidence
+  agreement (set-based, not exact order), latency/cost for both runtimes,
+  and a real error field for any fixture that failed on either side.
+- **aggregateMetrics**: real computed rates/percentiles across all 51
+  fixtures.
+- **thresholds**: the actual thresholds this run was judged against --
+  populated from whatever this document's metrics table is agreed to be
+  at run time, not hardcoded, so a future threshold change doesn't
+  require touching the type.
+- **passed**/**failureReasons**: computed from aggregateMetrics vs.
+  thresholds, never manually set -- can't silently drift from what the
+  real numbers say.
 
 ## What authorization would unlock
 

@@ -147,3 +147,95 @@ export interface ExecutionRuntimeRunManifest {
   gitCommit: string | null;
   results: ExecutionRuntimeRunResult[];
 }
+
+// Gate 2 (Replay) -- GATE2_REPLAY_AUTHORIZATION.md. Output artifact
+// designed before eval/run-replay.ts's own implementation, per review
+// feedback ("designing the output first often makes the implementation
+// simpler"). Compares the old runtime (runAgentDebateWithController,
+// execution-runtime.ts) against the new engine (evaluate(),
+// decision-engine.ts) per fixture, using the same layered approach already
+// proven in decision-engine.test.ts's parity tests: Layer 1 (decision
+// semantics) drives pass/fail; Layer 3 (telemetry) is measured and
+// reported, never asserted equal between two separately-executed runs.
+
+export interface ReplayMetadata {
+  /** Matches GATE2_REPLAY_AUTHORIZATION.md's own frozen fixture hash --
+   *  a mismatch here means the corpus changed since that document was
+   *  written and the freeze needs to be regenerated before trusting this
+   *  report. */
+  fixtureSetHash: string;
+  fixtureCount: number;
+  model: string;
+  promptsCommit: string | null;
+  decisionPackVersion: string;
+  controllerPolicyVersion: number;
+  runAt: string;
+  /** Real, not estimated -- the actual $ spent running this Replay,
+   *  summed from both runtimes' real usage. Compared against
+   *  GATE2_REPLAY_AUTHORIZATION.md's ~$10-15 estimate after the fact. */
+  actualCostUsd: number;
+}
+
+export interface ReplayFixtureResult {
+  fixture: string;
+  oldVerdict: string;
+  newVerdict: string;
+  verdictAgreement: boolean;
+  oldConfidence: number;
+  newConfidence: number;
+  confidenceDelta: number;
+  oldControllerAction: string;
+  newControllerAction: string;
+  controllerActionAgreement: boolean;
+  /** Layer 2 (evidence semantics) -- compared as set/sorted equality per
+   *  decision-engine.test.ts's own established approach, not exact array
+   *  order. */
+  researchSignalsAgreement: boolean;
+  oldLatencyMs: number;
+  newLatencyMs: number;
+  oldCostUsd: number;
+  newCostUsd: number;
+  /** Non-null only when this fixture failed on either runtime -- see
+   *  GATE2_REPLAY_AUTHORIZATION.md's stop-condition table for how a
+   *  non-empty error here should be handled (schema mismatch: stop the
+   *  whole run immediately; anything else: recorded, run continues). */
+  error: string | null;
+}
+
+export interface ReplayAggregateMetrics {
+  verdictAgreementRate: number;
+  confidenceDeltaP50: number;
+  confidenceDeltaP95: number;
+  controllerActionAgreementRate: number;
+  researchSignalsAgreementRate: number;
+  avgOldLatencyMs: number;
+  avgNewLatencyMs: number;
+  totalOldCostUsd: number;
+  totalNewCostUsd: number;
+  executionFailureCount: number;
+  schemaValidationFailureCount: number;
+}
+
+/** Real thresholds this run was actually judged against -- populated from
+ *  whatever GATE2_REPLAY_AUTHORIZATION.md's metrics table is agreed to be
+ *  at run time, not silently hardcoded here so a future threshold change
+ *  doesn't require a code change to this type. */
+export interface ReplayThresholds {
+  minVerdictAgreementRate: number;
+  maxConfidenceDeltaP95: number;
+  minControllerActionAgreementRate: number;
+  maxExecutionFailures: number;
+  maxSchemaValidationFailures: number;
+}
+
+export interface ReplayReport {
+  metadata: ReplayMetadata;
+  thresholds: ReplayThresholds;
+  aggregateMetrics: ReplayAggregateMetrics;
+  perFixtureResults: ReplayFixtureResult[];
+  /** Real, computed from aggregateMetrics vs. thresholds -- never manually
+   *  set, so this can't silently drift from what the numbers actually say. */
+  passed: boolean;
+  /** Which specific threshold(s) failed, if any -- empty when passed. */
+  failureReasons: string[];
+}
