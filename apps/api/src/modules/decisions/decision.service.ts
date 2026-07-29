@@ -7,6 +7,7 @@ import { buildDecisionContext } from "../../agents/decision-context-builder.js";
 import { observePromptCaching } from "../../agents/prompt-cache-shadow.js";
 import { recordDecisionStateShadow } from "../../agents/decision-state-shadow.js";
 import { observeCapabilityOutputs } from "../../agents/capability-shadow.js";
+import { populateEvidenceFromEnrichment } from "../../agents/evidence-populator.service.js";
 import { env } from "../../config/env.js";
 import { calculateDecisionValue, calculateInferenceCostUsd, calculateValueCostRatio } from "../../agents/decision-value.service.js";
 import {
@@ -253,6 +254,24 @@ export async function createDecision(
       getTeam(request.context.teamId),
     ]);
   const prospect = enrichment.prospect;
+
+  // Evidence Graph Phase 1 ("Safe") -- purely additive, standalone
+  // Evidence/EvidenceEdge population from this same enrichment call
+  // (evidence-populator.service.ts), gated behind env.EVIDENCE_POPULATOR_V1
+  // (default false). decisionId is never set on these rows, so they never
+  // reach DecisionResponse.evidence -- fault-isolated the same way
+  // notifyControllerEscalation is below, so a populator failure can never
+  // break decision creation.
+  if (env.EVIDENCE_POPULATOR_V1) {
+    await populateEvidenceFromEnrichment({
+      prospectId: prospect.id,
+      apollo: enrichment.apollo,
+      clearbit: enrichment.clearbit,
+      person: enrichment.person,
+    }).catch((err) => {
+      logger.warn({ err, prospectId: prospect.id, teamId: request.context.teamId }, "Evidence populator failed; decision creation unaffected");
+    });
+  }
 
   // Bible §18 AI-5 / §9.2: skip the expensive Claude call (§13.1: ~$0.04-
   // 0.06 and several seconds) if nothing has changed for this prospect

@@ -42,6 +42,15 @@ describe("createEvidenceEdge", () => {
       }),
     );
   });
+
+  it("uses the supplied transaction client instead of the module-level prisma when given one", async () => {
+    const tx = { evidenceEdge: { upsert: vi.fn().mockResolvedValue({ id: "edge_2" }) } };
+
+    await createEvidenceEdge({ fromId: "e5", toId: "e1", relation: "CORROBORATES" }, tx as never);
+
+    expect(tx.evidenceEdge.upsert).toHaveBeenCalledTimes(1);
+    expect(prisma.evidenceEdge.upsert).not.toHaveBeenCalled();
+  });
 });
 
 describe("getEdgesForEvidence", () => {

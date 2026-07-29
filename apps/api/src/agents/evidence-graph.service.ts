@@ -1,4 +1,4 @@
-import { prisma, type EvidenceEdgeRelation } from "@argus/database";
+import { prisma, Prisma, type EvidenceEdgeRelation } from "@argus/database";
 
 /**
  * v4 roadmap Phase 2 -- Evidence Graph CRUD, backed by the additive
@@ -18,9 +18,15 @@ export interface EvidenceEdgeInput {
 /** Creates a directed edge between two Evidence rows. Idempotent on
  *  (fromId, toId, relation) -- re-recording the same relationship (e.g. a
  *  re-run of an agent stage that notices the same corroboration again)
- *  updates strength rather than erroring or duplicating rows. */
-export function createEvidenceEdge(input: EvidenceEdgeInput) {
-  return prisma.evidenceEdge.upsert({
+ *  updates strength rather than erroring or duplicating rows.
+ *
+ *  Optional `client` lets a caller run this inside its own
+ *  `prisma.$transaction(async (tx) => ...)` (e.g. evidence-populator.service.ts,
+ *  which needs Evidence creates and Edge creates to commit atomically) --
+ *  defaults to the module-level `prisma` singleton, so every existing call
+ *  site/test is unaffected. */
+export function createEvidenceEdge(input: EvidenceEdgeInput, client: Prisma.TransactionClient | typeof prisma = prisma) {
+  return client.evidenceEdge.upsert({
     where: {
       fromId_toId_relation: { fromId: input.fromId, toId: input.toId, relation: input.relation },
     },

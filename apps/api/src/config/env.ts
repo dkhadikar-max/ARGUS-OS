@@ -129,6 +129,20 @@ const envSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((v) => v === "true"),
+
+  // Evidence Graph Phase 1 ("Safe") -- gates a purely additive, standalone
+  // Evidence/EvidenceEdge population from Apollo/Clearbit enrichment (see
+  // agents/evidence-populator.service.ts). Writes Evidence rows with
+  // decisionId: null (never attached to a Decision) and EvidenceEdge
+  // corroboration/contradiction rows. Never alters DecisionAgentInput,
+  // which agent runs, or what a decision returns -- decision.evidence in
+  // DecisionResponse is populated from Evidence rows scoped by decisionId,
+  // which these new rows never set. Default false: current behavior and
+  // timing are unaffected until explicitly enabled.
+  EVIDENCE_POPULATOR_V1: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
 });
 
 export type Env = z.infer<typeof envSchema>;

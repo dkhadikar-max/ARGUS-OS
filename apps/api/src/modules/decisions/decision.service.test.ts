@@ -43,6 +43,18 @@ vi.mock("../../lib/analytics.js", () => ({ track }));
 const enrichProspect = vi.fn();
 vi.mock("../../lib/enrichment/enrichment.service.js", () => ({ enrichProspect }));
 
+const populateEvidenceFromEnrichment = vi.fn();
+vi.mock("../../agents/evidence-populator.service.js", () => ({ populateEvidenceFromEnrichment }));
+
+// Partial mock -- everything except EVIDENCE_POPULATOR_V1 stays real
+// (same importOriginal pattern as orchestrator.js above), so tests that
+// don't care about this flag are unaffected. beforeEach resets it to its
+// real default (false) so setting it in one test can't leak into another.
+vi.mock("../../config/env.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../config/env.js")>();
+  return { env: { ...actual.env } };
+});
+
 const recordAudit = vi.fn();
 vi.mock("../../lib/audit.js", () => ({ recordAudit }));
 
@@ -63,6 +75,7 @@ vi.mock("../teams/team.repository.js", () => ({ getTeam }));
 
 const { createDecision, getDecision, overrideDecision, recordAction, shareDecision, editMessageDraft, notifyControllerEscalation } =
   await import("./decision.service.js");
+const { env } = await import("../../config/env.js");
 
 const auth: AuthContext = { type: "user", userId: "user_1", teamId: "team_1", planTier: "FREE" };
 
@@ -120,6 +133,8 @@ beforeEach(() => {
   // fires unless a test explicitly sets a larger window.
   getRecentOverrideCounts.mockResolvedValue({ total: 0, overridden: 0 });
   getTeam.mockResolvedValue({ companyContext: null }); // default: no company context set
+  env.EVIDENCE_POPULATOR_V1 = false; // real default -- tests that care override explicitly
+  populateEvidenceFromEnrichment.mockResolvedValue({ evidenceCreated: 0, edgesCreated: 0, staleMarked: 0 });
 });
 
 describe("createDecision", () => {
@@ -746,6 +761,102 @@ describe("createDecision", () => {
     const result = await createDecision(request, auth);
 
     expect(result.debate).toBeUndefined();
+  });
+
+  describe("Evidence Populator gating (env.EVIDENCE_POPULATOR_V1)", () => {
+    function setUpHappyPath() {
+      const enrichedProspect = {
+        id: "prospect_1",
+        name: "Sarah Chen",
+        title: "VP Engineering",
+        companyName: "DataFlow Inc.",
+        companyDomain: "dataflow.io",
+        linkedInUrl: request.prospect.linkedInUrl,
+        companySize: "87",
+        companyIndustry: "information technology & services",
+        companyFunding: "$24,000,000",
+        rawProfile: null,
+        enrichedData: { apollo: {}, clearbit: null },
+      };
+      const apollo = { industry: "information technology & services", estimatedNumEmployees: 87, totalFunding: 24_000_000, latestFundingRoundDate: null };
+      repo.upsertProspect.mockResolvedValue({ ...enrichedProspect, companySize: null, companyIndustry: null, companyFunding: null });
+      enrichProspect.mockResolvedValue({ prospect: enrichedProspect, apollo, clearbit: null, person: null });
+      repo.getActiveIcp.mockResolvedValue(null);
+      repo.getCompanyMemory.mockResolvedValue(null);
+      repo.getUserPreferences.mockResolvedValue(null);
+      repo.getProspectDecisionHistory.mockResolvedValue([]);
+      repo.getTeamOutcomeHistory.mockResolvedValue([]);
+      runAgentDebate.mockResolvedValue({ output: agentDebateOutput, processingTimeMs: 3200, usage: { inputTokens: 4000, outputTokens: 2000 } });
+      repo.createDecisionRecord.mockResolvedValue({ id: "dec_1" });
+      repo.findDecisionById.mockResolvedValue({
+        id: "dec_1",
+        verdict: "STRONG_YES",
+        confidence: 94,
+        reasoning: "Strong across the board.",
+        recommendedAction: "message_now",
+        processingTimeMs: 3200,
+        createdAt: new Date("2026-07-10T14:32:00Z"),
+        updatedAt: new Date("2026-07-10T14:32:00Z"),
+        evidence: [],
+        messageDrafts: [],
+        outcome: null,
+        override: null,
+        prospect: enrichedProspect,
+      });
+      return { apollo };
+    }
+
+    it("flag off (default): populator is never called, and behavior is unchanged from today", async () => {
+      const { apollo } = setUpHappyPath();
+
+      const result = await createDecision(request, auth);
+
+      expect(env.EVIDENCE_POPULATOR_V1).toBe(false);
+      expect(populateEvidenceFromEnrichment).not.toHaveBeenCalled();
+      expect(result.verdict).toBe("STRONG_YES");
+      void apollo;
+    });
+
+    it("flag on: populator is called once with the enrichment data, and the response is unchanged", async () => {
+      const { apollo } = setUpHappyPath();
+      env.EVIDENCE_POPULATOR_V1 = true;
+
+      const result = await createDecision(request, auth);
+
+      expect(populateEvidenceFromEnrichment).toHaveBeenCalledTimes(1);
+      expect(populateEvidenceFromEnrichment).toHaveBeenCalledWith({
+        prospectId: "prospect_1",
+        apollo,
+        clearbit: null,
+        person: null,
+      });
+      expect(result.verdict).toBe("STRONG_YES");
+    });
+
+    it("flag on, populator throws: createDecision still completes normally (fault isolation)", async () => {
+      setUpHappyPath();
+      env.EVIDENCE_POPULATOR_V1 = true;
+      populateEvidenceFromEnrichment.mockRejectedValue(new Error("boom"));
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+
+      const result = await createDecision(request, auth);
+
+      expect(result.verdict).toBe("STRONG_YES");
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ err: expect.any(Error), prospectId: "prospect_1" }),
+        "Evidence populator failed; decision creation unaffected",
+      );
+    });
+
+    it("flag on: populator is still invoked on a debate cache hit (gated on enrichment, not the cache)", async () => {
+      setUpHappyPath();
+      env.EVIDENCE_POPULATOR_V1 = true;
+      getCachedDebateOutput.mockResolvedValue(agentDebateOutput);
+
+      await createDecision(request, auth);
+
+      expect(populateEvidenceFromEnrichment).toHaveBeenCalledTimes(1);
+    });
   });
 });
 
