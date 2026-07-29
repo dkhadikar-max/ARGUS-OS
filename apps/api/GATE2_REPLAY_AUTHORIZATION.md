@@ -16,6 +16,35 @@ incident -- not further architectural refinement. `decision.service.ts`
 remains untouched throughout; nothing in the live decision-making path has
 changed.
 
+**Reaffirmed and scoped explicitly, before the remaining 46-fixture run.**
+Frozen files -- no changes for any reason short of a Replay/Shadow finding
+or production incident:
+
+| File | Component |
+|---|---|
+| `src/agents/planner.ts` | Planner |
+| `src/agents/executor.ts` | Executor |
+| `src/agents/decision-engine.ts` | DecisionEngine |
+| `src/agents/controller.ts` | Controller |
+| `src/agents/decision-synthesizer.ts` | Synthesizer |
+| `src/agents/reasoning-capability.ts` | Capability interfaces |
+| `src/agents/execution-runtime.ts` | Old runtime (the Replay baseline itself -- changing it would invalidate every comparison already made) |
+
+**Still permitted** (and how each has actually been used so far): Replay
+tooling (`eval/run-replay.ts`, `eval/run-replay-sample.ts`,
+`eval/run-replay-noise-baseline.ts`), diagnostics
+(`eval/diagnose-fixture.ts`), logging, documentation
+(`REPLAY_METHODOLOGY.md`, this file), and bug fixes scoped to replay
+infrastructure itself -- e.g. the `DecisionStateGraph.states` Map-vs-
+`JSON.stringify` serialization fix in `run-replay.ts` (v3), which fixed a
+diagnostic capture bug, not engine behavior.
+
+**Verified, not just asserted**: `git diff --stat 6f73804..HEAD` against
+all seven frozen files above returns no output -- zero changes to any of
+them since the freeze was declared, across all of Gate 2a (`5113afd`) and
+the diagnostic/artifact-persistence work (`61019bb`). The freeze has held
+in practice, not just in this document's wording.
+
 ## What Gate 2 (Replay) actually is
 
 Run all 51 real fixtures through **both** the old runtime
