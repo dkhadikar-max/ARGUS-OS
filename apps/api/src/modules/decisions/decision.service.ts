@@ -8,6 +8,7 @@ import { observePromptCaching } from "../../agents/prompt-cache-shadow.js";
 import { recordDecisionStateShadow } from "../../agents/decision-state-shadow.js";
 import { observeCapabilityOutputs } from "../../agents/capability-shadow.js";
 import { populateEvidenceFromEnrichment } from "../../agents/evidence-populator.service.js";
+import { runShadowDecision } from "../../agents/shadow-runner.service.js";
 import { env } from "../../config/env.js";
 import { calculateDecisionValue, calculateInferenceCostUsd, calculateValueCostRatio } from "../../agents/decision-value.service.js";
 import {
@@ -295,6 +296,15 @@ export async function createDecision(
   // and on the legacy pipeline (runAgentDebate never produces one); real,
   // set below only when Execution Runtime v1 actually ran.
   let executionTraceId: string | null = null;
+  // Real only when Execution Runtime v1 actually ran a Controller cycle
+  // (cache-miss + env.EXECUTION_RUNTIME_V1) -- null on the legacy pipeline
+  // and on every cache hit, matching executionTraceId's own real/not-
+  // fabricated precedent. Shadow Runner (below) needs to tell "the live
+  // side genuinely has no controller decision" apart from "the live side
+  // has one and it differs" -- conflating the two would falsely flag a
+  // controller mismatch on nearly every shadowed decision today.
+  let liveControllerAction: string | null = null;
+  let liveControllerTargetCapability: string | null = null;
 
   // Hoisted above the cache-hit/miss split (pure, no side effects) so both
   // paths can feed it to the Controller-spec Phase 1 shadow state below --
@@ -368,6 +378,8 @@ export async function createDecision(
     // `Awaited<ReturnType<...>>`-composed union.
     const executionResult: ExecutionRuntimeResult | null = isExecutionRuntimeResult(debate) ? debate : null;
     executionTraceId = executionResult?.executionId ?? null;
+    liveControllerAction = executionResult?.executionTrace.controllerDecision.action ?? null;
+    liveControllerTargetCapability = executionResult?.executionTrace.controllerDecision.targetCapability ?? null;
     // Bug fix (Critical #5): "escalate" used to be a logged no-op -- the
     // Controller could correctly conclude a decision needs human review and
     // nothing would happen (fell through to Judge exactly like stop/
@@ -443,6 +455,33 @@ export async function createDecision(
   const full = await findDecisionById(decision.id, request.context.teamId);
   if (!full) {
     throw new AppError("NOT_FOUND", "Decision could not be retrieved after creation");
+  }
+
+  // Gate 3 Shadow Mode, Increment 1 -- runs evaluate() (the v5.0
+  // DecisionEngine) in shadow on a sampled percentage of real traffic, and
+  // persists a comparable ShadowDecision row. Fire-and-forget (void, not
+  // awaited) -- evaluate() is a second full LLM debate, and awaiting it
+  // would add real seconds of latency to every sampled live request. Both
+  // this outer .catch() and runShadowDecision's own internal try/catch are
+  // required, not redundant -- an unawaited, uncaught rejected promise is
+  // a Node unhandledRejection, which can crash the process.
+  if (env.SHADOW_MODE_ENABLED) {
+    void runShadowDecision({
+      decisionId: decision.id,
+      teamId: request.context.teamId,
+      userId: request.context.userId,
+      prospectId: prospect.id,
+      prospectName: prospect.name,
+      context,
+      liveOutput: output,
+      liveVerdict: verdict,
+      liveProcessingTimeMs: processingTimeMs,
+      liveUsage: usage,
+      liveControllerAction,
+      liveControllerTargetCapability,
+    }).catch((err) => {
+      logger.warn({ err, decisionId: decision.id, teamId: request.context.teamId }, "Shadow Runner failed to start; live decision unaffected");
+    });
   }
 
   // Controller & Capability Specification v3.0 -- shadow-only: computes

@@ -46,6 +46,9 @@ vi.mock("../../lib/enrichment/enrichment.service.js", () => ({ enrichProspect })
 const populateEvidenceFromEnrichment = vi.fn();
 vi.mock("../../agents/evidence-populator.service.js", () => ({ populateEvidenceFromEnrichment }));
 
+const runShadowDecision = vi.fn();
+vi.mock("../../agents/shadow-runner.service.js", () => ({ runShadowDecision }));
+
 // Partial mock -- everything except EVIDENCE_POPULATOR_V1 stays real
 // (same importOriginal pattern as orchestrator.js above), so tests that
 // don't care about this flag are unaffected. beforeEach resets it to its
@@ -135,6 +138,9 @@ beforeEach(() => {
   getTeam.mockResolvedValue({ companyContext: null }); // default: no company context set
   env.EVIDENCE_POPULATOR_V1 = false; // real default -- tests that care override explicitly
   populateEvidenceFromEnrichment.mockResolvedValue({ evidenceCreated: 0, edgesCreated: 0, staleMarked: 0 });
+  env.SHADOW_MODE_ENABLED = false; // real default
+  env.SHADOW_SAMPLE_RATE_PERCENT = 0; // real default
+  runShadowDecision.mockResolvedValue(undefined);
 });
 
 describe("createDecision", () => {
@@ -856,6 +862,127 @@ describe("createDecision", () => {
       await createDecision(request, auth);
 
       expect(populateEvidenceFromEnrichment).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("Shadow Runner gating (env.SHADOW_MODE_ENABLED)", () => {
+    function setUpHappyPath() {
+      const enrichedProspect = {
+        id: "prospect_1",
+        name: "Sarah Chen",
+        title: "VP Engineering",
+        companyName: "DataFlow Inc.",
+        companyDomain: "dataflow.io",
+        linkedInUrl: request.prospect.linkedInUrl,
+        companySize: null,
+        companyIndustry: null,
+        companyFunding: null,
+        rawProfile: null,
+        enrichedData: null,
+      };
+      repo.upsertProspect.mockResolvedValue(enrichedProspect);
+      enrichProspect.mockResolvedValue({ prospect: enrichedProspect, apollo: null, clearbit: null, person: null });
+      repo.getActiveIcp.mockResolvedValue(null);
+      repo.getCompanyMemory.mockResolvedValue(null);
+      repo.getUserPreferences.mockResolvedValue(null);
+      repo.getProspectDecisionHistory.mockResolvedValue([]);
+      repo.getTeamOutcomeHistory.mockResolvedValue([]);
+      runAgentDebate.mockResolvedValue({ output: agentDebateOutput, processingTimeMs: 3200, usage: { inputTokens: 4000, outputTokens: 2000 } });
+      repo.createDecisionRecord.mockResolvedValue({ id: "dec_1" });
+      repo.findDecisionById.mockResolvedValue({
+        id: "dec_1",
+        verdict: "STRONG_YES",
+        confidence: 94,
+        reasoning: "Strong across the board.",
+        recommendedAction: "message_now",
+        processingTimeMs: 3200,
+        createdAt: new Date("2026-07-10T14:32:00Z"),
+        updatedAt: new Date("2026-07-10T14:32:00Z"),
+        evidence: [],
+        messageDrafts: [],
+        outcome: null,
+        override: null,
+        prospect: enrichedProspect,
+      });
+    }
+
+    it("flag off (default): runShadowDecision is never called, and behavior is unchanged from today", async () => {
+      setUpHappyPath();
+
+      const result = await createDecision(request, auth);
+
+      expect(env.SHADOW_MODE_ENABLED).toBe(false);
+      expect(runShadowDecision).not.toHaveBeenCalled();
+      expect(result.verdict).toBe("STRONG_YES");
+    });
+
+    it("flag on: runShadowDecision is called once with real (not placeholder) values from the live path", async () => {
+      setUpHappyPath();
+      env.SHADOW_MODE_ENABLED = true;
+
+      const result = await createDecision(request, auth);
+
+      expect(runShadowDecision).toHaveBeenCalledTimes(1);
+      expect(runShadowDecision).toHaveBeenCalledWith(
+        expect.objectContaining({
+          decisionId: "dec_1",
+          teamId: "team_1",
+          userId: "user_1",
+          prospectId: "prospect_1",
+          prospectName: "Sarah Chen",
+          liveOutput: agentDebateOutput,
+          liveVerdict: "STRONG_YES",
+          liveProcessingTimeMs: 3200,
+          liveUsage: { inputTokens: 4000, outputTokens: 2000 },
+          // legacy pipeline (env.EXECUTION_RUNTIME_V1 defaults false) never
+          // produces a real ControllerDecision -- must be null, not omitted
+          // or a placeholder.
+          liveControllerAction: null,
+          liveControllerTargetCapability: null,
+        }),
+      );
+      expect(result.verdict).toBe("STRONG_YES");
+    });
+
+    it("flag on, runShadowDecision's returned promise rejects: createDecision still resolves normally (fault isolation at the call site)", async () => {
+      setUpHappyPath();
+      env.SHADOW_MODE_ENABLED = true;
+      runShadowDecision.mockRejectedValue(new Error("boom"));
+      const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+
+      const result = await createDecision(request, auth);
+
+      expect(result.verdict).toBe("STRONG_YES");
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ err: expect.any(Error), decisionId: "dec_1", teamId: "team_1" }),
+        "Shadow Runner failed to start; live decision unaffected",
+      );
+    });
+
+    it("flag on: createDecision resolves promptly even when runShadowDecision never resolves (proves genuinely fire-and-forget, not accidentally awaited)", async () => {
+      setUpHappyPath();
+      env.SHADOW_MODE_ENABLED = true;
+      runShadowDecision.mockImplementation(() => new Promise(() => {})); // never resolves
+
+      const result = await Promise.race([
+        createDecision(request, auth),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("createDecision did not resolve promptly -- shadow call is being awaited")), 500)),
+      ]);
+
+      expect((result as { verdict: string }).verdict).toBe("STRONG_YES");
+    });
+
+    it("cache hit: runShadowDecision is still called, with liveControllerAction: null (a cached output never carries a controller decision)", async () => {
+      setUpHappyPath();
+      env.SHADOW_MODE_ENABLED = true;
+      getCachedDebateOutput.mockResolvedValue(agentDebateOutput);
+
+      await createDecision(request, auth);
+
+      expect(runShadowDecision).toHaveBeenCalledTimes(1);
+      expect(runShadowDecision).toHaveBeenCalledWith(
+        expect.objectContaining({ liveControllerAction: null, liveControllerTargetCapability: null }),
+      );
     });
   });
 });

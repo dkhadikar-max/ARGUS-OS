@@ -48,6 +48,7 @@ model User {
   preferences   UserPreferences?
   overrides     Override[]
   sessions      Session[]
+  shadowDecisions ShadowDecision[]
 
   @@index([teamId])
   @@index([email])
@@ -123,6 +124,7 @@ model Team {
   apiKeys                   ApiKey[]
   webhooks                  Webhook[]
   integrations              Integration[]
+  shadowDecisions           ShadowDecision[]
 
   @@index([slug])
 }
@@ -440,9 +442,10 @@ model Prospect {
   updatedAt       DateTime  @updatedAt
 
   // Relations
-  decisions     Decision[]
-  evidence      Evidence[]
-  intentSignals IntentSignal[]
+  decisions       Decision[]
+  evidence        Evidence[]
+  intentSignals   IntentSignal[]
+  shadowDecisions ShadowDecision[]
 
   @@index([companyDomain])
   @@index([companyIndustry])
@@ -598,11 +601,12 @@ model Decision {
   prospect   Prospect @relation(fields: [prospectId], references: [id])
   prospectId String
 
-  evidence      Evidence[]
-  messageDrafts MessageDraft[]
-  outcome       Outcome?
-  override      Override?
-  actionTaken   ActionTaken?
+  evidence       Evidence[]
+  messageDrafts  MessageDraft[]
+  outcome        Outcome?
+  override       Override?
+  actionTaken    ActionTaken?
+  shadowDecision ShadowDecision?
 
   @@index([userId])
   @@index([teamId])
@@ -618,6 +622,69 @@ enum Verdict {
   WAIT
   PASS
   HARD_PASS
+}
+
+// Gate 3 Shadow Mode, Increment 1 -- one row per real evaluate() (v5.0
+// DecisionEngine) run against real production input, paired 1:1 with the
+// live Decision it shadowed. Never influences DecisionResponse; written
+// only by agents/shadow-runner.service.ts, gated behind
+// env.SHADOW_MODE_ENABLED (default false) and env.SHADOW_SAMPLE_RATE_PERCENT
+// (default 0). No row exists for a failed shadow run -- failure visibility
+// is Datadog counters + logs, not a partial/nullable-everything row.
+model ShadowDecision {
+  id         String   @id @default(cuid())
+  decision   Decision @relation(fields: [decisionId], references: [id])
+  decisionId String   @unique
+  team       Team     @relation(fields: [teamId], references: [id])
+  teamId     String
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+  prospect   Prospect @relation(fields: [prospectId], references: [id])
+  prospectId String
+
+  executionId String @unique // DecisionEngineResult.executionId
+  packId      String // executionTrace.packId
+  model       String // executionTrace.model
+
+  // verdict is derived via scoreToVerdict(weightedScore), matching
+  // decision.service.ts's own de-risked derivation -- NOT
+  // output.judge.verdict directly (the Judge agent can mislabel its own
+  // weighted_score band; see decision.service.ts's comment on this).
+  verdict           Verdict
+  confidence        Int
+  weightedScore     Float?
+  agentConsensus    String?
+  recommendedAction String?
+  reasoning         String
+
+  controllerAction           String
+  controllerTargetCapability String?
+  controllerReasons          Json
+
+  processingTimeMs Int
+  inputTokens      Int
+  outputTokens     Int
+  inferenceCostUsd Float
+
+  agentOutputs   Json // shadow run's full AgentDebateOutput
+  executionTrace Json // shadow run's full ExecutionTrace -- PII-free by design, see execution-trace.ts. result.graph is never persisted here (it carries real PII).
+
+  // Denormalized vs.-live comparison, computed once at write time by
+  // decision-disagreement.ts -- recomputable from agentOutputs + the
+  // paired Decision row if thresholds change later; these columns exist
+  // for cheap filtering, not as the sole source of truth.
+  verdictAgreement               Boolean
+  confidenceDelta                Int
+  controllerComparisonApplicable Boolean // false when the live decision had no real ControllerDecision to compare (legacy pipeline or cache hit)
+  disagreementCategories         Json // DisagreementCategory[]
+
+  createdAt DateTime @default(now())
+
+  @@index([teamId])
+  @@index([prospectId])
+  @@index([createdAt])
+  @@index([teamId, createdAt])
+  @@index([verdictAgreement])
 }
 
 model Override {

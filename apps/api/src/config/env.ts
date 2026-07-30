@@ -143,6 +143,25 @@ const envSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((v) => v === "true"),
+
+  // Gate 3 Shadow Mode, Increment 1 -- gates running the v5.0
+  // DecisionEngine's evaluate() in shadow alongside the live decision path
+  // (see agents/shadow-runner.service.ts), persisting a comparable
+  // ShadowDecision row. Fire-and-forget; never affects DecisionResponse or
+  // live request latency. Default false: Gate 2 (Replay) is paused, not
+  // passed (GATE2_REPLAY_REPORT.md) -- this flag builds the infrastructure
+  // without shadowing any real traffic until a human explicitly enables it.
+  SHADOW_MODE_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
+
+  // Percentage of sampled decisions to shadow when SHADOW_MODE_ENABLED is
+  // true, 0-100. Default 0: two independent gates, not one -- "deployed"
+  // and "actually shadowing traffic" are never conflated. z.coerce.number()
+  // is fine here (unlike z.coerce.boolean(), avoided everywhere else in
+  // this file) -- Number("50") behaves correctly.
+  SHADOW_SAMPLE_RATE_PERCENT: z.coerce.number().int().min(0).max(100).default(0),
 });
 
 export type Env = z.infer<typeof envSchema>;
