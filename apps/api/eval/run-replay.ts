@@ -394,4 +394,7 @@ async function main() {
 // real API call. Explicit invocation only:
 //   npx tsx -e "import('./eval/run-replay.js').then(m => m.main())"
 // or a future one-line CLI wrapper, once authorized.
-export { main, runReplay };
+// serializeGraph/persistDisagreementArtifacts exported so a resume/batch
+// script (e.g. after an interrupted run) can persist artifacts in exactly
+// the same format this file does, instead of duplicating the logic.
+export { main, runReplay, serializeGraph, persistDisagreementArtifacts };
