@@ -162,6 +162,16 @@ const envSchema = z.object({
   // is fine here (unlike z.coerce.boolean(), avoided everywhere else in
   // this file) -- Number("50") behaves correctly.
   SHADOW_SAMPLE_RATE_PERCENT: z.coerce.number().int().min(0).max(100).default(0),
+
+  // Admin API Increment A -- comma-separated allowlist of emails granted
+  // cross-tenant admin access via middleware/admin-auth.ts's requireAdmin
+  // (Argus-internal Shadow Mode monitoring, not a customer-facing role --
+  // UserRole.ADMIN is declared in schema.prisma but never assigned to any
+  // real user anywhere). Re-parsed per-request inside requireAdmin itself
+  // rather than derived here, matching INTERNAL_SERVICE_TOKEN's own
+  // read-per-request pattern. Default "": admin access is off everywhere
+  // until explicitly set.
+  ADMIN_EMAILS: z.string().default(""),
 });
 
 export type Env = z.infer<typeof envSchema>;

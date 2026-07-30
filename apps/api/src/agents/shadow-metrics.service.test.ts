@@ -117,4 +117,32 @@ describe("getShadowMetricsSummary", () => {
       expect.objectContaining({ where: expect.objectContaining({ teamId: "team_42" }) }),
     );
   });
+
+  describe("cross-team mode (teamId undefined -- Admin API Increment A)", () => {
+    it("omits teamId from the where clause entirely when teamId is undefined", async () => {
+      await getShadowMetricsSummary(undefined, 7);
+
+      const where = prisma.shadowDecision.findMany.mock.calls[0]![0].where;
+      expect(where).not.toHaveProperty("teamId");
+      expect(where).toHaveProperty("createdAt");
+    });
+
+    it("uses the no-teamId $queryRaw branch for volume-by-day when teamId is undefined", async () => {
+      await getShadowMetricsSummary(undefined, 7);
+
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+      // The tagged-template call's first argument is the strings array --
+      // the no-teamId branch's query text has no "teamId" reference at all.
+      const strings = prisma.$queryRaw.mock.calls[0]![0] as TemplateStringsArray;
+      expect(strings.join("")).not.toContain("teamId");
+    });
+
+    it("a defined teamId still produces the single-team $queryRaw branch (regression check)", async () => {
+      await getShadowMetricsSummary("team_1", 7);
+
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+      const strings = prisma.$queryRaw.mock.calls[0]![0] as TemplateStringsArray;
+      expect(strings.join("")).toContain("teamId");
+    });
+  });
 });

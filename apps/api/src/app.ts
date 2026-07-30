@@ -22,6 +22,7 @@ import { routingRouter } from "./modules/routing/routing.routes.js";
 import { learningRecommendationRouter } from "./modules/learning-recommendations/learning-recommendation.routes.js";
 import { complexityRouter } from "./modules/complexity/complexity.routes.js";
 import { reasoningAssetRouter } from "./modules/reasoning-assets/reasoning-asset.routes.js";
+import { adminRouter } from "./modules/admin/admin.routes.js";
 
 export function createApp() {
   const app = express();
@@ -77,6 +78,7 @@ export function createApp() {
   app.use("/api/v1/learning-recommendations", learningRecommendationRouter);
   app.use("/api/v1/complexity", complexityRouter);
   app.use("/api/v1/reasoning-assets", reasoningAssetRouter);
+  app.use("/api/v1/admin", adminRouter);
 
   app.use(errorHandler);
 

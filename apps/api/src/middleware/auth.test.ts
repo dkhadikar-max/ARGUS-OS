@@ -94,7 +94,7 @@ describe("requireAuth — x-api-key", () => {
       revokedAt: null,
       team: { plan: "PRO" },
     });
-    prisma.user.findFirst.mockResolvedValue({ id: "user_1", role: "SDR", teamId: "team_1" });
+    prisma.user.findFirst.mockResolvedValue({ id: "user_1", role: "SDR", email: "rep@dataflow.io", teamId: "team_1" });
 
     const req = mockReq({ "x-api-key": "argus_live_abc123", "x-acting-user-id": "user_1" });
     const next = vi.fn();
@@ -107,6 +107,7 @@ describe("requireAuth — x-api-key", () => {
       apiKeyId: "key_1",
       userId: "user_1",
       role: "SDR",
+      email: "rep@dataflow.io",
     });
   });
 
@@ -133,6 +134,7 @@ describe("requireAuth — Bearer JWT", () => {
     prisma.user.findUnique.mockResolvedValue({
       id: "user_1",
       role: "SDR",
+      email: "sarah@dataflow.io",
       team: { id: "team_1", plan: "STARTER" },
     });
 
@@ -144,6 +146,7 @@ describe("requireAuth — Bearer JWT", () => {
       type: "user",
       userId: "user_1",
       role: "SDR",
+      email: "sarah@dataflow.io",
       teamId: "team_1",
       planTier: "STARTER",
     });

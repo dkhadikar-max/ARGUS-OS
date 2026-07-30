@@ -65,15 +65,17 @@ function percentile(sortedValues: number[], p: number): number {
 }
 
 /**
- * Real aggregate metrics for a team's ShadowDecision rows in the last
- * `sinceDays` days. Every rate/average is computed from real rows, never
- * hand-set -- an empty window returns real zero values, not NaN.
+ * Real aggregate metrics for ShadowDecision rows in the last `sinceDays`
+ * days, either for one team (teamId given) or across ALL teams (teamId
+ * undefined -- Admin API Increment A's cross-tenant monitoring view).
+ * Every rate/average is computed from real rows, never hand-set -- an
+ * empty window returns real zero values, not NaN.
  */
-export async function getShadowMetricsSummary(teamId: string, sinceDays: number): Promise<ShadowMetricsSummary> {
+export async function getShadowMetricsSummary(teamId: string | undefined, sinceDays: number): Promise<ShadowMetricsSummary> {
   const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
 
   const rows = await prisma.shadowDecision.findMany({
-    where: { teamId, createdAt: { gte: since } },
+    where: { ...(teamId ? { teamId } : {}), createdAt: { gte: since } },
     select: { verdictAgreement: true, confidenceDelta: true, inferenceCostUsd: true, disagreementCategories: true, createdAt: true },
   });
 
@@ -98,14 +100,24 @@ export async function getShadowMetricsSummary(teamId: string, sinceDays: number)
 /** Real, date-bucketed volume series -- Prisma's groupBy doesn't support
  *  date truncation, so this is one parameterized raw query (tagged
  *  template, safe from injection), matching outcome.repository.ts's own
- *  established $queryRaw convention. */
-async function getShadowVolumeByDay(teamId: string, since: Date): Promise<ShadowVolumeByDay[]> {
-  const rows = await prisma.$queryRaw<Array<{ day: Date; count: bigint }>>`
-    SELECT date_trunc('day', "createdAt") AS day, count(*) AS count
-    FROM "ShadowDecision"
-    WHERE "teamId" = ${teamId} AND "createdAt" >= ${since}
-    GROUP BY day
-    ORDER BY day
-  `;
+ *  established $queryRaw convention. Two tagged templates (not a shared
+ *  conditional fragment) so a defined teamId stays a fully parameterized,
+ *  single-team query -- never string-concatenated either way. */
+async function getShadowVolumeByDay(teamId: string | undefined, since: Date): Promise<ShadowVolumeByDay[]> {
+  const rows = teamId
+    ? await prisma.$queryRaw<Array<{ day: Date; count: bigint }>>`
+        SELECT date_trunc('day', "createdAt") AS day, count(*) AS count
+        FROM "ShadowDecision"
+        WHERE "teamId" = ${teamId} AND "createdAt" >= ${since}
+        GROUP BY day
+        ORDER BY day
+      `
+    : await prisma.$queryRaw<Array<{ day: Date; count: bigint }>>`
+        SELECT date_trunc('day', "createdAt") AS day, count(*) AS count
+        FROM "ShadowDecision"
+        WHERE "createdAt" >= ${since}
+        GROUP BY day
+        ORDER BY day
+      `;
   return rows.map((r) => ({ day: r.day.toISOString().slice(0, 10), count: Number(r.count) }));
 }

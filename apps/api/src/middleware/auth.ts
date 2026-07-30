@@ -10,6 +10,10 @@ export interface AuthContext {
   type: "user" | "api_key";
   userId?: string;
   role?: UserRole;
+  // Only set when there's a resolved individual user (JWT auth, or
+  // api_key + x-acting-user-id) -- undefined for a bare team-scoped API
+  // key, matching how userId/role are already undefined there.
+  email?: string;
   teamId: string;
   planTier: PlanTier;
   apiKeyId?: string;
@@ -83,7 +87,7 @@ async function authenticateWithApiKey(
     );
   }
 
-  return { ...base, userId: actingUser.id, role: actingUser.role };
+  return { ...base, userId: actingUser.id, role: actingUser.role, email: actingUser.email };
 }
 
 /** Exported for lib/websocket.ts: Bible §10.6's `wss://.../ws?token={jwt}`
@@ -144,6 +148,7 @@ export async function authenticateWithJwt(token: string): Promise<AuthContext> {
     type: "user",
     userId: user.id,
     role: user.role,
+    email: user.email,
     teamId: user.team.id,
     planTier: user.team.plan,
   };
