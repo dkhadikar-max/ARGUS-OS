@@ -91,3 +91,64 @@ export const adminListShadowDecisionsResponseSchema = z.object({
   }),
 });
 export type AdminListShadowDecisionsResponse = z.infer<typeof adminListShadowDecisionsResponseSchema>;
+
+// GET /api/v1/admin/shadow-decisions/:id -- single-row detail, loaded on
+// demand by Decision Explorer. Unlike the list endpoint, this DOES include
+// the full agentOutputs/executionTrace JSON on both sides -- the whole
+// reason this is a separate endpoint rather than expanding the list's
+// select is so that cost only applies to the one row someone actually
+// opened, not every row in a page.
+export const adminShadowDecisionParamsSchema = z.object({
+  id: z.string(),
+});
+export type AdminShadowDecisionParams = z.infer<typeof adminShadowDecisionParamsSchema>;
+
+export const adminShadowDecisionDetailResponseSchema = z.object({
+  id: z.string(),
+  teamId: z.string(),
+  teamName: z.string(),
+  prospectId: z.string(),
+  decisionId: z.string(),
+  executionId: z.string(),
+  packId: z.string(),
+  model: z.string(),
+  liveDecision: z.object({
+    verdict: verdictSchema,
+    confidence: z.number().int(),
+    weightedScore: z.number().nullable(),
+    reasoning: z.string(),
+    recommendedAction: z.string().nullable(),
+    agentConsensus: z.string().nullable(),
+    agentOutputs: z.unknown().nullable(),
+    processingTimeMs: z.number().int().nullable(),
+    inputTokens: z.number().int().nullable(),
+    outputTokens: z.number().int().nullable(),
+    inferenceCostUsd: z.number().nullable(),
+    createdAt: z.string().datetime(),
+  }),
+  shadowDecision: z.object({
+    verdict: verdictSchema,
+    confidence: z.number().int(),
+    weightedScore: z.number().nullable(),
+    reasoning: z.string(),
+    recommendedAction: z.string().nullable(),
+    agentConsensus: z.string().nullable(),
+    agentOutputs: z.unknown(),
+    executionTrace: z.unknown(),
+    controllerAction: z.string(),
+    controllerTargetCapability: z.string().nullable(),
+    controllerReasons: z.array(z.string()),
+    processingTimeMs: z.number().int(),
+    inputTokens: z.number().int(),
+    outputTokens: z.number().int(),
+    inferenceCostUsd: z.number(),
+    createdAt: z.string().datetime(),
+  }),
+  comparison: z.object({
+    verdictAgreement: z.boolean(),
+    confidenceDelta: z.number().int(),
+    controllerComparisonApplicable: z.boolean(),
+    disagreementCategories: z.array(disagreementCategorySchema),
+  }),
+});
+export type AdminShadowDecisionDetailResponse = z.infer<typeof adminShadowDecisionDetailResponseSchema>;

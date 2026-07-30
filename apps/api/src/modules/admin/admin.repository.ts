@@ -57,3 +57,58 @@ export async function listShadowDecisions(query: AdminListShadowDecisionsQuery) 
 
   return { rows, total };
 }
+
+/** Single-row detail, full agentOutputs/executionTrace on both sides --
+ *  the cost of the heavy JSON only applies to the one row someone actually
+ *  opened, unlike listShadowDecisions' deliberately narrow select. */
+export async function getShadowDecisionById(id: string) {
+  return prisma.shadowDecision.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      teamId: true,
+      team: { select: { name: true } },
+      prospectId: true,
+      decisionId: true,
+      executionId: true,
+      packId: true,
+      model: true,
+      verdict: true,
+      confidence: true,
+      weightedScore: true,
+      reasoning: true,
+      recommendedAction: true,
+      agentConsensus: true,
+      agentOutputs: true,
+      executionTrace: true,
+      controllerAction: true,
+      controllerTargetCapability: true,
+      controllerReasons: true,
+      processingTimeMs: true,
+      inputTokens: true,
+      outputTokens: true,
+      inferenceCostUsd: true,
+      verdictAgreement: true,
+      confidenceDelta: true,
+      controllerComparisonApplicable: true,
+      disagreementCategories: true,
+      createdAt: true,
+      decision: {
+        select: {
+          verdict: true,
+          confidence: true,
+          weightedScore: true,
+          reasoning: true,
+          recommendedAction: true,
+          agentConsensus: true,
+          agentOutputs: true,
+          processingTimeMs: true,
+          inputTokens: true,
+          outputTokens: true,
+          inferenceCostUsd: true,
+          createdAt: true,
+        },
+      },
+    },
+  });
+}

@@ -2,11 +2,11 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { AdminListShadowDecisionsQuery } from "@argus/shared";
 
 const prisma = {
-  shadowDecision: { findMany: vi.fn(), count: vi.fn() },
+  shadowDecision: { findMany: vi.fn(), count: vi.fn(), findUnique: vi.fn() },
 };
 vi.mock("@argus/database", () => ({ prisma }));
 
-const { listShadowDecisions } = await import("./admin.repository.js");
+const { listShadowDecisions, getShadowDecisionById } = await import("./admin.repository.js");
 
 function query(overrides: Partial<AdminListShadowDecisionsQuery> = {}): AdminListShadowDecisionsQuery {
   return { limit: 20, offset: 0, ...overrides };
@@ -88,5 +88,36 @@ describe("listShadowDecisions", () => {
 
     expect(result).toEqual({ rows: fakeRows, total: 1 });
     expect(prisma.shadowDecision.count).toHaveBeenCalledWith({ where: expect.objectContaining({ teamId: "team_1" }) });
+  });
+});
+
+describe("getShadowDecisionById", () => {
+  beforeEach(() => {
+    prisma.shadowDecision.findUnique.mockResolvedValue(null);
+  });
+
+  it("queries by id", async () => {
+    await getShadowDecisionById("sd_1");
+
+    expect(prisma.shadowDecision.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "sd_1" } }),
+    );
+  });
+
+  it("select includes agentOutputs and executionTrace, unlike the list endpoint's select", async () => {
+    await getShadowDecisionById("sd_1");
+
+    const select = prisma.shadowDecision.findUnique.mock.calls[0]![0].select;
+    expect(select.agentOutputs).toBe(true);
+    expect(select.executionTrace).toBe(true);
+    expect(select.decision.select.agentOutputs).toBe(true);
+  });
+
+  it("returns null when no row matches, unmodified", async () => {
+    prisma.shadowDecision.findUnique.mockResolvedValue(null);
+
+    const result = await getShadowDecisionById("nonexistent");
+
+    expect(result).toBeNull();
   });
 });

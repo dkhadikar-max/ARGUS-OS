@@ -4,9 +4,10 @@ const getShadowMetricsSummary = vi.fn();
 vi.mock("../../agents/shadow-metrics.service.js", () => ({ getShadowMetricsSummary }));
 
 const listShadowDecisionsRepo = vi.fn();
-vi.mock("./admin.repository.js", () => ({ listShadowDecisions: listShadowDecisionsRepo }));
+const getShadowDecisionByIdRepo = vi.fn();
+vi.mock("./admin.repository.js", () => ({ listShadowDecisions: listShadowDecisionsRepo, getShadowDecisionById: getShadowDecisionByIdRepo }));
 
-const { getShadowMetrics, listShadowDecisions } = await import("./admin.service.js");
+const { getShadowMetrics, listShadowDecisions, getShadowDecisionDetail } = await import("./admin.service.js");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -115,5 +116,118 @@ describe("listShadowDecisions", () => {
     listShadowDecisionsRepo.mockResolvedValue({ rows: [repoRow()], total: 5 });
     const more = await listShadowDecisions({ limit: 1, offset: 0 } as never);
     expect(more.pagination.hasMore).toBe(true); // 0 + 1 < 5
+  });
+});
+
+describe("getShadowDecisionDetail", () => {
+  function repoDetail(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "sd_1",
+      teamId: "team_1",
+      team: { name: "DataFlow Inc." },
+      prospectId: "prospect_1",
+      decisionId: "dec_1",
+      executionId: "exec_1",
+      packId: "sales-lead-qualification-v1",
+      model: "claude-sonnet-4-6",
+      verdict: "WAIT",
+      confidence: 52,
+      weightedScore: 48.5,
+      reasoning: "shadow reasoning",
+      recommendedAction: "wait_for_signal",
+      agentConsensus: "high",
+      agentOutputs: { judge: { verdict: "WAIT" } },
+      executionTrace: { requestId: "exec_1" },
+      controllerAction: "stop",
+      controllerTargetCapability: null,
+      controllerReasons: ["real reason"],
+      processingTimeMs: 93000,
+      inputTokens: 5000,
+      outputTokens: 900,
+      inferenceCostUsd: 0.08,
+      verdictAgreement: false,
+      confidenceDelta: 2,
+      controllerComparisonApplicable: true,
+      disagreementCategories: ["verdict_mismatch"],
+      createdAt: new Date("2026-07-30T12:00:00Z"),
+      decision: {
+        verdict: "PASS",
+        confidence: 54,
+        weightedScore: 38,
+        reasoning: "live reasoning",
+        recommendedAction: "pass_and_move_on",
+        agentConsensus: "high",
+        agentOutputs: { judge: { verdict: "PASS" } },
+        processingTimeMs: 91000,
+        inputTokens: 4900,
+        outputTokens: 870,
+        inferenceCostUsd: 0.09,
+        createdAt: new Date("2026-07-30T11:58:00Z"),
+      },
+      ...overrides,
+    };
+  }
+
+  it("returns null when the repository finds no row", async () => {
+    getShadowDecisionByIdRepo.mockResolvedValue(null);
+
+    const result = await getShadowDecisionDetail("nonexistent");
+
+    expect(result).toBeNull();
+  });
+
+  it("maps a full repository row into the detail response shape, including both sides' full agentOutputs/executionTrace", async () => {
+    getShadowDecisionByIdRepo.mockResolvedValue(repoDetail());
+
+    const result = await getShadowDecisionDetail("sd_1");
+
+    expect(result).toEqual({
+      id: "sd_1",
+      teamId: "team_1",
+      teamName: "DataFlow Inc.",
+      prospectId: "prospect_1",
+      decisionId: "dec_1",
+      executionId: "exec_1",
+      packId: "sales-lead-qualification-v1",
+      model: "claude-sonnet-4-6",
+      liveDecision: {
+        verdict: "PASS",
+        confidence: 54,
+        weightedScore: 38,
+        reasoning: "live reasoning",
+        recommendedAction: "pass_and_move_on",
+        agentConsensus: "high",
+        agentOutputs: { judge: { verdict: "PASS" } },
+        processingTimeMs: 91000,
+        inputTokens: 4900,
+        outputTokens: 870,
+        inferenceCostUsd: 0.09,
+        createdAt: "2026-07-30T11:58:00.000Z",
+      },
+      shadowDecision: {
+        verdict: "WAIT",
+        confidence: 52,
+        weightedScore: 48.5,
+        reasoning: "shadow reasoning",
+        recommendedAction: "wait_for_signal",
+        agentConsensus: "high",
+        agentOutputs: { judge: { verdict: "WAIT" } },
+        executionTrace: { requestId: "exec_1" },
+        controllerAction: "stop",
+        controllerTargetCapability: null,
+        controllerReasons: ["real reason"],
+        processingTimeMs: 93000,
+        inputTokens: 5000,
+        outputTokens: 900,
+        inferenceCostUsd: 0.08,
+        createdAt: "2026-07-30T12:00:00.000Z",
+      },
+      comparison: {
+        verdictAgreement: false,
+        confidenceDelta: 2,
+        controllerComparisonApplicable: true,
+        disagreementCategories: ["verdict_mismatch"],
+      },
+    });
   });
 });

@@ -2,17 +2,17 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { Request, Response } from "express";
 import type { AuthContext } from "../../middleware/auth.js";
 
-const adminService = { getShadowMetrics: vi.fn(), listShadowDecisions: vi.fn() };
+const adminService = { getShadowMetrics: vi.fn(), listShadowDecisions: vi.fn(), getShadowDecisionDetail: vi.fn() };
 vi.mock("./admin.service.js", () => adminService);
 
 const recordAudit = vi.fn();
 const requestMeta = vi.fn(() => ({ ipAddress: "127.0.0.1", userAgent: "test" }));
 vi.mock("../../lib/audit.js", () => ({ recordAudit, requestMeta }));
 
-const { getShadowMetricsHandler, listShadowDecisionsHandler } = await import("./admin.controller.js");
+const { getShadowMetricsHandler, listShadowDecisionsHandler, getShadowDecisionDetailHandler } = await import("./admin.controller.js");
 
-function mockReq(auth: AuthContext | undefined, query: Record<string, unknown>): Request {
-  return { auth, query } as unknown as Request;
+function mockReq(auth: AuthContext | undefined, query: Record<string, unknown>, params: Record<string, unknown> = {}): Request {
+  return { auth, query, params } as unknown as Request;
 }
 
 function mockRes() {
@@ -111,6 +111,48 @@ describe("listShadowDecisionsHandler", () => {
     const next = vi.fn();
 
     await listShadowDecisionsHandler(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+describe("getShadowDecisionDetailHandler", () => {
+  it("calls the service with the real id, responds 200, and audits with the specific decisionId (not all-teams)", async () => {
+    adminService.getShadowDecisionDetail.mockResolvedValue({ id: "sd_1", teamId: "team_1", decisionId: "dec_1" });
+    const req = mockReq(auth, {}, { id: "sd_1" });
+    const res = mockRes();
+    const next = vi.fn();
+
+    await getShadowDecisionDetailHandler(req, res, next);
+
+    expect(adminService.getShadowDecisionDetail).toHaveBeenCalledWith("sd_1");
+    expect(res.statusCode).toBe(200);
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ entityType: "admin_shadow_decision_detail", action: "viewed", actorId: "admin_1", entityId: "sd_1", afterState: { teamId: "team_1", decisionId: "dec_1" } }),
+    );
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("calls next(NOT_FOUND) when the service returns null, and never audits a nonexistent row", async () => {
+    adminService.getShadowDecisionDetail.mockResolvedValue(null);
+    const req = mockReq(auth, {}, { id: "nonexistent" });
+    const res = mockRes();
+    const next = vi.fn();
+
+    await getShadowDecisionDetailHandler(req, res, next);
+
+    expect(next.mock.calls[0]?.[0]).toMatchObject({ code: "NOT_FOUND" });
+    expect(recordAudit).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(0);
+  });
+
+  it("calls next(err) instead of throwing when the service rejects", async () => {
+    adminService.getShadowDecisionDetail.mockRejectedValue(new Error("db down"));
+    const req = mockReq(auth, {}, { id: "sd_1" });
+    const res = mockRes();
+    const next = vi.fn();
+
+    await getShadowDecisionDetailHandler(req, res, next);
 
     expect(next).toHaveBeenCalledWith(expect.any(Error));
   });
