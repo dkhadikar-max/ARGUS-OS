@@ -3,7 +3,7 @@ import { agentDebateOutputSchema, type AgentDebateOutput } from "@argus/shared";
 import { attachUsageAndRethrow, type DecisionAgentInput, type StageId, type StageOutputs, type TokenUsageAccumulator } from "./orchestrator.js";
 import type { DecisionPack } from "./decision-pack.js";
 import { buildAgentStageCapabilities } from "./reasoning-capability.js";
-import type { ExecutionContext, ExecutionIdentity, ReasoningCapability, AgentStageCapabilityInput, CapabilityOutputsByStage } from "./reasoning-capability.js";
+import type { ExecutionContext, ExecutionIdentity, ReasoningCapability, AgentStageCapabilityInput, CapabilityOutputsByStage, StageExecutor } from "./reasoning-capability.js";
 import { plan } from "./planner.js";
 import { runPlan, type CapabilityResolver } from "./executor.js";
 import { createCallAgentDecisionSynthesizer, type DecisionSynthesizer } from "./decision-synthesizer.js";
@@ -90,13 +90,26 @@ export async function evaluate(
   input: DecisionAgentInput,
   identity: ExecutionIdentity,
   policy: ControllerPolicy = DEFAULT_CONTROLLER_POLICY,
-  synthesizer: DecisionSynthesizer = createCallAgentDecisionSynthesizer(pack),
+  // Gate 3 Increment 1.5 -- a single trailing options object for both LLM-
+  // execution override points, rather than letting positional params creep
+  // one-by-one (stageExecutor is new here; synthesizer moved into this
+  // object from its own standalone positional param -- verified safe: no
+  // real call site anywhere in this codebase ever passed a 5th positional
+  // argument, so this is fully backward-compatible, not just additive).
+  // Shadow Runner uses this to give shadow evaluate() runs a fully
+  // independent LLMProvider (and therefore circuit breaker) from the live
+  // path's module-level singleton in orchestrator.ts.
+  options?: {
+    synthesizer?: DecisionSynthesizer;
+    stageExecutor?: StageExecutor;
+  },
 ): Promise<DecisionEngineResult> {
   const startedAt = Date.now();
   const executionId = randomUUID();
+  const synthesizer = options?.synthesizer ?? createCallAgentDecisionSynthesizer(pack);
 
   const executionPlan = plan(pack);
-  const capabilities = buildAgentStageCapabilities(pack);
+  const capabilities = buildAgentStageCapabilities(pack, options?.stageExecutor);
   const resolveCapability: CapabilityResolver = (stage) => {
     if (!isAgentStageId(stage)) {
       throw new Error(`decision-engine.ts: no agent-stage capability registered for stage "${stage}"`);

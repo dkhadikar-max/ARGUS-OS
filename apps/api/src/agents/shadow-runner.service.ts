@@ -3,13 +3,30 @@ import { prisma } from "@argus/database";
 import { evaluate, type DecisionEngineResult } from "./decision-engine.js";
 import { SALES_LEAD_QUALIFICATION_PACK } from "./decision-pack.js";
 import type { DecisionAgentInput, TokenUsageAccumulator } from "./orchestrator.js";
-import type { ExecutionIdentity } from "./reasoning-capability.js";
+import { createCallAgentStageExecutor, type ExecutionIdentity } from "./reasoning-capability.js";
+import { createCallAgentDecisionSynthesizer } from "./decision-synthesizer.js";
+import { CircuitBreakerProvider } from "./providers/circuit-breaker-provider.js";
+import { ClaudeProvider } from "./providers/claude-provider.js";
+import type { LLMProvider } from "./providers/llm-provider.interface.js";
 import { calculateInferenceCostUsd } from "./decision-value.service.js";
 import { compareForShadow, type NormalizedShadowOutcome } from "./decision-disagreement.js";
 import { shouldSampleShadow } from "./shadow-sampling.js";
+import { tryAcquireShadowSlot, releaseShadowSlot } from "./shadow-concurrency.js";
+import { raceWithTimeout, ShadowTimeoutError } from "./shadow-timeout.js";
 import { env } from "../config/env.js";
 import { increment, timing } from "../lib/datadog.js";
 import { logger } from "../lib/logger.js";
+
+// Gate 3 Increment 1.5 -- a fully independent LLMProvider (and therefore
+// circuit breaker) from orchestrator.ts's own module-level `llmProvider`
+// singleton, which every live-path callAgent() call routes through. A
+// shadow-only failure burst can no longer trip the breaker live traffic
+// depends on, and vice versa. Constructed unconditionally at module load
+// (cheap -- no network calls), same pattern orchestrator.ts:38 already
+// uses for its own singleton.
+const shadowLlmProvider: LLMProvider = new CircuitBreakerProvider(new ClaudeProvider());
+const shadowStageExecutor = createCallAgentStageExecutor(shadowLlmProvider);
+const shadowSynthesizer = createCallAgentDecisionSynthesizer(SALES_LEAD_QUALIFICATION_PACK, shadowLlmProvider);
 
 /**
  * Gate 3 Shadow Mode, Increment 1 -- runs the v5.0 DecisionEngine
@@ -47,6 +64,18 @@ export async function runShadowDecision(input: ShadowRunnerInput): Promise<void>
   if (!env.SHADOW_MODE_ENABLED) return;
   if (!shouldSampleShadow(input.prospectId, env.SHADOW_SAMPLE_RATE_PERCENT)) return;
 
+  // Gate 3 Increment 1.5 -- concurrency cap. Occupies a slot only for
+  // traffic that's already passed both gates above; excess sampled
+  // decisions are dropped, never queued (see shadow-concurrency.ts).
+  if (!tryAcquireShadowSlot(env.SHADOW_MAX_CONCURRENT)) {
+    increment("shadow.decision.dropped", { reason: "concurrency_limit" });
+    logger.warn(
+      { decisionId: input.decisionId, teamId: input.teamId, prospectId: input.prospectId },
+      "Shadow Runner: dropped, at concurrency limit",
+    );
+    return;
+  }
+
   const startedAt = Date.now();
   const identity: ExecutionIdentity = {
     teamId: input.teamId,
@@ -57,14 +86,32 @@ export async function runShadowDecision(input: ShadowRunnerInput): Promise<void>
 
   let result: DecisionEngineResult;
   try {
-    result = await evaluate(SALES_LEAD_QUALIFICATION_PACK, input.context, identity);
+    // Gate 3 Increment 1.5 -- independent timeout (raceWithTimeout) and an
+    // independent LLMProvider/circuit breaker (shadowSynthesizer/
+    // shadowStageExecutor, see module-level construction above) for every
+    // one of the 5 real LLM calls this run makes.
+    result = await raceWithTimeout(
+      evaluate(SALES_LEAD_QUALIFICATION_PACK, input.context, identity, undefined, {
+        synthesizer: shadowSynthesizer,
+        stageExecutor: shadowStageExecutor,
+      }),
+      env.SHADOW_TIMEOUT_MS,
+    );
   } catch (err) {
-    increment("shadow.decision.error", { reason: "evaluate_threw" });
+    const reason = err instanceof ShadowTimeoutError ? "timeout" : "evaluate_threw";
+    increment("shadow.decision.error", { reason });
     logger.warn(
       { err, decisionId: input.decisionId, teamId: input.teamId, prospectId: input.prospectId },
-      "Shadow Runner: evaluate() failed; live decision unaffected",
+      reason === "timeout"
+        ? "Shadow Runner: evaluate() exceeded SHADOW_TIMEOUT_MS; abandoning (live decision unaffected)"
+        : "Shadow Runner: evaluate() failed; live decision unaffected",
     );
     return;
+  } finally {
+    // Released at the timeout boundary, not when an abandoned evaluate()
+    // call eventually settles -- a slow/hung run frees its slot
+    // immediately, which is the entire point of capping concurrency.
+    releaseShadowSlot();
   }
 
   // Same de-risked derivation decision.service.ts already applies to the

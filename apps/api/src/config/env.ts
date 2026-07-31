@@ -163,6 +163,30 @@ const envSchema = z.object({
   // this file) -- Number("50") behaves correctly.
   SHADOW_SAMPLE_RATE_PERCENT: z.coerce.number().int().min(0).max(100).default(0),
 
+  // Gate 3 Increment 1.5 -- caps how many shadow evaluate() runs (each a
+  // full 5-call LLM debate) can be in flight at once in this process (see
+  // agents/shadow-concurrency.ts). Excess sampled decisions are DROPPED,
+  // never queued -- shadow traffic is fire-and-forget/best-effort by
+  // design, and queuing would let shadow load build up under sustained
+  // high traffic, exactly the risk being hardened against. Default 2 is an
+  // explicit placeholder -- no real production data exists yet at 0%
+  // sample rate -- same honest-placeholder treatment
+  // circuit-breaker-provider.ts's own DEFAULT_FAILURE_THRESHOLD uses.
+  // Known limitation: per-process, not global -- if apps/api ever runs
+  // multiple instances, effective concurrency is this x instance_count.
+  SHADOW_MAX_CONCURRENT: z.coerce.number().int().min(1).default(2),
+
+  // Gate 3 Increment 1.5 -- independent wall-clock cap on one shadow
+  // evaluate() run (see agents/shadow-timeout.ts). Does not cancel the
+  // underlying Anthropic HTTP calls -- only bounds how long
+  // runShadowDecision waits before abandoning the attempt and freeing its
+  // concurrency slot. Default 180000ms (3 min) is grounded on the one real
+  // observed number in this codebase -- orchestrator.ts's own comment
+  // recording 112-116s for the full live pipeline -- with headroom above
+  // it for shadow's own 5 real LLM calls under debate-cache misses or
+  // provider slowness.
+  SHADOW_TIMEOUT_MS: z.coerce.number().int().min(1000).default(180000),
+
   // Admin API Increment A -- comma-separated allowlist of emails granted
   // cross-tenant admin access via middleware/admin-auth.ts's requireAdmin
   // (Argus-internal Shadow Mode monitoring, not a customer-facing role --

@@ -19,6 +19,9 @@ vi.mock("../config/env.js", async (importOriginal) => {
 
 const { runShadowDecision } = await import("./shadow-runner.service.js");
 const { env } = await import("../config/env.js");
+// Real, unmocked module -- shadow-runner.service.js exercises its actual
+// counter; reset between tests since it's process-level module state.
+const { __resetShadowConcurrencyForTests } = await import("./shadow-concurrency.js");
 
 function agentDebateOutput(overrides: { verdict?: Verdict; confidence?: number; weighted_score?: number } = {}): AgentDebateOutput {
   return {
@@ -75,6 +78,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   env.SHADOW_MODE_ENABLED = false;
   env.SHADOW_SAMPLE_RATE_PERCENT = 0;
+  // Generous enough that none of the pre-existing tests below trip these
+  // new gates incidentally -- only the dedicated "concurrency limiting"/
+  // "timeout" describe blocks override them to something tight.
+  env.SHADOW_MAX_CONCURRENT = 10;
+  env.SHADOW_TIMEOUT_MS = 60000;
+  __resetShadowConcurrencyForTests();
   prisma.shadowDecision.create.mockResolvedValue({ id: "shadow_1" });
 });
 
@@ -197,5 +206,127 @@ describe("runShadowDecision", () => {
     const data = prisma.shadowDecision.create.mock.calls[0]![0].data;
     expect(data.controllerComparisonApplicable).toBe(false);
     expect(data.disagreementCategories).not.toContain("controller_action_mismatch");
+  });
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (err: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+describe("concurrency limiting (Gate 3 Increment 1.5)", () => {
+  it("at the concurrency limit -- evaluate() is not called for the dropped call, shadow.decision.dropped increments, resolves cleanly", async () => {
+    env.SHADOW_MODE_ENABLED = true;
+    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    env.SHADOW_MAX_CONCURRENT = 1;
+    const first = deferred<ReturnType<typeof shadowResult>>();
+    evaluateMock.mockReturnValueOnce(first.promise); // never resolves within this test
+
+    const p1 = runShadowDecision(baseInput()); // fired, not awaited -- occupies the only slot
+    await Promise.resolve(); // let p1 reach and pass the concurrency check synchronously
+
+    await runShadowDecision(baseInput()); // second call: must be dropped, must resolve immediately
+
+    expect(evaluateMock).toHaveBeenCalledTimes(1);
+    expect(increment).toHaveBeenCalledWith("shadow.decision.dropped", { reason: "concurrency_limit" });
+
+    first.resolve(shadowResult()); // let the first call finish so nothing leaks past this test
+    await p1;
+  });
+
+  it("a released slot (evaluate() resolved) allows a subsequent call through", async () => {
+    env.SHADOW_MODE_ENABLED = true;
+    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    env.SHADOW_MAX_CONCURRENT = 1;
+    evaluateMock.mockResolvedValueOnce(shadowResult());
+    await runShadowDecision(baseInput());
+
+    evaluateMock.mockResolvedValueOnce(shadowResult());
+    await runShadowDecision(baseInput());
+
+    expect(prisma.shadowDecision.create).toHaveBeenCalledTimes(2);
+  });
+
+  it("evaluate() throwing still releases its concurrency slot", async () => {
+    env.SHADOW_MODE_ENABLED = true;
+    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    env.SHADOW_MAX_CONCURRENT = 1;
+    evaluateMock.mockRejectedValueOnce(new Error("boom"));
+    await runShadowDecision(baseInput());
+
+    evaluateMock.mockResolvedValueOnce(shadowResult());
+    await runShadowDecision(baseInput());
+
+    expect(prisma.shadowDecision.create).toHaveBeenCalledTimes(1); // the second call succeeded
+    expect(increment).toHaveBeenCalledWith("shadow.decision.error", { reason: "evaluate_threw" });
+  });
+});
+
+describe("independent timeout (Gate 3 Increment 1.5)", () => {
+  it("evaluate() slower than SHADOW_TIMEOUT_MS -- times out, records shadow.decision.error/timeout, never persists", async () => {
+    env.SHADOW_MODE_ENABLED = true;
+    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    env.SHADOW_TIMEOUT_MS = 20;
+    evaluateMock.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve(shadowResult()), 300)),
+    );
+
+    await runShadowDecision(baseInput());
+
+    expect(increment).toHaveBeenCalledWith("shadow.decision.error", { reason: "timeout" });
+    expect(prisma.shadowDecision.create).not.toHaveBeenCalled();
+  });
+
+  it("evaluate() faster than SHADOW_TIMEOUT_MS -- succeeds normally, timeout reason never recorded", async () => {
+    env.SHADOW_MODE_ENABLED = true;
+    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    env.SHADOW_TIMEOUT_MS = 5000;
+    evaluateMock.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve(shadowResult()), 10)),
+    );
+
+    await runShadowDecision(baseInput());
+
+    expect(prisma.shadowDecision.create).toHaveBeenCalledTimes(1);
+    expect(increment).not.toHaveBeenCalledWith("shadow.decision.error", { reason: "timeout" });
+  });
+
+  it("a released slot after a timeout admits the next call (finally releases at the timeout boundary, not when the orphaned call eventually settles)", async () => {
+    env.SHADOW_MODE_ENABLED = true;
+    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    env.SHADOW_MAX_CONCURRENT = 1;
+    env.SHADOW_TIMEOUT_MS = 20;
+    evaluateMock.mockImplementationOnce(
+      () => new Promise((resolve) => setTimeout(() => resolve(shadowResult()), 5000)), // abandoned, left pending
+    );
+    await runShadowDecision(baseInput()); // times out
+
+    evaluateMock.mockResolvedValueOnce(shadowResult());
+    await runShadowDecision(baseInput()); // must not be dropped -- the slot from the timed-out call is already free
+
+    expect(prisma.shadowDecision.create).toHaveBeenCalledTimes(1);
+    expect(increment).not.toHaveBeenCalledWith("shadow.decision.dropped", expect.anything());
+  });
+});
+
+describe("independent circuit breaker wiring (Gate 3 Increment 1.5)", () => {
+  it("evaluate() is called with shadow-specific synthesizer/stageExecutor, not left undefined", async () => {
+    env.SHADOW_MODE_ENABLED = true;
+    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    evaluateMock.mockResolvedValue(shadowResult());
+
+    await runShadowDecision(baseInput());
+
+    const [, , , , options] = evaluateMock.mock.calls[0]!;
+    expect(options).toBeDefined();
+    expect(options.synthesizer).toBeDefined();
+    expect(typeof options.synthesizer.synthesize).toBe("function");
+    expect(options.stageExecutor).toBeDefined();
+    expect(typeof options.stageExecutor.execute).toBe("function");
   });
 });

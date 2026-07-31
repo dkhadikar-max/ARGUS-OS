@@ -169,6 +169,36 @@ describe("evaluate (DecisionEngine)", () => {
     expect(result.graph.decisionId).toBe(result.executionId);
   });
 
+  // Gate 3 Increment 1.5 regression test -- the concrete proof the new
+  // options.stageExecutor override point actually works, not just
+  // typechecks. A custom executor bypasses callAgent/claude-client.js
+  // entirely for the 4 agent-stage capabilities; only Judge (which used no
+  // override here) should still reach the mocked Anthropic client.
+  it("options.stageExecutor, when passed, is actually used for the 4 agent-stage capabilities instead of the default", async () => {
+    mockAllStagesConfident(); // still needed for the Judge call, which goes through the default synthesizer
+
+    const outputByStage: Record<string, unknown> = {
+      research: researchOutput(80),
+      icp: icpOutput(80),
+      intent: intentOutput(75),
+      risk: riskOutput(80),
+    };
+    const customExecute = vi.fn().mockImplementation(async (stage: string) => ({
+      output: outputByStage[stage],
+      usage: { inputTokens: 10, outputTokens: 10 },
+      durationMs: 1,
+    }));
+    const customExecutor = { execute: customExecute };
+
+    const result = await evaluate(SALES_LEAD_QUALIFICATION_PACK, sampleInput, sampleIdentity, undefined, {
+      stageExecutor: customExecutor,
+    });
+
+    expect(customExecute).toHaveBeenCalledTimes(4); // research/icp/intent/risk
+    expect(createMock).toHaveBeenCalledTimes(1); // Judge only -- the real, default path
+    expect(result.output.judge.verdict).toBe("YES");
+  });
+
   it("ExecutionTrace excludes PII and raw evidence -- no prospect name, no raw prospect data, no drafted message text", async () => {
     mockAllStagesConfident();
 
