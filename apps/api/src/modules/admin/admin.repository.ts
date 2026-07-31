@@ -107,6 +107,7 @@ export async function getShadowDecisionById(id: string) {
           outputTokens: true,
           inferenceCostUsd: true,
           createdAt: true,
+          evidence: { select: { id: true, type: true, data: true, confidence: true } },
         },
       },
     },

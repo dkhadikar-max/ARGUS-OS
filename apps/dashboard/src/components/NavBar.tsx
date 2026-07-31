@@ -33,6 +33,16 @@ export async function NavBar() {
           <Link href="/billing" className="text-sm font-medium text-gray-600 hover:text-teal-700">
             Billing
           </Link>
+          {/* Admin API Increment A -- always rendered, not conditionally
+              hidden. This dashboard has no safe client-visible way to know
+              admin status (ADMIN_EMAILS lives only in apps/api); a
+              non-admin who clicks lands on an honest 403 panel, since the
+              API remains the real gate. Follow-up, not built here: a cheap
+              isAdmin boolean on GET /api/v1/teams/me would let this link
+              be hidden properly. */}
+          <Link href="/admin/shadow-decisions" className="text-sm font-medium text-gray-600 hover:text-teal-700">
+            Admin
+          </Link>
         </div>
         {/* No Bible wireframe covers this, but Clerk's own UserButton is
             the standard "account + sign out" affordance and there was

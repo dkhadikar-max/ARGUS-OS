@@ -29,13 +29,14 @@ export const createDecisionRequestSchema = z.object({
 });
 export type CreateDecisionRequest = z.infer<typeof createDecisionRequestSchema>;
 
-const evidenceCardSchema = z.object({
+export const evidenceCardSchema = z.object({
   id: z.string(),
   type: z.string(),
   signal: z.string(),
   relevance: z.string(),
   confidence: z.number().min(0).max(100),
 });
+export type EvidenceCard = z.infer<typeof evidenceCardSchema>;
 
 const messagePayloadSchema = z.object({
   linkedin: z.string().nullable(),

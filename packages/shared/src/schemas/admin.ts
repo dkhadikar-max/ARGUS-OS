@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { verdictSchema } from "./enums.js";
+import { evidenceCardSchema } from "./decision.js";
 
 // Admin API Increment A -- Argus-internal, cross-tenant Shadow Mode
 // monitoring (see apps/api/src/modules/admin/). teamId is optional on
@@ -124,6 +125,7 @@ export const adminShadowDecisionDetailResponseSchema = z.object({
     inputTokens: z.number().int().nullable(),
     outputTokens: z.number().int().nullable(),
     inferenceCostUsd: z.number().nullable(),
+    evidence: z.array(evidenceCardSchema),
     createdAt: z.string().datetime(),
   }),
   shadowDecision: z.object({

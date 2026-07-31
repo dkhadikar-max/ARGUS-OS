@@ -1,5 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
 import type {
+  AdminListShadowDecisionsQuery,
+  AdminListShadowDecisionsResponse,
+  AdminShadowDecisionDetailResponse,
   CompanyMemoryResponse,
   CompleteOnboardingRequest,
   CreateActionRequest,
@@ -23,7 +26,20 @@ import type {
 } from "@argus/shared";
 import { env } from "./env";
 
-export class ApiError extends Error {}
+export class ApiError extends Error {
+  status?: number;
+  constructor(message: string, status?: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/** True only for a real 403 ApiError -- the Admin API's requireAdmin gate.
+ *  A pure helper so a Server Component's 403-vs-everything-else branch is
+ *  independently testable, not only exercisable via an untested page.tsx. */
+export function isForbiddenError(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 403;
+}
 
 /**
  * Server-side only (Next.js Server Components / Route Handlers / Server
@@ -59,7 +75,7 @@ async function apiFetch<T>(path: string, init?: RequestInit, presetToken?: strin
     body = await response.json();
   } catch {
     if (!response.ok) {
-      throw new ApiError(`Request failed with status ${response.status}`);
+      throw new ApiError(`Request failed with status ${response.status}`, response.status);
     }
     throw new ApiError("Response was not valid JSON");
   }
@@ -69,7 +85,7 @@ async function apiFetch<T>(path: string, init?: RequestInit, presetToken?: strin
       typeof body === "object" && body && "error" in body
         ? (body as { error: { message: string } }).error.message
         : `Request failed with status ${response.status}`;
-    throw new ApiError(message);
+    throw new ApiError(message, response.status);
   }
   return body as T;
 }
@@ -135,4 +151,20 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  // Admin API Increment A -- cross-tenant Shadow Mode monitoring, gated
+  // server-side by requireAdmin (email allowlist). A non-admin caller gets
+  // a real 403 ApiError here, handled by isForbiddenError above.
+  getShadowDecisions: (params?: Partial<AdminListShadowDecisionsQuery>) => {
+    const query = new URLSearchParams();
+    if (params?.teamId) query.set("teamId", params.teamId);
+    if (params?.verdict) query.set("verdict", params.verdict);
+    if (params?.verdictAgreement !== undefined) query.set("verdictAgreement", String(params.verdictAgreement));
+    if (params?.from) query.set("from", params.from);
+    if (params?.to) query.set("to", params.to);
+    query.set("limit", String(params?.limit ?? 20));
+    query.set("offset", String(params?.offset ?? 0));
+    return apiFetch<AdminListShadowDecisionsResponse>(`/api/v1/admin/shadow-decisions?${query.toString()}`);
+  },
+  getShadowDecisionDetail: (id: string) =>
+    apiFetch<AdminShadowDecisionDetailResponse>(`/api/v1/admin/shadow-decisions/${id}`),
 };

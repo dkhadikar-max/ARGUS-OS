@@ -73,6 +73,16 @@ export async function getShadowDecisionDetail(id: string): Promise<AdminShadowDe
       inputTokens: r.decision.inputTokens,
       outputTokens: r.decision.outputTokens,
       inferenceCostUsd: r.decision.inferenceCostUsd,
+      evidence: r.decision.evidence.map((e) => {
+        const data = (e.data as { signal?: string; relevance?: string } | null) ?? {};
+        return {
+          id: e.id,
+          type: e.type,
+          signal: data.signal ?? "",
+          relevance: data.relevance ?? "",
+          confidence: e.confidence,
+        };
+      }),
       createdAt: r.decision.createdAt.toISOString(),
     },
     shadowDecision: {

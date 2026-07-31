@@ -162,6 +162,7 @@ describe("getShadowDecisionDetail", () => {
         inputTokens: 4900,
         outputTokens: 870,
         inferenceCostUsd: 0.09,
+        evidence: [{ id: "ev_1", type: "FIRMOGRAPHIC", data: { signal: "Series B", relevance: "funding stage" }, confidence: 90 }],
         createdAt: new Date("2026-07-30T11:58:00Z"),
       },
       ...overrides,
@@ -202,6 +203,7 @@ describe("getShadowDecisionDetail", () => {
         inputTokens: 4900,
         outputTokens: 870,
         inferenceCostUsd: 0.09,
+        evidence: [{ id: "ev_1", type: "FIRMOGRAPHIC", signal: "Series B", relevance: "funding stage", confidence: 90 }],
         createdAt: "2026-07-30T11:58:00.000Z",
       },
       shadowDecision: {
@@ -229,5 +231,26 @@ describe("getShadowDecisionDetail", () => {
         disagreementCategories: ["verdict_mismatch"],
       },
     });
+  });
+
+  it("falls back to empty strings for evidence with malformed or missing data, without throwing", async () => {
+    getShadowDecisionByIdRepo.mockResolvedValue(
+      repoDetail({
+        decision: {
+          ...repoDetail().decision,
+          evidence: [
+            { id: "ev_bad", type: "FIRMOGRAPHIC", data: null, confidence: 50 },
+            { id: "ev_partial", type: "FIRMOGRAPHIC", data: { signal: "only signal" }, confidence: 60 },
+          ],
+        },
+      }),
+    );
+
+    const result = await getShadowDecisionDetail("sd_1");
+
+    expect(result?.liveDecision.evidence).toEqual([
+      { id: "ev_bad", type: "FIRMOGRAPHIC", signal: "", relevance: "", confidence: 50 },
+      { id: "ev_partial", type: "FIRMOGRAPHIC", signal: "only signal", relevance: "", confidence: 60 },
+    ]);
   });
 });

@@ -113,6 +113,15 @@ describe("getShadowDecisionById", () => {
     expect(select.decision.select.agentOutputs).toBe(true);
   });
 
+  it("select includes the live decision's evidence (id/type/data/confidence only)", async () => {
+    await getShadowDecisionById("sd_1");
+
+    const select = prisma.shadowDecision.findUnique.mock.calls[0]![0].select;
+    expect(select.decision.select.evidence).toEqual({
+      select: { id: true, type: true, data: true, confidence: true },
+    });
+  });
+
   it("returns null when no row matches, unmodified", async () => {
     prisma.shadowDecision.findUnique.mockResolvedValue(null);
 
