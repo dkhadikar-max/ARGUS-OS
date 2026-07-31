@@ -3,6 +3,8 @@ import type {
   AdminListShadowDecisionsQuery,
   AdminListShadowDecisionsResponse,
   AdminShadowDecisionDetailResponse,
+  AdminShadowMetricsQuery,
+  AdminShadowMetricsResponse,
   CompanyMemoryResponse,
   CompleteOnboardingRequest,
   CreateActionRequest,
@@ -167,4 +169,10 @@ export const api = {
   },
   getShadowDecisionDetail: (id: string) =>
     apiFetch<AdminShadowDecisionDetailResponse>(`/api/v1/admin/shadow-decisions/${id}`),
+  getShadowMetrics: (params?: Partial<AdminShadowMetricsQuery>) => {
+    const query = new URLSearchParams();
+    if (params?.teamId) query.set("teamId", params.teamId);
+    query.set("sinceDays", String(params?.sinceDays ?? 7));
+    return apiFetch<AdminShadowMetricsResponse>(`/api/v1/admin/shadow-metrics?${query.toString()}`);
+  },
 };

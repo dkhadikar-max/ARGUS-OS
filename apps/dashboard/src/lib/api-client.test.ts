@@ -155,6 +155,31 @@ describe("api.getShadowDecisionDetail", () => {
   });
 });
 
+describe("api.getShadowMetrics", () => {
+  it("defaults sinceDays to 7 and omits teamId when not provided", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { scope: { teamId: null, sinceDays: 7 } }));
+    await api.getShadowMetrics();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:4000/api/v1/admin/shadow-metrics?sinceDays=7",
+      expect.anything(),
+    );
+  });
+
+  it("includes teamId and a custom sinceDays when provided", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { scope: { teamId: "team_1", sinceDays: 30 } }));
+    await api.getShadowMetrics({ teamId: "team_1", sinceDays: 30 });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:4000/api/v1/admin/shadow-metrics?teamId=team_1&sinceDays=30",
+      expect.anything(),
+    );
+  });
+
+  it("propagates a 403 ApiError from a non-admin caller", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(403, { error: { message: "Admin access required" } }));
+    await expect(api.getShadowMetrics()).rejects.toMatchObject({ status: 403 });
+  });
+});
+
 describe("api.getOutcomes", () => {
   it("omits userId from the query string when not provided", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, {}));
