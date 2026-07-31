@@ -2,11 +2,16 @@ import type {
   AdminListShadowDecisionsQuery,
   AdminListShadowDecisionsResponse,
   AdminShadowDecisionDetailResponse,
+  AdminShadowHealthQuery,
+  AdminShadowHealthResponse,
   AdminShadowMetricsQuery,
   AdminShadowMetricsResponse,
 } from "@argus/shared";
 import { getShadowMetricsSummary } from "../../agents/shadow-metrics.service.js";
-import { listShadowDecisions as listShadowDecisionsRepo, getShadowDecisionById } from "./admin.repository.js";
+import { getShadowCircuitBreakerState } from "../../agents/shadow-runner.service.js";
+import { countShadowErrorsSince } from "../../agents/shadow-error-log.js";
+import { env } from "../../config/env.js";
+import { listShadowDecisions as listShadowDecisionsRepo, getShadowDecisionById, getLastShadowDecisionAt } from "./admin.repository.js";
 
 export async function getShadowMetrics(query: AdminShadowMetricsQuery): Promise<AdminShadowMetricsResponse> {
   const summary = await getShadowMetricsSummary(query.teamId, query.sinceDays);
@@ -109,5 +114,30 @@ export async function getShadowDecisionDetail(id: string): Promise<AdminShadowDe
       controllerComparisonApplicable: r.controllerComparisonApplicable,
       disagreementCategories: r.disagreementCategories as AdminShadowDecisionDetailResponse["comparison"]["disagreementCategories"],
     },
+  };
+}
+
+/** Gate 3 Increment 1.7 -- combines three real sources: env config
+ *  (SHADOW_MODE_ENABLED/SHADOW_SAMPLE_RATE_PERCENT), this apps/api
+ *  instance's own live in-process state (circuit breaker state, the
+ *  shadow-error-log ring buffer -- both per-process, not a cross-instance
+ *  global view), and the ShadowDecision table. Reuses
+ *  getShadowMetricsSummary's existing 24h-window aggregate for the
+ *  agreement figure rather than a new hourly-granularity query. */
+export async function getShadowHealth(query: AdminShadowHealthQuery): Promise<AdminShadowHealthResponse> {
+  const [lastDecisionAt, metrics] = await Promise.all([
+    getLastShadowDecisionAt(query.teamId),
+    getShadowMetricsSummary(query.teamId, 1),
+  ]);
+
+  return {
+    scope: { teamId: query.teamId ?? null },
+    enabled: env.SHADOW_MODE_ENABLED,
+    samplePercent: env.SHADOW_SAMPLE_RATE_PERCENT,
+    circuitBreakerState: getShadowCircuitBreakerState(),
+    lastDecisionAt: lastDecisionAt?.toISOString() ?? null,
+    verdictAgreementRate24h: metrics.verdictAgreementRate,
+    totalShadowDecisions24h: metrics.totalShadowDecisions,
+    recentErrorCount1h: countShadowErrorsSince(60 * 60 * 1000),
   };
 }

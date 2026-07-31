@@ -154,3 +154,28 @@ export const adminShadowDecisionDetailResponseSchema = z.object({
   }),
 });
 export type AdminShadowDecisionDetailResponse = z.infer<typeof adminShadowDecisionDetailResponseSchema>;
+
+// GET /api/v1/admin/shadow-health -- Gate 3 Increment 1.7. circuitBreakerState
+// and recentErrorCount1h are per-process, in-memory snapshots (the live
+// apps/api instance's own CircuitBreakerProvider state and error ring
+// buffer) -- reflects whichever instance served this request, not a
+// cross-instance global view. Stated on the dashboard card itself, not
+// just here.
+export const adminShadowHealthQuerySchema = z.object({
+  teamId: z.string().optional(),
+});
+export type AdminShadowHealthQuery = z.infer<typeof adminShadowHealthQuerySchema>;
+
+export const adminShadowHealthResponseSchema = z.object({
+  scope: z.object({
+    teamId: z.string().nullable(),
+  }),
+  enabled: z.boolean(),
+  samplePercent: z.number().int().min(0).max(100),
+  circuitBreakerState: z.enum(["closed", "open", "half_open"]),
+  lastDecisionAt: z.string().datetime().nullable(),
+  verdictAgreementRate24h: z.number().min(0).max(1),
+  totalShadowDecisions24h: z.number().int().nonnegative(),
+  recentErrorCount1h: z.number().int().nonnegative(),
+});
+export type AdminShadowHealthResponse = z.infer<typeof adminShadowHealthResponseSchema>;

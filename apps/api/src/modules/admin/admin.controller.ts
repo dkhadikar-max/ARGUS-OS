@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
-import { AppError, type AdminListShadowDecisionsQuery, type AdminShadowDecisionParams, type AdminShadowMetricsQuery } from "@argus/shared";
+import { AppError, type AdminListShadowDecisionsQuery, type AdminShadowDecisionParams, type AdminShadowHealthQuery, type AdminShadowMetricsQuery } from "@argus/shared";
 import * as adminService from "./admin.service.js";
 import { recordAudit, requestMeta } from "../../lib/audit.js";
 
@@ -42,6 +42,28 @@ export async function getShadowDecisionDetailHandler(req: Request, res: Response
       action: "viewed",
       actorId: req.auth.userId,
       afterState: { teamId: result.teamId, decisionId: result.decisionId },
+      meta: requestMeta(req),
+    });
+
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getShadowHealthHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.auth?.userId) throw new AppError("UNAUTHORIZED", "Authentication required");
+    const query = req.query as unknown as AdminShadowHealthQuery;
+
+    const result = await adminService.getShadowHealth(query);
+
+    await recordAudit({
+      entityType: "admin_shadow_health",
+      entityId: query.teamId ?? "all-teams",
+      action: "viewed",
+      actorId: req.auth.userId,
+      afterState: { teamId: query.teamId ?? null },
       meta: requestMeta(req),
     });
 

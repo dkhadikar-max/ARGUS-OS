@@ -3,14 +3,33 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 const getShadowMetricsSummary = vi.fn();
 vi.mock("../../agents/shadow-metrics.service.js", () => ({ getShadowMetricsSummary }));
 
+const getShadowCircuitBreakerState = vi.fn();
+vi.mock("../../agents/shadow-runner.service.js", () => ({ getShadowCircuitBreakerState }));
+
+const countShadowErrorsSince = vi.fn();
+vi.mock("../../agents/shadow-error-log.js", () => ({ countShadowErrorsSince }));
+
+vi.mock("../../config/env.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../config/env.js")>();
+  return { env: { ...actual.env } };
+});
+
 const listShadowDecisionsRepo = vi.fn();
 const getShadowDecisionByIdRepo = vi.fn();
-vi.mock("./admin.repository.js", () => ({ listShadowDecisions: listShadowDecisionsRepo, getShadowDecisionById: getShadowDecisionByIdRepo }));
+const getLastShadowDecisionAtRepo = vi.fn();
+vi.mock("./admin.repository.js", () => ({
+  listShadowDecisions: listShadowDecisionsRepo,
+  getShadowDecisionById: getShadowDecisionByIdRepo,
+  getLastShadowDecisionAt: getLastShadowDecisionAtRepo,
+}));
 
-const { getShadowMetrics, listShadowDecisions, getShadowDecisionDetail } = await import("./admin.service.js");
+const { getShadowMetrics, listShadowDecisions, getShadowDecisionDetail, getShadowHealth } = await import("./admin.service.js");
+const { env } = await import("../../config/env.js");
 
 beforeEach(() => {
   vi.clearAllMocks();
+  env.SHADOW_MODE_ENABLED = true;
+  env.SHADOW_SAMPLE_RATE_PERCENT = 5;
 });
 
 describe("getShadowMetrics", () => {
@@ -252,5 +271,74 @@ describe("getShadowDecisionDetail", () => {
       { id: "ev_bad", type: "FIRMOGRAPHIC", signal: "", relevance: "", confidence: 50 },
       { id: "ev_partial", type: "FIRMOGRAPHIC", signal: "only signal", relevance: "", confidence: 60 },
     ]);
+  });
+});
+
+describe("getShadowHealth", () => {
+  beforeEach(() => {
+    getLastShadowDecisionAtRepo.mockResolvedValue(null);
+    getShadowCircuitBreakerState.mockReturnValue("closed");
+    countShadowErrorsSince.mockReturnValue(0);
+    getShadowMetricsSummary.mockResolvedValue({
+      totalShadowDecisions: 0,
+      verdictAgreementRate: 0,
+      avgConfidenceDelta: 0,
+      p50ConfidenceDelta: 0,
+      avgCostUsd: 0,
+      totalCostUsd: 0,
+      disagreementBreakdown: [],
+      volumeByDay: [],
+    });
+  });
+
+  it("combines env flags, live circuit breaker state, the error log, and the 24h metrics window into one response", async () => {
+    env.SHADOW_MODE_ENABLED = true;
+    env.SHADOW_SAMPLE_RATE_PERCENT = 5;
+    getShadowCircuitBreakerState.mockReturnValue("open");
+    countShadowErrorsSince.mockReturnValue(3);
+    getLastShadowDecisionAtRepo.mockResolvedValue(new Date("2026-07-31T12:00:00Z"));
+    getShadowMetricsSummary.mockResolvedValue({
+      totalShadowDecisions: 42,
+      verdictAgreementRate: 0.9,
+      avgConfidenceDelta: -1,
+      p50ConfidenceDelta: -1,
+      avgCostUsd: 0.01,
+      totalCostUsd: 0.42,
+      disagreementBreakdown: [],
+      volumeByDay: [],
+    });
+
+    const result = await getShadowHealth({});
+
+    expect(result).toEqual({
+      scope: { teamId: null },
+      enabled: true,
+      samplePercent: 5,
+      circuitBreakerState: "open",
+      lastDecisionAt: "2026-07-31T12:00:00.000Z",
+      verdictAgreementRate24h: 0.9,
+      totalShadowDecisions24h: 42,
+      recentErrorCount1h: 3,
+    });
+    expect(getShadowMetricsSummary).toHaveBeenCalledWith(undefined, 1);
+    expect(countShadowErrorsSince).toHaveBeenCalledWith(60 * 60 * 1000);
+  });
+
+  it("lastDecisionAt is null (not a fabricated date) when no shadow decisions exist yet", async () => {
+    getLastShadowDecisionAtRepo.mockResolvedValue(null);
+
+    const result = await getShadowHealth({});
+
+    expect(result.lastDecisionAt).toBeNull();
+  });
+
+  it("scope.teamId is null when the query omits teamId, and the real value passed through when given", async () => {
+    const omitted = await getShadowHealth({});
+    expect(omitted.scope.teamId).toBeNull();
+
+    const withTeam = await getShadowHealth({ teamId: "team_1" });
+    expect(withTeam.scope.teamId).toBe("team_1");
+    expect(getLastShadowDecisionAtRepo).toHaveBeenCalledWith("team_1");
+    expect(getShadowMetricsSummary).toHaveBeenCalledWith("team_1", 1);
   });
 });

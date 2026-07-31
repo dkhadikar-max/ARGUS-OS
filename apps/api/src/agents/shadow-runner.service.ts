@@ -5,14 +5,14 @@ import { SALES_LEAD_QUALIFICATION_PACK } from "./decision-pack.js";
 import type { DecisionAgentInput, TokenUsageAccumulator } from "./orchestrator.js";
 import { createCallAgentStageExecutor, type ExecutionIdentity } from "./reasoning-capability.js";
 import { createCallAgentDecisionSynthesizer } from "./decision-synthesizer.js";
-import { CircuitBreakerProvider } from "./providers/circuit-breaker-provider.js";
+import { CircuitBreakerProvider, type CircuitState } from "./providers/circuit-breaker-provider.js";
 import { ClaudeProvider } from "./providers/claude-provider.js";
-import type { LLMProvider } from "./providers/llm-provider.interface.js";
 import { calculateInferenceCostUsd } from "./decision-value.service.js";
 import { compareForShadow, type NormalizedShadowOutcome } from "./decision-disagreement.js";
 import { shouldSampleShadow } from "./shadow-sampling.js";
 import { tryAcquireShadowSlot, releaseShadowSlot } from "./shadow-concurrency.js";
 import { raceWithTimeout, ShadowTimeoutError } from "./shadow-timeout.js";
+import { recordShadowError } from "./shadow-error-log.js";
 import { env } from "../config/env.js";
 import { increment, timing } from "../lib/datadog.js";
 import { logger } from "../lib/logger.js";
@@ -28,7 +28,7 @@ import { logger } from "../lib/logger.js";
 // verify the onStateChange wiring directly; the file's existing tests
 // mock evaluate() entirely, so they can never exercise this provider
 // through the real call chain.
-export function createShadowLlmProvider(): LLMProvider {
+export function createShadowLlmProvider(): CircuitBreakerProvider {
   return new CircuitBreakerProvider(new ClaudeProvider(), {
     onStateChange: (state) => increment("shadow.circuit_breaker.state_change", { state }),
   });
@@ -36,9 +36,22 @@ export function createShadowLlmProvider(): LLMProvider {
 
 // Constructed unconditionally at module load (cheap -- no network calls),
 // same pattern orchestrator.ts:38 already uses for its own singleton.
-const shadowLlmProvider: LLMProvider = createShadowLlmProvider();
+// Typed as the concrete CircuitBreakerProvider (not just LLMProvider) so
+// getShadowCircuitBreakerState() below can call .getState() -- a strict
+// widening from Increment 1.6's LLMProvider-typed const, zero behavior
+// change (CircuitBreakerProvider already implements LLMProvider, so every
+// existing use of it as one is unaffected).
+const shadowLlmProvider: CircuitBreakerProvider = createShadowLlmProvider();
 const shadowStageExecutor = createCallAgentStageExecutor(shadowLlmProvider);
 const shadowSynthesizer = createCallAgentDecisionSynthesizer(SALES_LEAD_QUALIFICATION_PACK, shadowLlmProvider);
+
+// Gate 3 Increment 1.7 -- exposes the shadow breaker's live state for the
+// Shadow Health card. Per-process, in-memory -- reflects whichever
+// apps/api instance served this admin request, same documented
+// limitation as SHADOW_MAX_CONCURRENT's own per-process cap.
+export function getShadowCircuitBreakerState(): CircuitState {
+  return shadowLlmProvider.getState();
+}
 
 /**
  * Gate 3 Shadow Mode, Increment 1 -- runs the v5.0 DecisionEngine
@@ -122,6 +135,7 @@ export async function runShadowDecision(input: ShadowRunnerInput): Promise<void>
           ? "breaker_open"
           : "evaluate_threw";
     increment("shadow.decision.error", { reason });
+    recordShadowError(reason);
     logger.warn(
       { err, decisionId: input.decisionId, teamId: input.teamId, prospectId: input.prospectId },
       reason === "timeout"
@@ -189,6 +203,7 @@ export async function runShadowDecision(input: ShadowRunnerInput): Promise<void>
     });
   } catch (err) {
     increment("shadow.decision.error", { reason: "persist_failed" });
+    recordShadowError("persist_failed");
     logger.warn({ err, decisionId: input.decisionId, teamId: input.teamId }, "Shadow Runner: persistence failed; shadow result discarded");
     return;
   }

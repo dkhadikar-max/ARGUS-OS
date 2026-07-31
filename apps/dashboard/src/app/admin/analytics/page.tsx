@@ -2,11 +2,12 @@ import { api, isForbiddenError } from "../../../lib/api-client";
 import { AdminAccessRequiredPanel } from "../../../components/AdminAccessRequiredPanel";
 import { AdminSubNav } from "../../../components/AdminSubNav";
 import { AdminAnalyticsRangeSelect } from "../../../components/AdminAnalyticsRangeSelect";
+import { ShadowHealthCard } from "../../../components/ShadowHealthCard";
 import { ShadowMetricsSummaryCards } from "../../../components/ShadowMetricsSummaryCards";
 import { ShadowVolumeChart } from "../../../components/ShadowVolumeChart";
 import { ShadowDisagreementChart } from "../../../components/ShadowDisagreementChart";
 import { CATEGORY_LABEL, type DisagreementCategory } from "../../../components/DisagreementBadge";
-import type { AdminShadowMetricsResponse } from "@argus/shared";
+import type { AdminShadowHealthResponse, AdminShadowMetricsResponse } from "@argus/shared";
 
 const VALID_RANGES = new Set([7, 14, 30, 90]);
 
@@ -23,8 +24,9 @@ export default async function AdminAnalyticsPage({
   const sinceDays = VALID_RANGES.has(parsed) ? parsed : 7;
 
   let metrics: AdminShadowMetricsResponse;
+  let health: AdminShadowHealthResponse;
   try {
-    metrics = await api.getShadowMetrics({ sinceDays });
+    [metrics, health] = await Promise.all([api.getShadowMetrics({ sinceDays }), api.getShadowHealth()]);
   } catch (err) {
     if (isForbiddenError(err)) return <AdminAccessRequiredPanel />;
     throw err;
@@ -54,6 +56,8 @@ export default async function AdminAnalyticsPage({
       </header>
 
       <div className="space-y-6">
+        <ShadowHealthCard health={health} />
+
         <ShadowMetricsSummaryCards metrics={metrics} />
 
         {metrics.totalShadowDecisions > 0 && (

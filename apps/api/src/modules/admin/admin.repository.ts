@@ -113,3 +113,15 @@ export async function getShadowDecisionById(id: string) {
     },
   });
 }
+
+/** Gate 3 Increment 1.7 -- the Shadow Health card's "Last decision"
+ *  field. Returns null when no shadow decisions exist yet for the given
+ *  scope, rather than throwing or defaulting to a fabricated date. */
+export async function getLastShadowDecisionAt(teamId?: string): Promise<Date | null> {
+  const row = await prisma.shadowDecision.findFirst({
+    where: teamId ? { teamId } : {},
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true },
+  });
+  return row?.createdAt ?? null;
+}

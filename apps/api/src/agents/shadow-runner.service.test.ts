@@ -12,6 +12,9 @@ const increment = vi.fn();
 const timing = vi.fn();
 vi.mock("../lib/datadog.js", () => ({ increment, timing }));
 
+const recordShadowError = vi.fn();
+vi.mock("./shadow-error-log.js", () => ({ recordShadowError }));
+
 // Only relevant to the "independent circuit breaker wiring" tests below --
 // every other test in this file bypasses the real provider chain entirely
 // via the evaluate() mock above, so this has no effect on them. Mocked
@@ -33,7 +36,7 @@ vi.mock("../config/env.js", async (importOriginal) => {
   return { env: { ...actual.env } };
 });
 
-const { runShadowDecision, createShadowLlmProvider } = await import("./shadow-runner.service.js");
+const { runShadowDecision, createShadowLlmProvider, getShadowCircuitBreakerState } = await import("./shadow-runner.service.js");
 const { env } = await import("../config/env.js");
 // Real, unmocked module -- shadow-runner.service.js exercises its actual
 // counter; reset between tests since it's process-level module state.
@@ -168,6 +171,7 @@ describe("runShadowDecision", () => {
 
     expect(prisma.shadowDecision.create).not.toHaveBeenCalled();
     expect(increment).toHaveBeenCalledWith("shadow.decision.error", { reason: "evaluate_threw" });
+    expect(recordShadowError).toHaveBeenCalledWith("evaluate_threw");
     expect(warnSpy).toHaveBeenCalledWith(
       expect.objectContaining({ decisionId: "dec_1", teamId: "team_1", prospectId: "prospect_1" }),
       "Shadow Runner: evaluate() failed; live decision unaffected",
@@ -184,6 +188,7 @@ describe("runShadowDecision", () => {
     expect(prisma.shadowDecision.create).not.toHaveBeenCalled();
     expect(increment).toHaveBeenCalledWith("shadow.decision.error", { reason: "breaker_open" });
     expect(increment).not.toHaveBeenCalledWith("shadow.decision.error", { reason: "evaluate_threw" });
+    expect(recordShadowError).toHaveBeenCalledWith("breaker_open");
   });
 
   it("persistence throws -- resolves cleanly, logs + increments persist_failed", async () => {
@@ -196,6 +201,7 @@ describe("runShadowDecision", () => {
     await expect(runShadowDecision(baseInput())).resolves.toBeUndefined();
 
     expect(increment).toHaveBeenCalledWith("shadow.decision.error", { reason: "persist_failed" });
+    expect(recordShadowError).toHaveBeenCalledWith("persist_failed");
     expect(warnSpy).toHaveBeenCalledWith(expect.objectContaining({ decisionId: "dec_1" }), "Shadow Runner: persistence failed; shadow result discarded");
   });
 
@@ -262,6 +268,10 @@ describe("concurrency limiting (Gate 3 Increment 1.5)", () => {
 
     expect(evaluateMock).toHaveBeenCalledTimes(1);
     expect(increment).toHaveBeenCalledWith("shadow.decision.dropped", { reason: "concurrency_limit" });
+    // A drop is capacity telemetry, not a failure -- must never be recorded
+    // as a shadow error (would falsely inflate the Shadow Health card's
+    // Errors count for something that isn't an error).
+    expect(recordShadowError).not.toHaveBeenCalled();
 
     first.resolve(shadowResult()); // let the first call finish so nothing leaks past this test
     await p1;
@@ -307,6 +317,7 @@ describe("independent timeout (Gate 3 Increment 1.5)", () => {
     await runShadowDecision(baseInput());
 
     expect(increment).toHaveBeenCalledWith("shadow.decision.error", { reason: "timeout" });
+    expect(recordShadowError).toHaveBeenCalledWith("timeout");
     expect(prisma.shadowDecision.create).not.toHaveBeenCalled();
   });
 
@@ -385,5 +396,15 @@ describe("independent circuit breaker wiring (Gate 3 Increment 1.5)", () => {
     await expect(provider.call(sampleParams)).rejects.toThrow();
 
     expect(increment).toHaveBeenCalledWith("shadow.circuit_breaker.state_change", { state: "open" });
+  });
+
+  // Gate 3 Increment 1.7 -- getShadowCircuitBreakerState() is the Shadow
+  // Health card's data source for "Circuit breaker: Healthy/Open/...".
+  it("getShadowCircuitBreakerState reflects the real, shared module-level singleton's state", () => {
+    // Every other test in this file exercises evaluate() via evaluateMock,
+    // never the real shadowLlmProvider singleton's own .call() -- it has
+    // never been tripped, so this is a real "closed" read from the live
+    // object, not a hardcoded stub.
+    expect(getShadowCircuitBreakerState()).toBe("closed");
   });
 });

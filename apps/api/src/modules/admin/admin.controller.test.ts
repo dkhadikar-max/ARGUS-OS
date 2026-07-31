@@ -2,14 +2,14 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { Request, Response } from "express";
 import type { AuthContext } from "../../middleware/auth.js";
 
-const adminService = { getShadowMetrics: vi.fn(), listShadowDecisions: vi.fn(), getShadowDecisionDetail: vi.fn() };
+const adminService = { getShadowMetrics: vi.fn(), listShadowDecisions: vi.fn(), getShadowDecisionDetail: vi.fn(), getShadowHealth: vi.fn() };
 vi.mock("./admin.service.js", () => adminService);
 
 const recordAudit = vi.fn();
 const requestMeta = vi.fn(() => ({ ipAddress: "127.0.0.1", userAgent: "test" }));
 vi.mock("../../lib/audit.js", () => ({ recordAudit, requestMeta }));
 
-const { getShadowMetricsHandler, listShadowDecisionsHandler, getShadowDecisionDetailHandler } = await import("./admin.controller.js");
+const { getShadowMetricsHandler, listShadowDecisionsHandler, getShadowDecisionDetailHandler, getShadowHealthHandler } = await import("./admin.controller.js");
 
 function mockReq(auth: AuthContext | undefined, query: Record<string, unknown>, params: Record<string, unknown> = {}): Request {
   return { auth, query, params } as unknown as Request;
@@ -155,5 +155,64 @@ describe("getShadowDecisionDetailHandler", () => {
     await getShadowDecisionDetailHandler(req, res, next);
 
     expect(next).toHaveBeenCalledWith(expect.any(Error));
+  });
+});
+
+describe("getShadowHealthHandler", () => {
+  it("calls the service, responds 200, and records an audit entry", async () => {
+    adminService.getShadowHealth.mockResolvedValue({
+      scope: { teamId: null },
+      enabled: true,
+      samplePercent: 5,
+      circuitBreakerState: "closed",
+      lastDecisionAt: null,
+      verdictAgreementRate24h: 0,
+      totalShadowDecisions24h: 0,
+      recentErrorCount1h: 0,
+    });
+    const req = mockReq(auth, {});
+    const res = mockRes();
+    const next = vi.fn();
+
+    await getShadowHealthHandler(req, res, next);
+
+    expect(adminService.getShadowHealth).toHaveBeenCalledWith({});
+    expect(res.statusCode).toBe(200);
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ entityType: "admin_shadow_health", action: "viewed", actorId: "admin_1", entityId: "all-teams" }),
+    );
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("uses query.teamId as entityId when provided", async () => {
+    adminService.getShadowHealth.mockResolvedValue({});
+    const req = mockReq(auth, { teamId: "team_42" });
+    const res = mockRes();
+
+    await getShadowHealthHandler(req, res, vi.fn());
+
+    expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ entityId: "team_42" }));
+  });
+
+  it("calls next(err) instead of throwing when the service rejects", async () => {
+    adminService.getShadowHealth.mockRejectedValue(new Error("db down"));
+    const req = mockReq(auth, {});
+    const res = mockRes();
+    const next = vi.fn();
+
+    await getShadowHealthHandler(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(Error));
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("calls next(UNAUTHORIZED) when req.auth is missing (defense-in-depth)", async () => {
+    const req = mockReq(undefined, {});
+    const res = mockRes();
+    const next = vi.fn();
+
+    await getShadowHealthHandler(req, res, next);
+
+    expect(next.mock.calls[0]?.[0]).toMatchObject({ code: "UNAUTHORIZED" });
   });
 });

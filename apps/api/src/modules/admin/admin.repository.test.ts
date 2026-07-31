@@ -2,11 +2,11 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { AdminListShadowDecisionsQuery } from "@argus/shared";
 
 const prisma = {
-  shadowDecision: { findMany: vi.fn(), count: vi.fn(), findUnique: vi.fn() },
+  shadowDecision: { findMany: vi.fn(), count: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn() },
 };
 vi.mock("@argus/database", () => ({ prisma }));
 
-const { listShadowDecisions, getShadowDecisionById } = await import("./admin.repository.js");
+const { listShadowDecisions, getShadowDecisionById, getLastShadowDecisionAt } = await import("./admin.repository.js");
 
 function query(overrides: Partial<AdminListShadowDecisionsQuery> = {}): AdminListShadowDecisionsQuery {
   return { limit: 20, offset: 0, ...overrides };
@@ -128,5 +128,38 @@ describe("getShadowDecisionById", () => {
     const result = await getShadowDecisionById("nonexistent");
 
     expect(result).toBeNull();
+  });
+});
+
+describe("getLastShadowDecisionAt", () => {
+  beforeEach(() => {
+    prisma.shadowDecision.findFirst.mockResolvedValue(null);
+  });
+
+  it("returns the createdAt of the most recent row, ordered desc", async () => {
+    const createdAt = new Date("2026-07-31T12:00:00Z");
+    prisma.shadowDecision.findFirst.mockResolvedValue({ createdAt });
+
+    const result = await getLastShadowDecisionAt();
+
+    expect(result).toEqual(createdAt);
+    expect(prisma.shadowDecision.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: { createdAt: "desc" } }),
+    );
+  });
+
+  it("returns null when no shadow decisions exist yet, rather than throwing or fabricating a date", async () => {
+    const result = await getLastShadowDecisionAt();
+    expect(result).toBeNull();
+  });
+
+  it("omits teamId from where when not provided (cross-team by default)", async () => {
+    await getLastShadowDecisionAt();
+    expect(prisma.shadowDecision.findFirst.mock.calls[0]![0].where).toEqual({});
+  });
+
+  it("includes teamId in where when provided", async () => {
+    await getLastShadowDecisionAt("team_1");
+    expect(prisma.shadowDecision.findFirst.mock.calls[0]![0].where).toEqual({ teamId: "team_1" });
   });
 });
