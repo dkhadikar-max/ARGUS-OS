@@ -15,18 +15,19 @@ function mockReq(auth: AuthContext | undefined, query: Record<string, string>): 
 }
 
 function mockRes() {
-  const res = { statusCode: 0, body: undefined as unknown };
-  return {
-    ...res,
+  const res: { statusCode: number; body: unknown; status: (code: number) => typeof res; json: (payload: unknown) => typeof res } = {
+    statusCode: 0,
+    body: undefined,
     status(code: number) {
       res.statusCode = code;
-      return this;
+      return res;
     },
     json(payload: unknown) {
       res.body = payload;
-      return this;
+      return res;
     },
-  } as unknown as Response & { statusCode: number; body: unknown };
+  };
+  return res as unknown as Response & { statusCode: number; body: unknown };
 }
 
 beforeEach(() => {
@@ -72,5 +73,7 @@ describe("listOutcomesHandler — cross-team authorization", () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(outcomeService.listOutcomesForTeam).toHaveBeenCalled();
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ data: [] });
   });
 });
