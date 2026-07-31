@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import type { AgentDebateOutput, Verdict } from "@argus/shared";
+import { AppError, type AgentDebateOutput, type Verdict } from "@argus/shared";
 import { logger } from "../lib/logger.js";
 
 const evaluateMock = vi.fn();
@@ -12,12 +12,28 @@ const increment = vi.fn();
 const timing = vi.fn();
 vi.mock("../lib/datadog.js", () => ({ increment, timing }));
 
+// Only relevant to the "independent circuit breaker wiring" tests below --
+// every other test in this file bypasses the real provider chain entirely
+// via the evaluate() mock above, so this has no effect on them. Mocked
+// here (not left real) so exercising createShadowLlmProvider()'s real,
+// unmocked CircuitBreakerProvider never risks a real Anthropic network
+// call.
+const claudeProviderCall = vi.fn();
+vi.mock("./providers/claude-provider.js", () => ({
+  // A `function` (not arrow) implementation -- vitest's mock needs to be
+  // usable with `new` here, since the real ClaudeProvider is constructed
+  // with `new ClaudeProvider()`.
+  ClaudeProvider: vi.fn().mockImplementation(function ClaudeProvider() {
+    return { call: claudeProviderCall };
+  }),
+}));
+
 vi.mock("../config/env.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../config/env.js")>();
   return { env: { ...actual.env } };
 });
 
-const { runShadowDecision } = await import("./shadow-runner.service.js");
+const { runShadowDecision, createShadowLlmProvider } = await import("./shadow-runner.service.js");
 const { env } = await import("../config/env.js");
 // Real, unmocked module -- shadow-runner.service.js exercises its actual
 // counter; reset between tests since it's process-level module state.
@@ -156,6 +172,18 @@ describe("runShadowDecision", () => {
       expect.objectContaining({ decisionId: "dec_1", teamId: "team_1", prospectId: "prospect_1" }),
       "Shadow Runner: evaluate() failed; live decision unaffected",
     );
+  });
+
+  it("evaluate() rejects with a breaker-open AppError -- records reason breaker_open, not evaluate_threw", async () => {
+    env.SHADOW_MODE_ENABLED = true;
+    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    evaluateMock.mockRejectedValue(new AppError("AI_UNAVAILABLE", "Unable to generate a decision right now. Please retry shortly."));
+
+    await expect(runShadowDecision(baseInput())).resolves.toBeUndefined();
+
+    expect(prisma.shadowDecision.create).not.toHaveBeenCalled();
+    expect(increment).toHaveBeenCalledWith("shadow.decision.error", { reason: "breaker_open" });
+    expect(increment).not.toHaveBeenCalledWith("shadow.decision.error", { reason: "evaluate_threw" });
   });
 
   it("persistence throws -- resolves cleanly, logs + increments persist_failed", async () => {
@@ -328,5 +356,34 @@ describe("independent circuit breaker wiring (Gate 3 Increment 1.5)", () => {
     expect(typeof options.synthesizer.synthesize).toBe("function");
     expect(options.stageExecutor).toBeDefined();
     expect(typeof options.stageExecutor.execute).toBe("function");
+  });
+
+  // Gate 3 Increment 1.6 -- the actual wiring-correctness proof for
+  // shadow.circuit_breaker.state_change. The rest of this file mocks
+  // evaluate() entirely, so it can never exercise shadowLlmProvider
+  // through the real call chain; this test builds a fresh provider via
+  // the exported factory and drives a real transition through the real
+  // (unmocked) CircuitBreakerProvider, with ClaudeProvider mocked at the
+  // top of this file so no real Anthropic network call is possible.
+  it("createShadowLlmProvider wires onStateChange to shadow.circuit_breaker.state_change with the right {state} tag", async () => {
+    claudeProviderCall.mockRejectedValue(new Error("network error"));
+    const provider = createShadowLlmProvider();
+    const sampleParams = {
+      model: "claude-sonnet-4-6",
+      maxTokens: 100,
+      system: "s",
+      userPrompt: "u",
+      tool: { name: "submit_research", description: "d", input_schema: { type: "object" as const, properties: {}, required: [] } },
+    };
+
+    // Default failureThreshold (circuit-breaker-provider.ts's
+    // DEFAULT_FAILURE_THRESHOLD) is 3 -- createShadowLlmProvider exposes
+    // no override, so 3 real failures are needed to trip it.
+    await expect(provider.call(sampleParams)).rejects.toThrow();
+    await expect(provider.call(sampleParams)).rejects.toThrow();
+    expect(increment).not.toHaveBeenCalledWith("shadow.circuit_breaker.state_change", expect.anything());
+    await expect(provider.call(sampleParams)).rejects.toThrow();
+
+    expect(increment).toHaveBeenCalledWith("shadow.circuit_breaker.state_change", { state: "open" });
   });
 });

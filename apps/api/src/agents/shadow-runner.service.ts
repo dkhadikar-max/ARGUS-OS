@@ -1,4 +1,4 @@
-import { scoreToVerdict, type AgentDebateOutput, type Verdict } from "@argus/shared";
+import { AppError, scoreToVerdict, type AgentDebateOutput, type Verdict } from "@argus/shared";
 import { prisma } from "@argus/database";
 import { evaluate, type DecisionEngineResult } from "./decision-engine.js";
 import { SALES_LEAD_QUALIFICATION_PACK } from "./decision-pack.js";
@@ -21,10 +21,22 @@ import { logger } from "../lib/logger.js";
 // circuit breaker) from orchestrator.ts's own module-level `llmProvider`
 // singleton, which every live-path callAgent() call routes through. A
 // shadow-only failure burst can no longer trip the breaker live traffic
-// depends on, and vice versa. Constructed unconditionally at module load
-// (cheap -- no network calls), same pattern orchestrator.ts:38 already
-// uses for its own singleton.
-const shadowLlmProvider: LLMProvider = new CircuitBreakerProvider(new ClaudeProvider());
+// depends on, and vice versa.
+//
+// Gate 3 Increment 1.6 -- exported as a factory (not just constructed
+// inline) so shadow-runner.service.test.ts can build a fresh instance and
+// verify the onStateChange wiring directly; the file's existing tests
+// mock evaluate() entirely, so they can never exercise this provider
+// through the real call chain.
+export function createShadowLlmProvider(): LLMProvider {
+  return new CircuitBreakerProvider(new ClaudeProvider(), {
+    onStateChange: (state) => increment("shadow.circuit_breaker.state_change", { state }),
+  });
+}
+
+// Constructed unconditionally at module load (cheap -- no network calls),
+// same pattern orchestrator.ts:38 already uses for its own singleton.
+const shadowLlmProvider: LLMProvider = createShadowLlmProvider();
 const shadowStageExecutor = createCallAgentStageExecutor(shadowLlmProvider);
 const shadowSynthesizer = createCallAgentDecisionSynthesizer(SALES_LEAD_QUALIFICATION_PACK, shadowLlmProvider);
 
@@ -98,7 +110,17 @@ export async function runShadowDecision(input: ShadowRunnerInput): Promise<void>
       env.SHADOW_TIMEOUT_MS,
     );
   } catch (err) {
-    const reason = err instanceof ShadowTimeoutError ? "timeout" : "evaluate_threw";
+    // Gate 3 Increment 1.6 -- distinguishes "the shadow breaker is
+    // intentionally protecting us" from any other real evaluate() failure.
+    // CircuitBreakerProvider throws exactly this AppError/code when open
+    // (circuit-breaker-provider.ts) -- a real, checkable signal, not
+    // inferred from message text.
+    const reason =
+      err instanceof ShadowTimeoutError
+        ? "timeout"
+        : err instanceof AppError && err.code === "AI_UNAVAILABLE"
+          ? "breaker_open"
+          : "evaluate_threw";
     increment("shadow.decision.error", { reason });
     logger.warn(
       { err, decisionId: input.decisionId, teamId: input.teamId, prospectId: input.prospectId },

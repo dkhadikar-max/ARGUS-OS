@@ -135,4 +135,86 @@ describe("CircuitBreakerProvider", () => {
 
     expect(breaker.getState()).toBe("closed");
   });
+
+  describe("onStateChange", () => {
+    it("is never called across any number of successful calls while the breaker stays closed the whole time -- no synthetic first-call event", async () => {
+      const onStateChange = vi.fn();
+      const inner: LLMProvider = { call: vi.fn().mockResolvedValue(sampleResult()) };
+      const breaker = new CircuitBreakerProvider(inner, { onStateChange });
+
+      await breaker.call(sampleParams);
+      await breaker.call(sampleParams);
+      await breaker.call(sampleParams);
+
+      expect(onStateChange).not.toHaveBeenCalled();
+    });
+
+    it("fires 'open' the moment failureThreshold is reached, exactly once", async () => {
+      const onStateChange = vi.fn();
+      const inner: LLMProvider = { call: vi.fn().mockRejectedValue(new Error("network error")) };
+      const breaker = new CircuitBreakerProvider(inner, { failureThreshold: 3, onStateChange });
+
+      await expect(breaker.call(sampleParams)).rejects.toThrow();
+      expect(onStateChange).not.toHaveBeenCalled();
+      await expect(breaker.call(sampleParams)).rejects.toThrow();
+      expect(onStateChange).not.toHaveBeenCalled();
+      await expect(breaker.call(sampleParams)).rejects.toThrow();
+
+      expect(onStateChange).toHaveBeenCalledTimes(1);
+      expect(onStateChange).toHaveBeenCalledWith("open");
+    });
+
+    it("does not fire 'half_open' before cooldownMs has elapsed, and fires it on the next call once it has -- not automatically at exactly cooldownMs", async () => {
+      const onStateChange = vi.fn();
+      const clock = fakeClock();
+      const inner: LLMProvider = { call: vi.fn().mockRejectedValue(new Error("network error")) };
+      const breaker = new CircuitBreakerProvider(inner, { failureThreshold: 1, cooldownMs: 30_000, now: clock.now, onStateChange });
+
+      await expect(breaker.call(sampleParams)).rejects.toThrow();
+      expect(onStateChange).toHaveBeenCalledWith("open");
+      onStateChange.mockClear();
+
+      clock.advance(30_001); // cooldown elapsed in wall-clock terms
+      expect(onStateChange).not.toHaveBeenCalled(); // ...but nothing observed it yet -- no background poll
+
+      await expect(breaker.call(sampleParams)).rejects.toThrow("network error"); // trial call still fails in this test's mock
+
+      expect(onStateChange).toHaveBeenCalledWith("half_open");
+    });
+
+    it("fires 'closed' on a successful half_open trial", async () => {
+      const onStateChange = vi.fn();
+      const clock = fakeClock();
+      const inner: LLMProvider = { call: vi.fn() };
+      (inner.call as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("network error")).mockResolvedValueOnce(sampleResult());
+      const breaker = new CircuitBreakerProvider(inner, { failureThreshold: 1, cooldownMs: 1_000, now: clock.now, onStateChange });
+
+      await expect(breaker.call(sampleParams)).rejects.toThrow();
+      clock.advance(1_001);
+      onStateChange.mockClear();
+
+      await breaker.call(sampleParams); // the trial call, real success
+
+      expect(onStateChange).toHaveBeenCalledWith("half_open");
+      expect(onStateChange).toHaveBeenCalledWith("closed");
+      expect(onStateChange).toHaveBeenCalledTimes(2);
+    });
+
+    it("reopens correctly -- fires 'open' again on a failed half_open trial", async () => {
+      const onStateChange = vi.fn();
+      const clock = fakeClock();
+      const inner: LLMProvider = { call: vi.fn().mockRejectedValue(new Error("still down")) };
+      const breaker = new CircuitBreakerProvider(inner, { failureThreshold: 1, cooldownMs: 1_000, now: clock.now, onStateChange });
+
+      await expect(breaker.call(sampleParams)).rejects.toThrow();
+      clock.advance(1_001);
+      onStateChange.mockClear();
+
+      await expect(breaker.call(sampleParams)).rejects.toThrow("still down");
+
+      expect(onStateChange).toHaveBeenCalledWith("half_open");
+      expect(onStateChange).toHaveBeenCalledWith("open");
+      expect(onStateChange).toHaveBeenCalledTimes(2);
+    });
+  });
 });

@@ -39,6 +39,18 @@ export interface CircuitBreakerOptions {
   cooldownMs?: number;
   /** Real wall-clock source, injectable so tests don't need real timers. */
   now?: () => number;
+  /** Fired on a REAL transition only -- never on construction or on the
+   *  first call. Observed at each call() boundary (entry and exit), not a
+   *  background poll. Because half_open is purely time-derived (never
+   *  stored in `state`), a transition into it is only observed the next
+   *  time call() actually runs -- NOT at exactly cooldownMs after opening.
+   *  A breaker can sit in real "open" wall-clock state for longer than
+   *  cooldownMs if nothing calls it during that window; the half_open
+   *  event only appears once a request actually arrives to observe it.
+   *  Expected behavior, not a bug -- if a dashboard ever shows "open"
+   *  persisting past cooldownMs, that means traffic paused, not that the
+   *  timer is wrong. */
+  onStateChange?: (state: CircuitState) => void;
 }
 
 /**
@@ -59,6 +71,12 @@ export class CircuitBreakerProvider implements LLMProvider {
   private readonly failureThreshold: number;
   private readonly cooldownMs: number;
   private readonly now: () => number;
+  private readonly onStateChangeCallback?: (state: CircuitState) => void;
+  // Initialized to the real state at construction (not null) -- a
+  // first-call synthetic event would read in a metrics dashboard as "the
+  // breaker just transitioned," which is false; it never transitioned,
+  // this is just the first time anyone asked.
+  private lastReportedState: CircuitState;
 
   constructor(
     private readonly inner: LLMProvider,
@@ -67,6 +85,8 @@ export class CircuitBreakerProvider implements LLMProvider {
     this.failureThreshold = options.failureThreshold ?? DEFAULT_FAILURE_THRESHOLD;
     this.cooldownMs = options.cooldownMs ?? DEFAULT_COOLDOWN_MS;
     this.now = options.now ?? Date.now;
+    this.onStateChangeCallback = options.onStateChange;
+    this.lastReportedState = this.getState();
   }
 
   getState(): CircuitState {
@@ -76,7 +96,17 @@ export class CircuitBreakerProvider implements LLMProvider {
     return this.state;
   }
 
+  private observeState(): void {
+    if (!this.onStateChangeCallback) return;
+    const current = this.getState();
+    if (current !== this.lastReportedState) {
+      this.lastReportedState = current;
+      this.onStateChangeCallback(current);
+    }
+  }
+
   async call(params: LLMCallParams): Promise<LLMCallResult> {
+    this.observeState(); // entry -- catches an open -> half_open transition observed just now
     const currentState = this.getState();
 
     if (currentState === "open") {
@@ -101,6 +131,13 @@ export class CircuitBreakerProvider implements LLMProvider {
         this.openedAt = this.now();
       }
       throw err;
+    } finally {
+      // exit -- catches closed -> open or half_open -> closed/open resulting
+      // from this call's own outcome. The early open-throw path above
+      // returns before reaching here, but needs no exit check of its own:
+      // nothing mutates state on that path, so there's nothing new beyond
+      // what the entry observeState() already caught.
+      this.observeState();
     }
   }
 }
