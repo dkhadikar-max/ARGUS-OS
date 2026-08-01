@@ -84,6 +84,29 @@ export async function getShadowHealthHandler(req: Request, res: Response, next: 
   }
 }
 
+/** Gate 3 Increment 1.9 -- deliberately does NOT call recordAudit, unlike
+ *  every other handler in this file. This endpoint is designed to be
+ *  polled (the dashboard's Shadow Health page refreshes it every ~15s
+ *  while open) and returns no cross-tenant customer content at all (pure
+ *  aggregate operational numbers -- counts, a rate, a millisecond
+ *  figure) -- the original rationale for auditing admin reads (visibility
+ *  into PII-adjacent cross-tenant content) doesn't apply here, and
+ *  auditing every poll tick would flood AuditLog with non-events instead
+ *  of real reviewable access events. Still gated by requireAuth +
+ *  requireAdmin like every other admin route -- only the audit call is
+ *  skipped, never the authorization check. */
+export async function getShadowLiveMetricsHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.auth?.userId) throw new AppError("UNAUTHORIZED", "Authentication required");
+
+    const result = await adminService.getShadowLiveMetrics();
+
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function getShadowRolloutHandler(req: Request, res: Response, next: NextFunction) {
   try {
     if (!req.auth?.userId) throw new AppError("UNAUTHORIZED", "Authentication required");

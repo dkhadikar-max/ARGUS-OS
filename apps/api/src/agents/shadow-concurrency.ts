@@ -21,6 +21,12 @@ export function releaseShadowSlot(): void {
   inFlight = Math.max(0, inFlight - 1);
 }
 
+// Gate 3 Increment 1.9 -- Shadow Health Dashboard's "In-flight shadow
+// runs" field. Same per-process-only caveat as the rest of this module.
+export function getShadowInFlightCount(): number {
+  return inFlight;
+}
+
 // Test-only escape hatch -- shadow-runner.service.test.ts runs many it()s
 // against this same module-level counter; without a reset, a slot leaked by
 // one test (an assertion throwing before release) would corrupt every

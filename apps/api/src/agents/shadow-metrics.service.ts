@@ -103,6 +103,33 @@ export async function getShadowMetricsSummary(teamId: string | undefined, sinceD
  *  established $queryRaw convention. Two tagged templates (not a shared
  *  conditional fragment) so a defined teamId stays a fully parameterized,
  *  single-team query -- never string-concatenated either way. */
+/**
+ * Gate 3 Increment 1.9 -- Shadow Health Dashboard's "P95 latency" field.
+ * This is the shadow run's OWN processingTimeMs (how long evaluate() took
+ * for completed shadow decisions in the window) -- not the live-path
+ * latency-impact metric this file's own module comment above already
+ * documents as out of scope (that's about comparing live-path timing
+ * with/without shadow enabled; this is just the shadow run's own
+ * duration, which processingTimeMs genuinely captures). Global only, no
+ * teamId scoping -- this page's fields are process-wide by design (see
+ * admin.service.ts's getShadowLiveMetrics). Reuses the same nearest-rank
+ * percentile() helper p50ConfidenceDelta above already relies on, rather
+ * than introducing this codebase's first percentile_cont raw-SQL query --
+ * simpler and consistent, and window row counts stay small at real
+ * early-rollout sample rates. Returns null on zero rows in the window
+ * (not 0) so callers can render "No data yet" instead of a misleading 0ms.
+ */
+export async function getShadowP95LatencyMs(windowMs: number): Promise<number | null> {
+  const since = new Date(Date.now() - windowMs);
+  const rows = await prisma.shadowDecision.findMany({
+    where: { createdAt: { gte: since } },
+    select: { processingTimeMs: true },
+  });
+  if (rows.length === 0) return null;
+  const sorted = rows.map((r) => r.processingTimeMs).sort((a, b) => a - b);
+  return percentile(sorted, 95);
+}
+
 async function getShadowVolumeByDay(teamId: string | undefined, since: Date): Promise<ShadowVolumeByDay[]> {
   const rows = teamId
     ? await prisma.$queryRaw<Array<{ day: Date; count: bigint }>>`

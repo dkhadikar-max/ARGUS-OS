@@ -287,3 +287,46 @@ export const adminShadowRolloutPreviewResponseSchema = z.object({
   sampled: z.boolean(),
 });
 export type AdminShadowRolloutPreviewResponse = z.infer<typeof adminShadowRolloutPreviewResponseSchema>;
+
+// GET /api/v1/admin/shadow-live-metrics -- Gate 3 Increment 1.9, Shadow
+// Health Dashboard. Global only, no teamId scoping: this page is
+// process-wide by construction, not per-team; per-team sample-rate detail
+// already lives on the Rollout Controller response above. All "1h" fields
+// use a fixed 1-hour window (not configurable) to stay internally
+// consistent with each other and match the operator's own "(last hour)"
+// framing for this page.
+//
+// Cross-instance accuracy, field by field (post-review, explicit rather
+// than left implicit -- if apps/api ever runs multiple instances):
+// `enabled`, `globalPercent`, `maxConcurrent`, `timeoutThresholdMs`,
+// `p95LatencyMs1h`, and `hasQueue` are DB- or env-backed and stay accurate
+// cluster-wide. `inFlightCount`, `circuitBreakerState`, `timeoutCount1h`,
+// `dropCount1h`, and `errorCount1h` are in-memory, PER-PROCESS state --
+// each reflects only whichever instance served this request, same
+// documented limitation as shadow-concurrency.ts/shadow-error-log.ts/
+// shadow-drop-log.ts's own module comments. `totalAttempted1h` and
+// `errorRate1h` are therefore also only per-process-accurate (they mix a
+// cluster-wide success count with a per-process error count) -- surfaced
+// on the dashboard itself, not just here, so an operator doesn't assume
+// this is a cluster-wide view.
+export const adminShadowLiveMetricsResponseSchema = z.object({
+  enabled: z.boolean(),
+  globalPercent: z.number().int().min(0).max(100),
+  maxConcurrent: z.number().int().positive(),
+  inFlightCount: z.number().int().nonnegative(),
+  circuitBreakerState: z.enum(["closed", "open", "half_open"]),
+  timeoutCount1h: z.number().int().nonnegative(),
+  timeoutThresholdMs: z.number().int().positive(), // the configured SHADOW_TIMEOUT_MS -- so timeoutCount1h has real context ("4 timeouts" means little without knowing the threshold that triggered them)
+  dropCount1h: z.number().int().nonnegative(),
+  errorCount1h: z.number().int().nonnegative(),
+  // successes (countShadowDecisionsSince, DB, cluster-wide) + errors
+  // (countShadowErrorsSince, in-memory, per-process) in the window --
+  // drops are deliberately excluded: a dropped run never reached
+  // evaluate(), so it was never "attempted" and would just dilute the
+  // execution error rate below if included.
+  totalAttempted1h: z.number().int().nonnegative(),
+  errorRate1h: z.number().min(0).max(1).nullable(), // null when totalAttempted1h === 0, avoids a misleading 0%
+  p95LatencyMs1h: z.number().nonnegative().nullable(), // null when zero completed decisions in the window
+  hasQueue: z.boolean(), // always false today -- Increment 1.5 deliberately drops excess sampled runs instead of queuing; a real field (not hardcoded UI copy) so this becomes accurate automatically if that ever changes
+});
+export type AdminShadowLiveMetricsResponse = z.infer<typeof adminShadowLiveMetricsResponseSchema>;

@@ -5,6 +5,7 @@ import type {
   AdminShadowDecisionDetailResponse,
   AdminShadowHealthQuery,
   AdminShadowHealthResponse,
+  AdminShadowLiveMetricsResponse,
   AdminShadowMetricsQuery,
   AdminShadowMetricsResponse,
   AdminShadowRolloutAuditQuery,
@@ -188,6 +189,12 @@ export const api = {
     if (params?.teamId) query.set("teamId", params.teamId);
     return apiFetch<AdminShadowHealthResponse>(`/api/v1/admin/shadow-health?${query.toString()}`);
   },
+  // Gate 3 Increment 1.9 -- Shadow Health Dashboard live metrics. Global
+  // only, no params -- see the schema's own comment for why. Polled from
+  // a Client Component via a Server Action (app/admin/shadow-health/actions.ts),
+  // not fetched directly client-side, since apiFetch needs the Clerk
+  // session token that's only available server-side.
+  getShadowLiveMetrics: () => apiFetch<AdminShadowLiveMetricsResponse>("/api/v1/admin/shadow-live-metrics"),
   // Gate 3 Increment 1.8 -- Shadow Rollout Controller. This module's first
   // write paths (PUT/DELETE), all still gated server-side by requireAdmin.
   getShadowRollout: () => apiFetch<AdminShadowRolloutResponse>("/api/v1/admin/shadow-rollout"),

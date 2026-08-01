@@ -13,6 +13,7 @@ import { resolveShadowSampling } from "./shadow-rollout.service.js";
 import { tryAcquireShadowSlot, releaseShadowSlot } from "./shadow-concurrency.js";
 import { raceWithTimeout, ShadowTimeoutError } from "./shadow-timeout.js";
 import { recordShadowError } from "./shadow-error-log.js";
+import { recordShadowDrop } from "./shadow-drop-log.js";
 import { env } from "../config/env.js";
 import { increment, timing } from "../lib/datadog.js";
 import { logger } from "../lib/logger.js";
@@ -96,6 +97,7 @@ export async function runShadowDecision(input: ShadowRunnerInput): Promise<void>
   // decisions are dropped, never queued (see shadow-concurrency.ts).
   if (!tryAcquireShadowSlot(env.SHADOW_MAX_CONCURRENT)) {
     increment("shadow.decision.dropped", { reason: "concurrency_limit" });
+    recordShadowDrop("concurrency_limit");
     logger.warn(
       { decisionId: input.decisionId, teamId: input.teamId, prospectId: input.prospectId },
       "Shadow Runner: dropped, at concurrency limit",

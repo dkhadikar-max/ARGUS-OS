@@ -15,6 +15,9 @@ vi.mock("../lib/datadog.js", () => ({ increment, timing }));
 const recordShadowError = vi.fn();
 vi.mock("./shadow-error-log.js", () => ({ recordShadowError }));
 
+const recordShadowDrop = vi.fn();
+vi.mock("./shadow-drop-log.js", () => ({ recordShadowDrop }));
+
 const resolveShadowSampling = vi.fn();
 vi.mock("./shadow-rollout.service.js", () => ({ resolveShadowSampling }));
 
@@ -281,6 +284,7 @@ describe("concurrency limiting (Gate 3 Increment 1.5)", () => {
 
     expect(evaluateMock).toHaveBeenCalledTimes(1);
     expect(increment).toHaveBeenCalledWith("shadow.decision.dropped", { reason: "concurrency_limit" });
+    expect(recordShadowDrop).toHaveBeenCalledWith("concurrency_limit");
     // A drop is capacity telemetry, not a failure -- must never be recorded
     // as a shadow error (would falsely inflate the Shadow Health card's
     // Errors count for something that isn't an error).

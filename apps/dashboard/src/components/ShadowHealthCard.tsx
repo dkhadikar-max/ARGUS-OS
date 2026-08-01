@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Card } from "@tremor/react";
 import type { AdminShadowHealthResponse } from "@argus/shared";
+import { formatRelativeTime } from "../lib/format-relative-time";
 
 const BREAKER_LABEL: Record<AdminShadowHealthResponse["circuitBreakerState"], string> = {
   closed: "Healthy",
@@ -13,20 +14,6 @@ const BREAKER_CLASSES: Record<AdminShadowHealthResponse["circuitBreakerState"], 
   half_open: "text-amber-600",
   open: "text-red-600",
 };
-
-// No existing relative-time utility in this codebase -- small local pure
-// formatter. Rounded to the nearest whole unit; "Never" for a null
-// lastDecisionAt (no shadow decisions recorded yet for this scope).
-function formatRelativeTime(iso: string | null): string {
-  if (!iso) return "Never";
-  const diffSec = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
-  if (diffSec < 60) return `${diffSec}s ago`;
-  const diffMin = Math.round(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.round(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  return `${Math.round(diffHr / 24)}d ago`;
-}
 
 // Gate 3 Increment 1.7 -- gives an operator an immediate answer to "is
 // Shadow Mode actually healthy?" without opening charts. circuitBreakerState

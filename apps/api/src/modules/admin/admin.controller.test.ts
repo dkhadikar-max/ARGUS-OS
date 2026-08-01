@@ -7,6 +7,7 @@ const adminService = {
   listShadowDecisions: vi.fn(),
   getShadowDecisionDetail: vi.fn(),
   getShadowHealth: vi.fn(),
+  getShadowLiveMetrics: vi.fn(),
   getShadowRollout: vi.fn(),
   updateShadowRolloutConfig: vi.fn(),
   upsertShadowRolloutTeamOverride: vi.fn(),
@@ -25,6 +26,7 @@ const {
   listShadowDecisionsHandler,
   getShadowDecisionDetailHandler,
   getShadowHealthHandler,
+  getShadowLiveMetricsHandler,
   getShadowRolloutHandler,
   updateShadowRolloutConfigHandler,
   upsertShadowRolloutTeamOverrideHandler,
@@ -242,6 +244,69 @@ describe("getShadowHealthHandler", () => {
     await getShadowHealthHandler(req, res, next);
 
     expect(next.mock.calls[0]?.[0]).toMatchObject({ code: "UNAUTHORIZED" });
+  });
+});
+
+describe("getShadowLiveMetricsHandler", () => {
+  it("calls the service and responds 200", async () => {
+    const payload = {
+      enabled: true,
+      globalPercent: 5,
+      maxConcurrent: 2,
+      inFlightCount: 0,
+      circuitBreakerState: "closed",
+      timeoutThresholdMs: 180_000,
+      timeoutCount1h: 0,
+      dropCount1h: 0,
+      errorCount1h: 0,
+      totalAttempted1h: 0,
+      errorRate1h: null,
+      p95LatencyMs1h: null,
+      hasQueue: false,
+    };
+    adminService.getShadowLiveMetrics.mockResolvedValue(payload);
+    const req = mockReq(auth, {});
+    const res = mockRes();
+    const next = vi.fn();
+
+    await getShadowLiveMetricsHandler(req, res, next);
+
+    expect(adminService.getShadowLiveMetrics).toHaveBeenCalledWith();
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual(payload);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("deliberately does NOT call recordAudit -- this endpoint is designed to be polled and carries no cross-tenant content", async () => {
+    adminService.getShadowLiveMetrics.mockResolvedValue({});
+    const req = mockReq(auth, {});
+    const res = mockRes();
+
+    await getShadowLiveMetricsHandler(req, res, vi.fn());
+
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("requires authentication -- calls next(err) when req.auth is missing", async () => {
+    const req = mockReq(undefined, {});
+    const res = mockRes();
+    const next = vi.fn();
+
+    await getShadowLiveMetricsHandler(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(Error));
+    expect(adminService.getShadowLiveMetrics).not.toHaveBeenCalled();
+  });
+
+  it("calls next(err) when the service rejects", async () => {
+    adminService.getShadowLiveMetrics.mockRejectedValue(new Error("boom"));
+    const req = mockReq(auth, {});
+    const res = mockRes();
+    const next = vi.fn();
+
+    await getShadowLiveMetricsHandler(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(Error));
   });
 });
 

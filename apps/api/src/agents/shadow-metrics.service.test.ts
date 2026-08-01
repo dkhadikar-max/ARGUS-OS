@@ -7,7 +7,7 @@ const prisma = {
 };
 vi.mock("@argus/database", () => ({ prisma }));
 
-const { getShadowMetricsSummary } = await import("./shadow-metrics.service.js");
+const { getShadowMetricsSummary, getShadowP95LatencyMs } = await import("./shadow-metrics.service.js");
 
 function row(overrides: { verdictAgreement?: boolean; confidenceDelta?: number; inferenceCostUsd?: number; disagreementCategories?: DisagreementCategory[] } = {}) {
   return {
@@ -144,5 +144,32 @@ describe("getShadowMetricsSummary", () => {
       const strings = prisma.$queryRaw.mock.calls[0]![0] as TemplateStringsArray;
       expect(strings.join("")).toContain("teamId");
     });
+  });
+});
+
+describe("getShadowP95LatencyMs", () => {
+  it("returns null when there are zero rows in the window (not 0)", async () => {
+    prisma.shadowDecision.findMany.mockResolvedValue([]);
+
+    expect(await getShadowP95LatencyMs(60 * 60 * 1000)).toBeNull();
+  });
+
+  it("computes the real nearest-rank P95 over processingTimeMs values", async () => {
+    // 20 values 100..2000ms in steps of 100 -- ceil(0.95*20)-1 = index 18 -> the 19th sorted value (1900).
+    const values = Array.from({ length: 20 }, (_, i) => (i + 1) * 100);
+    prisma.shadowDecision.findMany.mockResolvedValue(values.map((processingTimeMs) => ({ processingTimeMs })));
+
+    expect(await getShadowP95LatencyMs(60 * 60 * 1000)).toBe(1900);
+  });
+
+  it("selects only processingTimeMs, filtered by createdAt within the window", async () => {
+    await getShadowP95LatencyMs(60 * 60 * 1000);
+
+    expect(prisma.shadowDecision.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { createdAt: { gte: expect.any(Date) } },
+        select: { processingTimeMs: true },
+      }),
+    );
   });
 });

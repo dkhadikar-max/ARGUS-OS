@@ -7,6 +7,7 @@ const LINKS = [
   { href: "/admin/shadow-decisions", label: "Shadow Decisions" },
   { href: "/admin/analytics", label: "Analytics" },
   { href: "/admin/shadow-rollout", label: "Rollout" },
+  { href: "/admin/shadow-health", label: "Live Health" },
 ];
 
 // Lightweight in-section nav -- the top-level NavBar's single "Admin" link

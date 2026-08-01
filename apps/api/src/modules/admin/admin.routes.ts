@@ -18,6 +18,7 @@ import {
   listShadowDecisionsHandler,
   getShadowDecisionDetailHandler,
   getShadowHealthHandler,
+  getShadowLiveMetricsHandler,
   getShadowRolloutHandler,
   updateShadowRolloutConfigHandler,
   upsertShadowRolloutTeamOverrideHandler,
@@ -35,6 +36,10 @@ adminRouter.get(
   validate(adminShadowHealthQuerySchema, "query"),
   getShadowHealthHandler,
 );
+// Gate 3 Increment 1.9 -- no validate() (no query params), and note this
+// handler deliberately skips recordAudit (see its own doc comment) --
+// it's the one endpoint in this router designed to be polled.
+adminRouter.get("/shadow-live-metrics", requireAuth, requireAdmin, getShadowLiveMetricsHandler);
 adminRouter.get("/shadow-rollout", requireAuth, requireAdmin, getShadowRolloutHandler);
 adminRouter.put(
   "/shadow-rollout",

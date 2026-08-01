@@ -1,13 +1,21 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const getShadowMetricsSummary = vi.fn();
-vi.mock("../../agents/shadow-metrics.service.js", () => ({ getShadowMetricsSummary }));
+const getShadowP95LatencyMs = vi.fn();
+vi.mock("../../agents/shadow-metrics.service.js", () => ({ getShadowMetricsSummary, getShadowP95LatencyMs }));
 
 const getShadowCircuitBreakerState = vi.fn();
 vi.mock("../../agents/shadow-runner.service.js", () => ({ getShadowCircuitBreakerState }));
 
 const countShadowErrorsSince = vi.fn();
-vi.mock("../../agents/shadow-error-log.js", () => ({ countShadowErrorsSince }));
+const countShadowErrorsByReasonSince = vi.fn();
+vi.mock("../../agents/shadow-error-log.js", () => ({ countShadowErrorsSince, countShadowErrorsByReasonSince }));
+
+const countShadowDropsSince = vi.fn();
+vi.mock("../../agents/shadow-drop-log.js", () => ({ countShadowDropsSince }));
+
+const getShadowInFlightCount = vi.fn();
+vi.mock("../../agents/shadow-concurrency.js", () => ({ getShadowInFlightCount }));
 
 const getRolloutConfig = vi.fn();
 const listTeamOverrides = vi.fn();
@@ -33,10 +41,12 @@ vi.mock("../../config/env.js", async (importOriginal) => {
 const listShadowDecisionsRepo = vi.fn();
 const getShadowDecisionByIdRepo = vi.fn();
 const getLastShadowDecisionAtRepo = vi.fn();
+const countShadowDecisionsSince = vi.fn();
 vi.mock("./admin.repository.js", () => ({
   listShadowDecisions: listShadowDecisionsRepo,
   getShadowDecisionById: getShadowDecisionByIdRepo,
   getLastShadowDecisionAt: getLastShadowDecisionAtRepo,
+  countShadowDecisionsSince,
 }));
 
 const {
@@ -44,6 +54,7 @@ const {
   listShadowDecisions,
   getShadowDecisionDetail,
   getShadowHealth,
+  getShadowLiveMetrics,
   getShadowRollout,
   updateShadowRolloutConfig,
   upsertShadowRolloutTeamOverride,
@@ -432,6 +443,111 @@ describe("getShadowHealth", () => {
     expect(withTeam.scope.teamId).toBe("team_1");
     expect(getLastShadowDecisionAtRepo).toHaveBeenCalledWith("team_1");
     expect(getShadowMetricsSummary).toHaveBeenCalledWith("team_1", 1);
+  });
+});
+
+describe("getShadowLiveMetrics", () => {
+  beforeEach(() => {
+    getRolloutConfig.mockResolvedValue({ enabled: true, globalPercent: 5, version: 1 });
+    getShadowCircuitBreakerState.mockReturnValue("closed");
+    getShadowInFlightCount.mockReturnValue(0);
+    countShadowDecisionsSince.mockResolvedValue(0);
+    countShadowErrorsSince.mockReturnValue(0);
+    countShadowErrorsByReasonSince.mockReturnValue(0);
+    countShadowDropsSince.mockReturnValue(0);
+    getShadowP95LatencyMs.mockResolvedValue(null);
+    env.SHADOW_MAX_CONCURRENT = 2;
+    env.SHADOW_TIMEOUT_MS = 180_000;
+  });
+
+  it("combines env flags, the DB rollout config, live in-flight/breaker state, and all four 1h counters into one response", async () => {
+    env.SHADOW_MODE_ENABLED = true;
+    env.SHADOW_MAX_CONCURRENT = 4;
+    env.SHADOW_TIMEOUT_MS = 90_000;
+    getRolloutConfig.mockResolvedValue({ enabled: true, globalPercent: 5, version: 1 });
+    getShadowCircuitBreakerState.mockReturnValue("open");
+    getShadowInFlightCount.mockReturnValue(2);
+    countShadowDecisionsSince.mockResolvedValue(45);
+    countShadowErrorsSince.mockReturnValue(3);
+    countShadowErrorsByReasonSince.mockReturnValue(1);
+    countShadowDropsSince.mockReturnValue(7);
+    getShadowP95LatencyMs.mockResolvedValue(842);
+
+    const result = await getShadowLiveMetrics();
+
+    expect(result).toEqual({
+      enabled: true,
+      globalPercent: 5,
+      maxConcurrent: 4,
+      inFlightCount: 2,
+      circuitBreakerState: "open",
+      timeoutThresholdMs: 90_000,
+      timeoutCount1h: 1,
+      dropCount1h: 7,
+      errorCount1h: 3,
+      totalAttempted1h: 48, // 45 successes + 3 errors
+      errorRate1h: 3 / 48,
+      p95LatencyMs1h: 842,
+      hasQueue: false,
+    });
+    expect(countShadowErrorsByReasonSince).toHaveBeenCalledWith("timeout", 60 * 60 * 1000);
+    expect(countShadowErrorsSince).toHaveBeenCalledWith(60 * 60 * 1000);
+    expect(countShadowDropsSince).toHaveBeenCalledWith(60 * 60 * 1000);
+    expect(getShadowP95LatencyMs).toHaveBeenCalledWith(60 * 60 * 1000);
+  });
+
+  it("enabled requires both the env switch and the DB switch, same AND logic as getShadowHealth", async () => {
+    env.SHADOW_MODE_ENABLED = true;
+    getRolloutConfig.mockResolvedValue({ enabled: false, globalPercent: 50, version: 1 });
+    expect((await getShadowLiveMetrics()).enabled).toBe(false);
+
+    env.SHADOW_MODE_ENABLED = false;
+    getRolloutConfig.mockResolvedValue({ enabled: true, globalPercent: 50, version: 1 });
+    expect((await getShadowLiveMetrics()).enabled).toBe(false);
+  });
+
+  it("enabled is false and globalPercent is 0 when no rollout config row exists yet (fail-closed)", async () => {
+    env.SHADOW_MODE_ENABLED = true;
+    getRolloutConfig.mockResolvedValue(null);
+
+    const result = await getShadowLiveMetrics();
+
+    expect(result.enabled).toBe(false);
+    expect(result.globalPercent).toBe(0);
+  });
+
+  it("errorRate1h is null (not 0) when nothing was attempted in the window", async () => {
+    countShadowDecisionsSince.mockResolvedValue(0);
+    countShadowErrorsSince.mockReturnValue(0);
+
+    const result = await getShadowLiveMetrics();
+
+    expect(result.totalAttempted1h).toBe(0);
+    expect(result.errorRate1h).toBeNull();
+  });
+
+  it("errorRate1h excludes drops from the denominator -- a drop never reached evaluate()", async () => {
+    countShadowDecisionsSince.mockResolvedValue(10);
+    countShadowErrorsSince.mockReturnValue(0);
+    countShadowDropsSince.mockReturnValue(50); // a large drop count must not dilute the error rate
+
+    const result = await getShadowLiveMetrics();
+
+    expect(result.totalAttempted1h).toBe(10);
+    expect(result.errorRate1h).toBe(0);
+  });
+
+  it("hasQueue is always false", async () => {
+    const result = await getShadowLiveMetrics();
+    expect(result.hasQueue).toBe(false);
+  });
+
+  it("p95LatencyMs1h passes through the null-on-no-data case", async () => {
+    getShadowP95LatencyMs.mockResolvedValue(null);
+
+    const result = await getShadowLiveMetrics();
+
+    expect(result.p95LatencyMs1h).toBeNull();
   });
 });
 

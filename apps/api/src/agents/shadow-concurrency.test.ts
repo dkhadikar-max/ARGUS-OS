@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { tryAcquireShadowSlot, releaseShadowSlot, __resetShadowConcurrencyForTests } from "./shadow-concurrency.js";
+import { tryAcquireShadowSlot, releaseShadowSlot, getShadowInFlightCount, __resetShadowConcurrencyForTests } from "./shadow-concurrency.js";
 
 beforeEach(() => {
   __resetShadowConcurrencyForTests();
@@ -41,5 +41,16 @@ describe("shadow-concurrency", () => {
     // A later call raises the ceiling -- must be respected immediately,
     // proving the cap is read fresh each call rather than captured once.
     expect(tryAcquireShadowSlot(5)).toBe(true);
+  });
+
+  it("getShadowInFlightCount reflects real acquire/release state", () => {
+    expect(getShadowInFlightCount()).toBe(0);
+
+    tryAcquireShadowSlot(3);
+    tryAcquireShadowSlot(3);
+    expect(getShadowInFlightCount()).toBe(2);
+
+    releaseShadowSlot();
+    expect(getShadowInFlightCount()).toBe(1);
   });
 });

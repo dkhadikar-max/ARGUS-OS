@@ -27,6 +27,16 @@ export function countShadowErrorsSince(windowMs: number, now: () => number = Dat
   return entries.filter((e) => e.timestamp >= cutoff).length;
 }
 
+// Gate 3 Increment 1.9 -- Shadow Health Dashboard's "Timeout count (last
+// hour)" field needs to isolate one reason (e.g. "timeout") from the
+// mixed-reason total countShadowErrorsSince already returns. Additive,
+// new function -- countShadowErrorsSince's signature/behavior above is
+// unchanged, so its existing callers/tests are unaffected.
+export function countShadowErrorsByReasonSince(reason: string, windowMs: number, now: () => number = Date.now): number {
+  const cutoff = now() - windowMs;
+  return entries.filter((e) => e.timestamp >= cutoff && e.reason === reason).length;
+}
+
 export function __resetShadowErrorLogForTests(): void {
   entries.length = 0;
 }

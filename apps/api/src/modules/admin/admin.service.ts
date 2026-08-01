@@ -4,6 +4,7 @@ import type {
   AdminShadowDecisionDetailResponse,
   AdminShadowHealthQuery,
   AdminShadowHealthResponse,
+  AdminShadowLiveMetricsResponse,
   AdminShadowMetricsQuery,
   AdminShadowMetricsResponse,
   AdminShadowRolloutAuditQuery,
@@ -13,9 +14,11 @@ import type {
   UpdateShadowRolloutConfigRequest,
   UpsertShadowRolloutTeamOverrideRequest,
 } from "@argus/shared";
-import { getShadowMetricsSummary } from "../../agents/shadow-metrics.service.js";
+import { getShadowMetricsSummary, getShadowP95LatencyMs } from "../../agents/shadow-metrics.service.js";
 import { getShadowCircuitBreakerState } from "../../agents/shadow-runner.service.js";
-import { countShadowErrorsSince } from "../../agents/shadow-error-log.js";
+import { countShadowErrorsSince, countShadowErrorsByReasonSince } from "../../agents/shadow-error-log.js";
+import { countShadowDropsSince } from "../../agents/shadow-drop-log.js";
+import { getShadowInFlightCount } from "../../agents/shadow-concurrency.js";
 import {
   getRolloutConfig,
   listTeamOverrides,
@@ -28,7 +31,14 @@ import {
   previewShadowSampling,
 } from "../../agents/shadow-rollout.service.js";
 import { env } from "../../config/env.js";
-import { listShadowDecisions as listShadowDecisionsRepo, getShadowDecisionById, getLastShadowDecisionAt } from "./admin.repository.js";
+import {
+  listShadowDecisions as listShadowDecisionsRepo,
+  getShadowDecisionById,
+  getLastShadowDecisionAt,
+  countShadowDecisionsSince,
+} from "./admin.repository.js";
+
+const ONE_HOUR_MS = 60 * 60 * 1000;
 
 export async function getShadowMetrics(query: AdminShadowMetricsQuery): Promise<AdminShadowMetricsResponse> {
   const summary = await getShadowMetricsSummary(query.teamId, query.sinceDays);
@@ -176,6 +186,72 @@ export async function getShadowHealth(query: AdminShadowHealthQuery): Promise<Ad
     verdictAgreementRate24h: metrics.verdictAgreementRate,
     totalShadowDecisions24h: metrics.totalShadowDecisions,
     recentErrorCount1h: countShadowErrorsSince(60 * 60 * 1000),
+  };
+}
+
+/** Gate 3 Increment 1.9 -- Shadow Health Dashboard's live-metrics
+ *  endpoint ("the page you watch during rollout"). Global only, no
+ *  teamId -- this page is process-wide by construction, not per-team;
+ *  per-team detail already lives on getShadowRollout above. All 1h
+ *  windows are fixed, matching the schema's own documented reasoning.
+ *
+ *  Cross-instance accuracy (post-review, see the schema's own longer
+ *  comment for the full field-by-field breakdown): `inFlightCount`,
+ *  `circuitBreakerState`, `timeoutCount1h`, `dropCount1h`, and
+ *  `errorCount1h` are in-memory, PER-PROCESS state -- reflect only
+ *  whichever apps/api instance served this request, same limitation as
+ *  shadow-concurrency.ts/shadow-error-log.ts/shadow-drop-log.ts. Because
+ *  `totalAttempted1h` mixes a cluster-wide DB count with a per-process
+ *  error count, `totalAttempted1h` and `errorRate1h` inherit that same
+ *  per-process-only accuracy. Surfaced on the dashboard itself, not just
+ *  here.
+ *
+ *  `totalAttempted1h` = successful ShadowDecision rows in the window
+ *  (countShadowDecisionsSince) + error rows in the window
+ *  (countShadowErrorsSince) -- drops are deliberately excluded: a dropped
+ *  run never reached evaluate(), so it was never "attempted," and
+ *  including it would dilute the execution error rate below with runs
+ *  that were never actually run. `errorRate1h` is null (not 0) when
+ *  nothing was attempted, so the UI can render "No data yet" instead of
+ *  a misleading 0%.
+ *
+ *  `timeoutThresholdMs` is just the configured SHADOW_TIMEOUT_MS,
+ *  exposed so `timeoutCount1h` has context an operator doesn't have to
+ *  remember separately.
+ *
+ *  `hasQueue` is always false -- Increment 1.5 deliberately drops excess
+ *  sampled runs instead of queuing them (see shadow-concurrency.ts's own
+ *  module comment); this is a real field, not hardcoded UI copy, so it
+ *  stays accurate automatically if that architecture ever changes. */
+export async function getShadowLiveMetrics(): Promise<AdminShadowLiveMetricsResponse> {
+  const [rolloutConfig, successCount1h, timeoutCount1h, p95LatencyMs1h] = await Promise.all([
+    getRolloutConfig(),
+    countShadowDecisionsSince(new Date(Date.now() - ONE_HOUR_MS)),
+    countShadowErrorsByReasonSince("timeout", ONE_HOUR_MS),
+    getShadowP95LatencyMs(ONE_HOUR_MS),
+  ]);
+  const errorCount1h = countShadowErrorsSince(ONE_HOUR_MS);
+  const dropCount1h = countShadowDropsSince(ONE_HOUR_MS);
+  // Mixes a cluster-wide DB count (successCount1h) with a per-process
+  // in-memory count (errorCount1h) -- see this function's own doc comment
+  // above for why totalAttempted1h/errorRate1h are therefore only
+  // per-process-accurate, not a true cluster-wide rate.
+  const totalAttempted1h = successCount1h + errorCount1h;
+
+  return {
+    enabled: env.SHADOW_MODE_ENABLED && (rolloutConfig?.enabled ?? false),
+    globalPercent: rolloutConfig?.globalPercent ?? 0,
+    maxConcurrent: env.SHADOW_MAX_CONCURRENT,
+    inFlightCount: getShadowInFlightCount(),
+    circuitBreakerState: getShadowCircuitBreakerState(),
+    timeoutThresholdMs: env.SHADOW_TIMEOUT_MS,
+    timeoutCount1h,
+    dropCount1h,
+    errorCount1h,
+    totalAttempted1h,
+    errorRate1h: totalAttempted1h === 0 ? null : errorCount1h / totalAttempted1h,
+    p95LatencyMs1h,
+    hasQueue: false,
   };
 }
 

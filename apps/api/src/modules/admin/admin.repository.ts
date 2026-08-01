@@ -125,3 +125,10 @@ export async function getLastShadowDecisionAt(teamId?: string): Promise<Date | n
   });
   return row?.createdAt ?? null;
 }
+
+/** Gate 3 Increment 1.9 -- the Shadow Health Dashboard's error-rate
+ *  denominator (successes + errors attempted in the window). Global
+ *  only, no teamId -- this page's fields are process-wide by design. */
+export async function countShadowDecisionsSince(since: Date): Promise<number> {
+  return prisma.shadowDecision.count({ where: { createdAt: { gte: since } } });
+}

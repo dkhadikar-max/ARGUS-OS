@@ -205,6 +205,19 @@ describe("api.getShadowHealth", () => {
   });
 });
 
+describe("api.getShadowLiveMetrics", () => {
+  it("fetches the plain endpoint with no params", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { enabled: false, globalPercent: 0 }));
+    await api.getShadowLiveMetrics();
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:4000/api/v1/admin/shadow-live-metrics", expect.anything());
+  });
+
+  it("propagates a 403 ApiError from a non-admin caller", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(403, { error: { message: "Admin access required" } }));
+    await expect(api.getShadowLiveMetrics()).rejects.toMatchObject({ status: 403 });
+  });
+});
+
 describe("api.getShadowRollout / updateShadowRolloutConfig", () => {
   it("getShadowRollout fetches the plain endpoint", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { enabled: false, globalPercent: 0, version: 0, teamOverrides: [] }));

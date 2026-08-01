@@ -6,7 +6,9 @@ const prisma = {
 };
 vi.mock("@argus/database", () => ({ prisma }));
 
-const { listShadowDecisions, getShadowDecisionById, getLastShadowDecisionAt } = await import("./admin.repository.js");
+const { listShadowDecisions, getShadowDecisionById, getLastShadowDecisionAt, countShadowDecisionsSince } = await import(
+  "./admin.repository.js"
+);
 
 function query(overrides: Partial<AdminListShadowDecisionsQuery> = {}): AdminListShadowDecisionsQuery {
   return { limit: 20, offset: 0, ...overrides };
@@ -161,5 +163,17 @@ describe("getLastShadowDecisionAt", () => {
   it("includes teamId in where when provided", async () => {
     await getLastShadowDecisionAt("team_1");
     expect(prisma.shadowDecision.findFirst.mock.calls[0]![0].where).toEqual({ teamId: "team_1" });
+  });
+});
+
+describe("countShadowDecisionsSince", () => {
+  it("counts rows with createdAt >= since, global only (no teamId)", async () => {
+    prisma.shadowDecision.count.mockResolvedValue(7);
+    const since = new Date("2026-07-31T11:00:00Z");
+
+    const result = await countShadowDecisionsSince(since);
+
+    expect(result).toBe(7);
+    expect(prisma.shadowDecision.count).toHaveBeenCalledWith({ where: { createdAt: { gte: since } } });
   });
 });
