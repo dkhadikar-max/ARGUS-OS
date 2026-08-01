@@ -1,6 +1,8 @@
 import type { PaidPlanTier } from "@argus/shared";
 import { api } from "../../lib/api-client";
 import { BillingPlanButton } from "../../components/BillingPlanButton";
+import { Card } from "../../components/ui/Card";
+import { PageHeader } from "../../components/ui/PageHeader";
 
 // Bible §13.2 Pricing Tiers, §18 DSH-5 "Billing page" (P2). Checkout is
 // Dodo Payments, not Stripe (unavailable in India) -- see apps/api's
@@ -61,22 +63,24 @@ export default async function BillingPage({
         </p>
       )}
 
-      <header className="mb-6">
-        <h1 className="text-lg font-bold text-gray-900">Billing</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Current plan: <span className="font-medium text-gray-900">{team.plan}</span>
-        </p>
-      </header>
+      <PageHeader
+        title="Billing"
+        description={
+          <>
+            Current plan: <span className="font-medium text-gray-900">{team.plan}</span>
+          </>
+        }
+      />
 
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
+      <Card className="p-4">
         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Free</div>
         <p className="text-sm text-gray-600">$0 — 1 seat, 50 decisions/mo. Basic verdict, LinkedIn only, no Slack.</p>
         {team.plan === "FREE" && <p className="mt-2 text-xs font-medium text-teal-700">Current plan</p>}
-      </div>
+      </Card>
 
       <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
         {PAID_PLANS.map((p) => (
-          <div key={p.plan} className="flex flex-col rounded-lg border border-gray-200 bg-white p-4">
+          <Card key={p.plan} className="flex flex-col p-4">
             <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{p.name}</div>
             <div className="mb-2 text-xl font-bold text-gray-900">{p.price}</div>
             <p className="mb-1 text-xs text-gray-500">
@@ -90,7 +94,7 @@ export default async function BillingPage({
                 <BillingPlanButton plan={p.plan} label={`Upgrade to ${p.name}`} />
               </div>
             )}
-          </div>
+          </Card>
         ))}
       </div>
     </main>

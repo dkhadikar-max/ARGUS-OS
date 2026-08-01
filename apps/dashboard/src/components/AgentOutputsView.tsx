@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Card } from "./ui/Card";
 
 interface Props {
   title: string;
@@ -19,10 +20,10 @@ export function AgentOutputsView({ title, agentOutputs }: Props) {
 
   if (agentOutputs == null) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
+      <Card className="p-4">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">{title}</h3>
         <p className="mt-2 text-xs text-gray-400">No agent output recorded.</p>
-      </div>
+      </Card>
     );
   }
 
@@ -33,7 +34,7 @@ export function AgentOutputsView({ title, agentOutputs }: Props) {
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
+    <Card className="p-4">
       <details open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
         <summary className="flex cursor-pointer items-center justify-between text-xs font-semibold uppercase tracking-wide text-gray-500">
           <span>{title}</span>
@@ -54,6 +55,6 @@ export function AgentOutputsView({ title, agentOutputs }: Props) {
           {JSON.stringify(agentOutputs, null, 2)}
         </pre>
       </details>
-    </div>
+    </Card>
   );
 }

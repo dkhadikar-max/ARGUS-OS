@@ -1,4 +1,5 @@
 import type { EvidenceCard } from "@argus/shared";
+import { Card } from "./ui/Card";
 
 // Live-decision only -- Evidence.decisionId only ever points at the live
 // Decision (the shadow run's own evidence, if any, isn't persisted
@@ -6,10 +7,10 @@ import type { EvidenceCard } from "@argus/shared";
 export function EvidenceSummaryList({ evidence }: { evidence: EvidenceCard[] }) {
   if (evidence.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center">
+      <Card variant="dashed" className="p-6">
         <p className="text-sm font-medium text-gray-900">No evidence recorded</p>
         <p className="mt-1 text-sm text-gray-500">This decision's live run had no enrichment evidence attached.</p>
-      </div>
+      </Card>
     );
   }
 

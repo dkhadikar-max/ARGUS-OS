@@ -2,6 +2,8 @@ import { api } from "../../lib/api-client";
 import { IcpCriteriaEditor } from "../../components/IcpCriteriaEditor";
 import { PolicyRulesEditor } from "../../components/PolicyRulesEditor";
 import { CompanyContextEditor } from "../../components/CompanyContextEditor";
+import { Card } from "../../components/ui/Card";
+import { PageHeader } from "../../components/ui/PageHeader";
 import { updatePreferencesAction } from "./actions";
 
 // Bible §18 DSH-5 "Settings" (P1 items only -- "Integration connections" and
@@ -19,9 +21,7 @@ export default async function SettingsPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
-      <header className="mb-6">
-        <h1 className="text-lg font-bold text-gray-900">Settings</h1>
-      </header>
+      <PageHeader title="Settings" />
 
       <section className="mb-8">
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -117,21 +117,21 @@ export default async function SettingsPage() {
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
           Company context
         </h2>
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <Card className="p-4">
           <CompanyContextEditor initialCompanyContext={team.companyContext} />
-        </div>
+        </Card>
       </section>
 
       <section>
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
           Team ICP
         </h2>
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <Card className="p-4">
           <IcpCriteriaEditor initialCriteria={icp.criteria} />
           {icp.updatedAt === null && (
             <p className="mt-3 text-xs text-gray-400">No ICP saved yet for this team.</p>
           )}
-        </div>
+        </Card>
       </section>
 
       {/* Fully functional (ARGUS Unanimous Policy v2.1 "L4 Policy Engine"),
@@ -146,12 +146,12 @@ export default async function SettingsPage() {
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
             Policy Engine
           </h2>
-          <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <Card className="p-4">
             <PolicyRulesEditor initialRules={policy.rules} />
             {policy.updatedAt === null && (
               <p className="mt-3 text-xs text-gray-400">No policy rules configured yet for this team.</p>
             )}
-          </div>
+          </Card>
         </section>
       </details>
     </main>

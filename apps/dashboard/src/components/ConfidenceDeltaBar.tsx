@@ -1,3 +1,5 @@
+import { Card } from "./ui/Card";
+
 // confidenceDelta is signed, computed as shadow - live (see
 // decision-disagreement.ts), so it ranges roughly -100..100. Rendered as a
 // bar from a shared center so the direction (shadow more/less confident) is
@@ -7,7 +9,7 @@ export function ConfidenceDeltaBar({ confidenceDelta }: { confidenceDelta: numbe
   const positive = confidenceDelta >= 0;
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
+    <Card className="p-4">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Confidence delta</p>
         <span className={`text-sm font-semibold ${positive ? "text-emerald-700" : "text-red-700"}`}>
@@ -27,6 +29,6 @@ export function ConfidenceDeltaBar({ confidenceDelta }: { confidenceDelta: numbe
         />
       </div>
       <p className="mt-1 text-xs text-gray-400">Shadow {positive ? "more" : "less"} confident than live</p>
-    </div>
+    </Card>
   );
 }

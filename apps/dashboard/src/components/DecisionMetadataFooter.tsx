@@ -1,3 +1,5 @@
+import { Card } from "./ui/Card";
+
 interface Side {
   processingTimeMs: number | null;
   inputTokens: number | null;
@@ -25,10 +27,10 @@ function formatMetric(side: Side): string {
 // use the same configured model in the real schema shape.
 export function DecisionMetadataFooter({ live, shadow, model }: Props) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 text-xs text-gray-500">
+    <Card className="p-4 text-xs text-gray-500">
       <p>Model: {model}</p>
       <p className="mt-1">Live: {formatMetric(live)}</p>
       <p className="mt-1">Shadow: {formatMetric(shadow)}</p>
-    </div>
+    </Card>
   );
 }

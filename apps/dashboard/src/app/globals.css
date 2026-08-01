@@ -20,8 +20,42 @@
      overridden by preflight's own cascade layer regardless of source
      order. Brand v1.0 §3 Typography stack, same as apps/website. */
   --font-sans: "Satoshi", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* Design System Pass (2026-08-01) -- ported verbatim from
+     apps/website/tailwind.config.ts so both apps draw from one brand
+     token set instead of components reaching for un-branded Tailwind
+     defaults (emerald/green/red/amber/orange) for status colors. Same
+     hex values, same names as the website. */
+  --color-teal-glow: #00F5E8; /* Brand's 2nd distinct verdict shade -- STRONG_YES vs YES must differ, not just opacity */
+  --color-amber: #F5A623;
+  --color-amber-glow: #FFC15E;
+  --color-alert: #DC2626;
+  --color-caution: #F5A623; /* same hex as amber, kept as a separate semantic name -- matches website's own duplication */
+  --color-wait: #00A8E8;
+  --color-pass: #3D4F63;
+  --color-hard-pass: #2A3A4E;
+  --color-signal: #00D1C8; /* alias to teal -- website's own "no separate green, signal unified into teal" decision */
 }
 
 :root {
   color-scheme: light;
+}
+
+/* Design System Pass (2026-08-01) -- formalizes the two h2 patterns that
+   had already converged by convention across the dashboard (see
+   PageHeader.tsx for the h1 pattern, extracted as a component instead
+   since its surrounding markup is more uniform). Named once here rather
+   than left as copy-pasted literal className strings in ~20 files. */
+.text-section-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  color: var(--color-gray-500);
+}
+
+.text-card-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-gray-900);
 }

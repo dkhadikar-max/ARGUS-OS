@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AdminShadowLiveMetricsResponse } from "@argus/shared";
 import { RolloutPercentBar } from "./RolloutPercentBar";
+import { Card } from "./ui/Card";
 import { formatRelativeTime } from "../lib/format-relative-time";
 import { getShadowLiveMetricsAction } from "../app/admin/shadow-health/actions";
 
@@ -18,10 +19,12 @@ const BREAKER_LABEL: Record<AdminShadowLiveMetricsResponse["circuitBreakerState"
   open: "Open",
 };
 
+// Design System Pass (2026-08-01) -- swapped off default Tailwind
+// emerald/amber/red onto the brand's signal/caution/alert tokens.
 const BREAKER_CLASSES: Record<AdminShadowLiveMetricsResponse["circuitBreakerState"], string> = {
-  closed: "text-emerald-700",
-  half_open: "text-amber-600",
-  open: "text-red-600",
+  closed: "text-teal-700",
+  half_open: "text-caution",
+  open: "text-alert",
 };
 
 // Post-review addition -- an operator unfamiliar with circuit breakers
@@ -97,18 +100,18 @@ export function ShadowLiveHealthPanel({ initialMetrics }: { initialMetrics: Admi
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
+      <Card className="p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="flex items-center gap-1.5 text-sm font-medium">
-            <span className={`h-2 w-2 rounded-full ${metrics.enabled ? "bg-emerald-500" : "bg-gray-300"}`} />
-            <span className={metrics.enabled ? "text-emerald-700" : "text-gray-500"}>
+            <span className={`h-2 w-2 rounded-full ${metrics.enabled ? "bg-teal-600" : "bg-gray-300"}`} />
+            <span className={metrics.enabled ? "text-teal-700" : "text-gray-500"}>
               {metrics.enabled ? "Shadow mode ON" : "Shadow mode OFF"}
             </span>
           </span>
           <div className="flex items-center gap-3 text-xs text-gray-500">
-            {stale && <span className="font-medium text-amber-600">Last refresh failed — showing last known values</span>}
+            {stale && <span className="font-medium text-caution">Last refresh failed — showing last known values</span>}
             <span>Updated {formatRelativeTime(lastRefreshedAt)}</span>
-            <span className={paused ? "font-medium text-amber-600" : undefined}>
+            <span className={paused ? "font-medium text-caution" : undefined}>
               {paused ? "Paused — tab hidden" : "Polling every 15s"}
             </span>
             <button
@@ -139,9 +142,9 @@ export function ShadowLiveHealthPanel({ initialMetrics }: { initialMetrics: Admi
             <dd className="mt-0.5 text-sm font-medium text-gray-900">{formatMs(metrics.p95LatencyMs1h)}</dd>
           </div>
         </dl>
-      </div>
+      </Card>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
+      <Card className="p-4">
         <h2 className="text-sm font-semibold text-gray-900">Concurrency</h2>
         <div className="mt-3">
           <RolloutPercentBar
@@ -152,9 +155,9 @@ export function ShadowLiveHealthPanel({ initialMetrics }: { initialMetrics: Admi
             {metrics.inFlightCount} of {metrics.maxConcurrent} slots in use
           </p>
         </div>
-      </div>
+      </Card>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
+      <Card className="p-4">
         <h2 className="text-sm font-semibold text-gray-900">Last hour</h2>
         <dl className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
           <div>
@@ -182,16 +185,16 @@ export function ShadowLiveHealthPanel({ initialMetrics }: { initialMetrics: Admi
             </dd>
           </div>
         </dl>
-      </div>
+      </Card>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
+      <Card className="p-4">
         <h2 className="text-sm font-semibold text-gray-900">Queue</h2>
         <p className="mt-1 text-xs text-gray-500">
           {metrics.hasQueue
             ? "A queue exists."
             : "No queue — shadow mode drops excess sampled runs instead of queuing (see Drops above)."}
         </p>
-      </div>
+      </Card>
 
       <p className="text-xs text-gray-400">
         In-flight count, circuit breaker state, and the last hour's timeout/drop/error counts (and therefore error

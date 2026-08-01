@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Card } from "./ui/Card";
 
 // Narrow, defensive projection of apps/api's real ExecutionTrace shape
 // (apps/api/src/agents/execution-trace.ts) -- executionTrace travels as
@@ -59,7 +60,7 @@ export function ExecutionTraceView({
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
+    <Card className="p-4">
       <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Execution summary</h3>
       <dl className="mt-2 space-y-1 text-sm">
         <div className="flex justify-between gap-4">
@@ -123,6 +124,6 @@ export function ExecutionTraceView({
           </pre>
         </details>
       )}
-    </div>
+    </Card>
   );
 }

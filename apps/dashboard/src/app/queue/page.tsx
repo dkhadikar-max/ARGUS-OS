@@ -1,6 +1,7 @@
 import { api } from "../../lib/api-client";
 import { QueueList } from "../../components/QueueList";
 import { LiveQueueBanner } from "../../components/LiveQueueBanner";
+import { PageHeader } from "../../components/ui/PageHeader";
 
 // Bible §18 DSH-2 "Queue page layout" + "Prospect cards with verdicts" (P0)
 // + "Filter and sort controls" (P1, components/QueueList.tsx).
@@ -25,41 +26,41 @@ export default async function QueuePage({
         </p>
       )}
 
-      <header className="mb-6 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-lg font-bold text-gray-900">
-            Today&apos;s Queue — {queue.stats.total} prospect{queue.stats.total === 1 ? "" : "s"}
-          </h1>
-          <p className="mt-1 text-sm text-gray-500">
+      <PageHeader
+        title={`Today's Queue — ${queue.stats.total} prospect${queue.stats.total === 1 ? "" : "s"}`}
+        description={
+          <>
             {queue.stats.strongYes} strong yes · {queue.stats.yes} yes · {queue.stats.wait} wait ·{" "}
             {queue.stats.pass} pass · {queue.stats.newSinceYesterday} new since yesterday
-          </p>
-        </div>
-        {slackStatus.connected ? (
-          // getSlackIntegrationStatus only reads the stored DB flag -- it
-          // never confirms the Slack-side installation is still live, so a
-          // workspace admin uninstalling the app or revoking the token
-          // leaves this stuck at "connected" with no way to recover. Kept
-          // clickable (re-running /api/slack/install is an idempotent
-          // upsert, per connectSlackIntegration) so there's always a path
-          // to redo the handshake, the same way the unconnected state below
-          // always had one.
-          <a
-            href="/api/slack/install"
-            title="Reconnect Slack"
-            className="shrink-0 rounded-md bg-green-50 px-3 py-1.5 text-sm font-medium text-green-800 hover:bg-green-100"
-          >
-            ✓ Slack connected
-          </a>
-        ) : (
-          <a
-            href="/api/slack/install"
-            className="shrink-0 rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-700"
-          >
-            Connect Slack
-          </a>
-        )}
-      </header>
+          </>
+        }
+        actions={
+          slackStatus.connected ? (
+            // getSlackIntegrationStatus only reads the stored DB flag -- it
+            // never confirms the Slack-side installation is still live, so a
+            // workspace admin uninstalling the app or revoking the token
+            // leaves this stuck at "connected" with no way to recover. Kept
+            // clickable (re-running /api/slack/install is an idempotent
+            // upsert, per connectSlackIntegration) so there's always a path
+            // to redo the handshake, the same way the unconnected state below
+            // always had one.
+            <a
+              href="/api/slack/install"
+              title="Reconnect Slack"
+              className="shrink-0 rounded-md bg-green-50 px-3 py-1.5 text-sm font-medium text-green-800 hover:bg-green-100"
+            >
+              ✓ Slack connected
+            </a>
+          ) : (
+            <a
+              href="/api/slack/install"
+              className="shrink-0 rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-700"
+            >
+              Connect Slack
+            </a>
+          )
+        }
+      />
 
       <LiveQueueBanner />
 

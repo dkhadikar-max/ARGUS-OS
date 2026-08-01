@@ -22,8 +22,11 @@ export function DisagreementBadge({
   disagreementCategories: DisagreementCategory[];
 }) {
   if (verdictAgreement && disagreementCategories.length === 0) {
+    // Design System Pass (2026-08-01) -- teal-50/700 instead of default
+    // Tailwind emerald: this app has no separate "positive" green token
+    // (signal is aliased to teal, matching apps/website's own decision).
     return (
-      <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+      <span className="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700">
         Agreement
       </span>
     );
@@ -34,7 +37,7 @@ export function DisagreementBadge({
     // still a real disagreement (confidenceDelta-only, or a category this
     // taxonomy doesn't cover), not a bug to hide.
     return (
-      <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700">
+      <span className="rounded-full bg-alert/10 px-2.5 py-1 text-xs font-medium text-alert">
         Disagreement
       </span>
     );
@@ -45,7 +48,7 @@ export function DisagreementBadge({
       {disagreementCategories.map((category) => (
         <span
           key={category}
-          className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700"
+          className="rounded-full bg-alert/10 px-2.5 py-1 text-xs font-medium text-alert"
         >
           {CATEGORY_LABEL[category]}
         </span>

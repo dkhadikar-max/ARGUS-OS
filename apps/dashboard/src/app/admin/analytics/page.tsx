@@ -7,6 +7,7 @@ import { ShadowMetricsSummaryCards } from "../../../components/ShadowMetricsSumm
 import { ShadowVolumeChart } from "../../../components/ShadowVolumeChart";
 import { ShadowDisagreementChart } from "../../../components/ShadowDisagreementChart";
 import { CATEGORY_LABEL, type DisagreementCategory } from "../../../components/DisagreementBadge";
+import { PageHeader } from "../../../components/ui/PageHeader";
 import type { AdminShadowHealthResponse, AdminShadowMetricsResponse } from "@argus/shared";
 
 const VALID_RANGES = new Set([7, 14, 30, 90]);
@@ -44,16 +45,16 @@ export default async function AdminAnalyticsPage({
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
       <AdminSubNav />
-      <header className="mb-6 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-lg font-bold text-gray-900">Shadow Mode Analytics</h1>
-          <p className="mt-1 text-sm text-gray-500">
+      <PageHeader
+        title="Shadow Mode Analytics"
+        description={
+          <>
             Cross-team aggregates{metrics.scope.teamId ? "" : " across all teams"} — see Shadow Decisions for
             individual rows.
-          </p>
-        </div>
-        <AdminAnalyticsRangeSelect />
-      </header>
+          </>
+        }
+        actions={<AdminAnalyticsRangeSelect />}
+      />
 
       <div className="space-y-6">
         <ShadowHealthCard health={health} />

@@ -16,7 +16,9 @@ export function ShadowVolumeChart({ data }: Props) {
         data={data}
         index="day"
         categories={["Shadow decisions"]}
-        colors={["blue"]}
+        // Design System Pass (2026-08-01) -- brand Teal hex, see
+        // MeetingRateChart.tsx's identical comment.
+        colors={["#00D1C8"]}
         yAxisWidth={40}
       />
     </Card>

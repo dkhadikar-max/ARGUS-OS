@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { AdminListShadowDecisionsResponse } from "@argus/shared";
 import { Table, TableBody, TableHead, TableHeaderCell, TableRow } from "@tremor/react";
 import { ShadowDecisionRow } from "./ShadowDecisionRow";
+import { Card } from "./ui/Card";
 
 // Receives already-fetched data as a prop -- no client refetch. Pagination
 // is query-param Links, matching RepFilterSelect/analytics's existing
@@ -13,12 +14,12 @@ export function ShadowDecisionsTable({ data }: { data: AdminListShadowDecisionsR
 
   if (data.data.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">
+      <Card variant="dashed" className="p-8">
         <p className="text-sm font-medium text-gray-900">No shadow decisions yet</p>
         <p className="mt-1 text-sm text-gray-500">
           Rows appear here once Shadow Mode starts sampling live traffic (SHADOW_SAMPLE_RATE_PERCENT &gt; 0).
         </p>
-      </div>
+      </Card>
     );
   }
 

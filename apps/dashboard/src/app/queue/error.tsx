@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { Card } from "../../components/ui/Card";
 
 export default function QueueError({ error, reset }: { error: Error; reset: () => void }) {
   useEffect(() => {
@@ -10,7 +11,7 @@ export default function QueueError({ error, reset }: { error: Error; reset: () =
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
-      <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
+      <Card variant="error" className="p-6">
         <p className="text-sm font-medium text-red-800">Couldn&apos;t load your queue</p>
         <p className="mt-1 text-sm text-red-600">{error.message}</p>
         <button
@@ -20,7 +21,7 @@ export default function QueueError({ error, reset }: { error: Error; reset: () =
         >
           Try again
         </button>
-      </div>
+      </Card>
     </main>
   );
 }

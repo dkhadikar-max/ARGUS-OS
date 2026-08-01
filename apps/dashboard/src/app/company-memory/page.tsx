@@ -1,5 +1,7 @@
 import { api } from "../../lib/api-client";
 import { PatternCard } from "../../components/PatternCard";
+import { Card } from "../../components/ui/Card";
+import { PageHeader } from "../../components/ui/PageHeader";
 
 // Bible §18 DSH-4 "Company Memory". Patterns, top-performing messages, risk
 // flags, and ICP accuracy are all real, computed server-side (see README
@@ -11,22 +13,17 @@ export default async function CompanyMemoryPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
-      <header className="mb-6">
-        <h1 className="text-lg font-bold text-gray-900">Company Memory</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Patterns ARGUS has learned from your team&apos;s logged outcomes.
-        </p>
-      </header>
+      <PageHeader title="Company Memory" description="Patterns ARGUS has learned from your team's logged outcomes." />
 
       <section className="mb-8">
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Patterns</h2>
         {memory.patterns.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">
+          <Card variant="dashed" className="p-8">
             <p className="text-sm font-medium text-gray-900">No patterns yet</p>
             <p className="mt-1 text-sm text-gray-500">
               Patterns appear here once your team has logged enough outcomes for ARGUS to spot a trend.
             </p>
-          </div>
+          </Card>
         ) : (
           <ul className="space-y-3">
             {memory.patterns.map((pattern) => (
@@ -39,12 +36,12 @@ export default async function CompanyMemoryPage() {
       <section className="mb-8">
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Risk flags</h2>
         {memory.riskFlags.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">
+          <Card variant="dashed" className="p-8">
             <p className="text-sm font-medium text-gray-900">No risk flags yet</p>
             <p className="mt-1 text-sm text-gray-500">
               This fills in once a recurring risk condition has appeared across enough decisions.
             </p>
-          </div>
+          </Card>
         ) : (
           <table className="w-full overflow-hidden rounded-lg border border-gray-200 bg-white text-sm">
             <thead className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -77,13 +74,13 @@ export default async function CompanyMemoryPage() {
             {memory.icpAccuracy.sampleSize} decision{memory.icpAccuracy.sampleSize === 1 ? "" : "s"}
           </p>
         ) : (
-          <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">
+          <Card variant="dashed" className="p-8">
             <p className="text-sm font-medium text-gray-900">Not enough data yet</p>
             <p className="mt-1 text-sm text-gray-500">
               This fills in once your current ICP has at least 3 STRONG YES or YES decisions with a logged outcome —
               enough that one lucky (or unlucky) call doesn&apos;t read as a definitive accuracy score.
             </p>
-          </div>
+          </Card>
         )}
       </section>
 
@@ -92,12 +89,12 @@ export default async function CompanyMemoryPage() {
           Top performing messages
         </h2>
         {memory.topPerformingMessages.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">
+          <Card variant="dashed" className="p-8">
             <p className="text-sm font-medium text-gray-900">No patterns yet</p>
             <p className="mt-1 text-sm text-gray-500">
               This fills in once enough messages using the same personalization hook have a logged outcome.
             </p>
-          </div>
+          </Card>
         ) : (
           <table className="w-full overflow-hidden rounded-lg border border-gray-200 bg-white text-sm">
             <thead className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -125,7 +122,7 @@ export default async function CompanyMemoryPage() {
           Learning Agent report
         </h2>
         {memory.learningInsights ? (
-          <div className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 text-sm">
+          <Card className="space-y-4 p-4 text-sm">
             <p className="text-gray-500">
               Recommendations only &mdash; nothing here is applied automatically. Generated{" "}
               {new Date(memory.learningInsights.generatedAt).toLocaleDateString()}, priority:{" "}
@@ -190,15 +187,15 @@ export default async function CompanyMemoryPage() {
                 </ul>
               </div>
             )}
-          </div>
+          </Card>
         ) : (
-          <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">
+          <Card variant="dashed" className="p-8">
             <p className="text-sm font-medium text-gray-900">No report yet</p>
             <p className="mt-1 text-sm text-gray-500">
               The Learning Agent runs every 20 logged outcomes and analyzes what&apos;s working across your
               team&apos;s decisions.
             </p>
-          </div>
+          </Card>
         )}
       </section>
     </main>

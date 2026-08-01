@@ -17,7 +17,12 @@ export function ShadowDisagreementChart({ data }: Props) {
 
   return (
     <Card>
-      <BarChart data={data} index="category" categories={["Count"]} colors={["red"]} yAxisWidth={40} />
+      {/* Design System Pass (2026-08-01) -- exact brand `alert` hex
+          (#DC2626) instead of Tremor's named "red" swatch. Kept red, not
+          teal -- disagreements are the one real "something's wrong" chart
+          among these three, so red stays the correct semantic, just
+          brand-exact now. */}
+      <BarChart data={data} index="category" categories={["Count"]} colors={["#DC2626"]} yAxisWidth={40} />
     </Card>
   );
 }

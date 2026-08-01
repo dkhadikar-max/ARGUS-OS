@@ -2,6 +2,7 @@ import { api, isForbiddenError } from "../../../lib/api-client";
 import { AdminAccessRequiredPanel } from "../../../components/AdminAccessRequiredPanel";
 import { AdminSubNav } from "../../../components/AdminSubNav";
 import { ShadowDecisionsTable } from "../../../components/ShadowDecisionsTable";
+import { PageHeader } from "../../../components/ui/PageHeader";
 import type { AdminListShadowDecisionsResponse } from "@argus/shared";
 
 // First admin-tier UI page in this app. All real authorization happens by
@@ -27,12 +28,10 @@ export default async function ShadowDecisionsPage({
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
       <AdminSubNav />
-      <header className="mb-6">
-        <h1 className="text-lg font-bold text-gray-900">Shadow Decisions</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Cross-team Shadow Mode monitoring — click a row to open the Decision Explorer.
-        </p>
-      </header>
+      <PageHeader
+        title="Shadow Decisions"
+        description="Cross-team Shadow Mode monitoring — click a row to open the Decision Explorer."
+      />
 
       <ShadowDecisionsTable data={data} />
     </main>

@@ -1,3 +1,5 @@
+import { Card } from "../../../components/ui/Card";
+
 // Mirrors app/queue/loading.tsx's skeleton shape.
 export default function ShadowRolloutLoading() {
   return (
@@ -8,10 +10,10 @@ export default function ShadowRolloutLoading() {
       </div>
       <div className="animate-pulse space-y-4" aria-label="Loading rollout controller" role="status">
         {Array.from({ length: 3 }, (_, i) => (
-          <div key={i} className="h-24 rounded-lg border border-gray-200 bg-white p-4">
+          <Card key={i} className="h-24 p-4">
             <div className="h-4 w-40 rounded bg-gray-200" />
             <div className="mt-3 h-3 w-full rounded bg-gray-200" />
-          </div>
+          </Card>
         ))}
       </div>
     </main>

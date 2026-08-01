@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { QueueItem, Verdict } from "@argus/shared";
 import { QueueItemCard } from "./QueueItemCard";
 import { EmptyQueueState } from "./EmptyQueueState";
+import { Card } from "./ui/Card";
 import { track } from "../lib/analytics";
 
 const VERDICTS: Verdict[] = ["STRONG_YES", "YES", "WAIT", "PASS", "HARD_PASS"];
@@ -66,7 +67,7 @@ export function QueueList({ items }: { items: QueueItem[] }) {
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center gap-4 rounded-lg border border-gray-200 bg-white p-3">
+      <Card className="mb-4 flex flex-wrap items-center gap-4 p-3">
         <div className="flex flex-wrap gap-2">
           {VERDICTS.map((verdict) => (
             <button
@@ -97,13 +98,13 @@ export function QueueList({ items }: { items: QueueItem[] }) {
             <option value="recency">Most recent</option>
           </select>
         </label>
-      </div>
+      </Card>
 
       {visibleItems.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">
+        <Card variant="dashed" className="p-8">
           <p className="text-sm font-medium text-gray-900">No prospects match these filters</p>
           <p className="mt-1 text-sm text-gray-500">Clear a verdict filter above to see more.</p>
-        </div>
+        </Card>
       ) : (
         <ul className="space-y-3">
           {visibleItems.map((item) => (

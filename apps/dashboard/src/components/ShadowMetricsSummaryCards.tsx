@@ -1,5 +1,6 @@
 import { Card, Metric, Text } from "@tremor/react";
 import type { AdminShadowMetricsResponse } from "@argus/shared";
+import { Card as EmptyStateCard } from "./ui/Card";
 
 type Metrics = Omit<AdminShadowMetricsResponse, "scope" | "disagreementBreakdown" | "volumeByDay">;
 
@@ -10,12 +11,12 @@ type Metrics = Omit<AdminShadowMetricsResponse, "scope" | "disagreementBreakdown
 export function ShadowMetricsSummaryCards({ metrics }: { metrics: Metrics }) {
   if (metrics.totalShadowDecisions === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">
+      <EmptyStateCard variant="dashed" className="p-8">
         <p className="text-sm font-medium text-gray-900">No shadow decisions in this window</p>
         <p className="mt-1 text-sm text-gray-500">
           Metrics fill in once Shadow Mode starts sampling live traffic (SHADOW_SAMPLE_RATE_PERCENT &gt; 0).
         </p>
-      </div>
+      </EmptyStateCard>
     );
   }
 

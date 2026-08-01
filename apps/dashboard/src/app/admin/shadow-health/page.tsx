@@ -2,6 +2,7 @@ import { api, isForbiddenError } from "../../../lib/api-client";
 import { AdminAccessRequiredPanel } from "../../../components/AdminAccessRequiredPanel";
 import { AdminSubNav } from "../../../components/AdminSubNav";
 import { ShadowLiveHealthPanel } from "../../../components/ShadowLiveHealthPanel";
+import { PageHeader } from "../../../components/ui/PageHeader";
 import type { AdminShadowLiveMetricsResponse } from "@argus/shared";
 
 // Gate 3 Increment 1.9 -- "the page you watch during rollout." The
@@ -20,13 +21,10 @@ export default async function ShadowHealthPage() {
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
       <AdminSubNav />
-      <header className="mb-6">
-        <h1 className="text-lg font-bold text-gray-900">Shadow Health</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Live operational state, not history — sample rate, concurrency, circuit breaker, and the last hour's
-          timeouts/drops/errors. Refreshes automatically every 15 seconds while this tab is open.
-        </p>
-      </header>
+      <PageHeader
+        title="Shadow Health"
+        description="Live operational state, not history — sample rate, concurrency, circuit breaker, and the last hour's timeouts/drops/errors. Refreshes automatically every 15 seconds while this tab is open."
+      />
 
       <ShadowLiveHealthPanel initialMetrics={metrics} />
     </main>

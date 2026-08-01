@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { Card } from "../../components/ui/Card";
 
 // Mirrors app/queue/error.tsx's generic boundary shape -- /admin had none
 // before this increment. Only reached for a genuine unexpected failure
@@ -16,7 +17,7 @@ export default function AdminError({ error, reset }: { error: Error; reset: () =
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
-      <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
+      <Card variant="error" className="p-6">
         <p className="text-sm font-medium text-red-800">Something went wrong loading this admin page</p>
         <p className="mt-1 text-sm text-red-600">{error.message}</p>
         <button
@@ -26,7 +27,7 @@ export default function AdminError({ error, reset }: { error: Error; reset: () =
         >
           Try again
         </button>
-      </div>
+      </Card>
     </main>
   );
 }

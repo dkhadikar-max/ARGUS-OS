@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { icpWeightsAreValid, type IcpCriterion } from "@argus/shared";
 import { IcpCriteriaFields } from "./IcpCriteriaFields";
+import { Card } from "./ui/Card";
 import { completeOnboardingAction, suggestCompanyContextAction } from "../app/onboarding/actions";
 
 interface Props {
@@ -124,9 +125,9 @@ export function OnboardingWizard({ initialName, initialCriteria }: Props) {
           Optional for now — skip this and Argus falls back to heuristic scoring (Bible §5.3) until you add
           criteria in Settings.
         </p>
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <Card className="p-4">
           <IcpCriteriaFields criteria={criteria} onChange={setCriteria} />
-        </div>
+        </Card>
       </section>
 
       {error && <p className="mt-4 text-sm text-red-600">{error}</p>}

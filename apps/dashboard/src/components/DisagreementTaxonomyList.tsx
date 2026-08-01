@@ -1,4 +1,5 @@
 import { CATEGORY_LABEL, type DisagreementCategory } from "./DisagreementBadge";
+import { Card } from "./ui/Card";
 
 interface Props {
   verdictAgreement: boolean;
@@ -8,7 +9,7 @@ interface Props {
 
 export function DisagreementTaxonomyList({ verdictAgreement, controllerComparisonApplicable, disagreementCategories }: Props) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
+    <Card className="p-4">
       <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Disagreement taxonomy</p>
       {disagreementCategories.length === 0 ? (
         <p className="mt-2 text-sm text-gray-700">
@@ -29,6 +30,6 @@ export function DisagreementTaxonomyList({ verdictAgreement, controllerCompariso
           (legacy pipeline or a debate-cache hit).
         </p>
       )}
-    </div>
+    </Card>
   );
 }

@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { AdminShadowRolloutResponse } from "@argus/shared";
 import { upsertShadowRolloutTeamOverrideAction, deleteShadowRolloutTeamOverrideAction } from "../app/admin/shadow-rollout/actions";
 import { RolloutPercentBar } from "./RolloutPercentBar";
+import { Card } from "./ui/Card";
 
 type Override = AdminShadowRolloutResponse["teamOverrides"][number];
 
@@ -51,7 +52,7 @@ export function ShadowRolloutTeamOverridesTable({ overrides }: { overrides: Over
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
+    <Card className="p-4">
       <h2 className="text-sm font-semibold text-gray-900">Team overrides</h2>
 
       {overrides.length === 0 ? (
@@ -144,6 +145,6 @@ export function ShadowRolloutTeamOverridesTable({ overrides }: { overrides: Over
           {pending === "add" ? "Saving…" : "Add override"}
         </button>
       </div>
-    </div>
+    </Card>
   );
 }

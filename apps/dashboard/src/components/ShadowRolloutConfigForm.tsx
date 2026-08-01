@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { updateShadowRolloutConfigAction } from "../app/admin/shadow-rollout/actions";
 import { RolloutPercentBar } from "./RolloutPercentBar";
+import { Card } from "./ui/Card";
 
 interface Props {
   enabled: boolean;
@@ -32,7 +33,7 @@ export function ShadowRolloutConfigForm({ enabled: initialEnabled, globalPercent
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
+    <Card className="p-4">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-gray-900">Global rollout</h2>
         <span className="text-xs text-gray-400">Config v{version}</span>
@@ -71,6 +72,6 @@ export function ShadowRolloutConfigForm({ enabled: initialEnabled, globalPercent
       >
         {saving ? "Saving…" : saved ? "Saved!" : "Save"}
       </button>
-    </div>
+    </Card>
   );
 }

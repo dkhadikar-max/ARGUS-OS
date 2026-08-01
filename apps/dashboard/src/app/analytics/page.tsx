@@ -14,6 +14,8 @@ import { api } from "../../lib/api-client";
 import { VerdictBadge } from "../../components/VerdictBadge";
 import { RepFilterSelect } from "../../components/RepFilterSelect";
 import { MeetingRateChart } from "../../components/MeetingRateChart";
+import { Card as EmptyStateCard } from "../../components/ui/Card";
+import { PageHeader } from "../../components/ui/PageHeader";
 
 const MODE_LABEL: Record<string, string> = {
   learning: "Learning mode",
@@ -45,9 +47,7 @@ export default async function AnalyticsPage({
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
-      <header className="mb-6">
-        <h1 className="text-lg font-bold text-gray-900">Analytics</h1>
-      </header>
+      <PageHeader title="Analytics" />
 
       <section className="mb-8">
         <Card>
@@ -101,12 +101,12 @@ export default async function AnalyticsPage({
           Meeting rate by verdict
         </h2>
         {chartData.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">
+          <EmptyStateCard variant="dashed" className="p-8">
             <p className="text-sm font-medium text-gray-900">No outcomes logged yet</p>
             <p className="mt-1 text-sm text-gray-500">
               This chart fills in as your team logs outcomes for their decisions.
             </p>
-          </div>
+          </EmptyStateCard>
         ) : (
           <MeetingRateChart data={chartData} />
         )}
@@ -117,12 +117,12 @@ export default async function AnalyticsPage({
           Accuracy by rep
         </h2>
         {outcomes.accuracy.byRep.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">
+          <EmptyStateCard variant="dashed" className="p-8">
             <p className="text-sm font-medium text-gray-900">No decisions yet</p>
             <p className="mt-1 text-sm text-gray-500">
               This fills in once reps on your team start generating verdicts.
             </p>
-          </div>
+          </EmptyStateCard>
         ) : (
           <Card>
             <Table>
@@ -172,14 +172,14 @@ export default async function AnalyticsPage({
           <RepFilterSelect reps={outcomes.accuracy.byRep} />
         </div>
         {outcomes.data.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">
+          <EmptyStateCard variant="dashed" className="p-8">
             <p className="text-sm font-medium text-gray-900">
               {rep ? "No decision history for this rep yet" : "No decision history yet"}
             </p>
             <p className="mt-1 text-sm text-gray-500">
               Decisions appear here once an outcome has been logged for them.
             </p>
-          </div>
+          </EmptyStateCard>
         ) : (
           <Card>
             <Table>

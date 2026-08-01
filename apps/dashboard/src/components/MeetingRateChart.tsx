@@ -18,7 +18,11 @@ export function MeetingRateChart({ data }: Props) {
         data={data}
         index="verdict"
         categories={["Meeting rate"]}
-        colors={["blue"]}
+        // Design System Pass (2026-08-01) -- brand Teal (#00D1C8) hex,
+        // not Tremor's named "blue" swatch or its "teal" (which isn't a
+        // pixel-exact match) -- BarChart's colors prop accepts a plain
+        // hex string, so this is exact, not approximate.
+        colors={["#00D1C8"]}
         valueFormatter={(value: number) => `${value}%`}
         yAxisWidth={48}
       />

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { AdminShadowRolloutPreviewResponse } from "@argus/shared";
 import { previewShadowRolloutAction } from "../app/admin/shadow-rollout/actions";
+import { Card } from "./ui/Card";
 
 // Gate 3 Increment 1.8 -- Dry Run Preview. Explains "why was/wasn't this
 // prospect shadowed" without guesswork, built on the exact same
@@ -34,7 +35,7 @@ export function ShadowRolloutPreviewTool() {
   }
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
+    <Card className="p-4">
       <h2 className="text-sm font-semibold text-gray-900">Dry run preview</h2>
       <p className="mt-1 text-xs text-gray-500">See exactly why a prospect would or wouldn't be shadowed right now.</p>
 
@@ -96,6 +97,6 @@ export function ShadowRolloutPreviewTool() {
           </div>
         </dl>
       )}
-    </div>
+    </Card>
   );
 }

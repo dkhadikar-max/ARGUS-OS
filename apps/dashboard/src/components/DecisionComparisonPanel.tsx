@@ -1,5 +1,6 @@
 import type { Verdict } from "@argus/shared";
 import { VerdictBadge } from "./VerdictBadge";
+import { Card } from "./ui/Card";
 
 interface Side {
   verdict: Verdict;
@@ -15,7 +16,7 @@ export function DecisionComparisonPanel({ live, shadow }: { live: Side; shadow: 
         { label: "Live", side: live },
         { label: "Shadow", side: shadow },
       ].map(({ label, side }) => (
-        <div key={label} className="rounded-lg border border-gray-200 bg-white p-4">
+        <Card key={label} className="p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{label}</p>
           <div className="mt-2 flex items-center gap-2">
             <VerdictBadge verdict={side.verdict} />
@@ -25,7 +26,7 @@ export function DecisionComparisonPanel({ live, shadow }: { live: Side; shadow: 
             <p className="mt-2 text-xs font-medium text-teal-700">{side.recommendedAction.replaceAll("_", " ")}</p>
           )}
           <p className="mt-2 text-sm text-gray-700">{side.reasoning}</p>
-        </div>
+        </Card>
       ))}
     </div>
   );
