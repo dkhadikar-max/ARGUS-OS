@@ -18,7 +18,7 @@ const GRAPHS = [
   {
     title: "Action Graph",
     description:
-      "Links decisions to concrete actions — message drafts, outreach sequences, and CRM updates.",
+      "Links decisions to concrete actions — real drafted messages, ready to send.",
     glyph: ActionGlyph,
   },
   {

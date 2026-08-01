@@ -78,7 +78,6 @@ export function HeroSection() {
             </div>
 
             <div className="flex flex-wrap gap-6 font-mono text-[11px] text-slate">
-              <span>&lt;10s verdict</span>
               <span>5-agent debate</span>
               <span>Decision Graph</span>
             </div>

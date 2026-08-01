@@ -9,6 +9,16 @@ import { motion } from "framer-motion";
 // Bible's actual subscription tiers here today. Reuses the exact same
 // bordered-grid-of-cards pattern this section (and VerdictSpectrumSection)
 // already established, 4 columns instead of 3.
+//
+// `features` revised 2026-08-01 (Capability accuracy pass — see
+// README.md): verified against the real backend that NO tier has any
+// actual feature/quota/seat enforcement today except a flat FREE-vs-paid
+// hourly rate limit (rate-limit.ts) — verdict quality, Slack, Queue,
+// Company Memory, and ICP editing are identical on every plan. Copy below
+// is additive/cumulative to reflect that honestly, rather than implying
+// exclusive gates that don't exist in code. `seats`/`decisions` are shown
+// as included entitlements, not enforcement claims -- see README "Known
+// gaps" for the real state of enforcement.
 const PATHS = [
   {
     name: "Free",
@@ -16,7 +26,7 @@ const PATHS = [
     cadence: "",
     seats: "1 seat",
     decisions: "50 decisions/mo",
-    features: "Basic verdict, LinkedIn only, no Slack",
+    features: "Full verdict & evidence, message drafts, Company Memory, Slack integration",
     leadPath: "FREE" as const,
     cta: { label: "Start Free" },
   },
@@ -26,7 +36,7 @@ const PATHS = [
     cadence: "/mo",
     seats: "3 seats",
     decisions: "500 decisions/mo",
-    features: "Full verdict, Slack bot, queue, basic memory",
+    features: "Everything in Free, higher usage limits",
     leadPath: "STARTER" as const,
     cta: { label: "Start Starter" },
   },
@@ -36,7 +46,7 @@ const PATHS = [
     cadence: "/mo",
     seats: "10 seats",
     decisions: "2,500 decisions/mo",
-    features: "Full debate view, team analytics, CRM sync",
+    features: "Everything in Starter, team analytics",
     leadPath: "PRO" as const,
     cta: { label: "Start Pro" },
   },
@@ -46,7 +56,7 @@ const PATHS = [
     cadence: "/mo",
     seats: "Unlimited seats",
     decisions: "10,000 decisions/mo",
-    features: "Custom ICP, API access, SSO, priority support",
+    features: "Everything in Pro, priority support",
     leadPath: "ENTERPRISE" as const,
     cta: { label: "Start Enterprise" },
   },

@@ -117,6 +117,19 @@ components/
 
 ## Known gaps (flagged, not hidden)
 
+- **Pricing tiers have no backend enforcement yet (found 2026-08-01).**
+  Verdict quality, Slack access, Queue, Company Memory, and ICP editing
+  are identical across every plan tier today — the only real `PlanTier`
+  branch anywhere in `apps/api/src` is `rate-limit.ts`'s flat FREE-vs-paid
+  hourly limit (100/hr vs. 500/hr, the same 500/hr for Starter/Pro/
+  Enterprise alike). There is no monthly decision quota or seat-limit
+  enforcement anywhere in the codebase. `CTASection.tsx`'s per-tier copy
+  was revised 2026-08-01 to only claim what's real (seats/decisions-per-
+  month shown as included entitlements, not enforcement claims — see
+  "Capability accuracy pass" below) rather than silently building quota/
+  seat/feature-gating enforcement alongside a content pass. That
+  enforcement work is a real, separate future engineering gap.
+
 - `next@14.2.5` has a disclosed security vulnerability (npm flags it on install: https://nextjs.org/blog/security-update-2025-12-11). Not upgraded here — this workspace is integrated as-is per explicit instruction (no redesign/rebuild), and a Next.js major-version bump is its own separate task, not a drive-by change alongside a content audit. Same disclosure philosophy as the root README's own transitive `postcss` vulnerability note.
 - The Policy v2.1 Three Entry Paths GTM pricing (Free Decision Assessment $0 / Intelligence Sprint $7,500 / Enterprise Engagement $25,000+) is no longer shown anywhere on this page — the homepage's CTA slot shows the Bible's §13.2 SaaS tiers instead (see "Policy v2.1 alignment" above). This is a deliberate, explicit 2026-07-17 decision: the GTM entry-path motion (and its $7,500/$25,000+ price points) is deferred until the Phase 3 enterprise engagement is actually built out, not abandoned. Worth a `/pricing` sub-page once this site grows beyond one page.
 - The Policy's L4 "Policy Engine" (configurable governance rules gating an action before execution) has no counterpart anywhere in the built system yet — see "Policy v2.1 alignment" above. This is the next real engineering gap, not a content one.
@@ -132,3 +145,67 @@ A new official brand package (guidelines PDF + primary/monochrome/app-icon/motio
 - **Logo**: `Logo.tsx` (and `apps/dashboard`'s own copy) now renders the Argus V — two arms converging at a single point, the verdict — copied from the brand package's `argus_v_logo_primary.svg`. Same asset also became `app/icon.svg` (favicon) using the more compact `argus_v_app_icon.svg` variant.
 - **No green left**: the brand's 5-token system (Teal/Navy/White/Gray/Amber) has no separate "positive outcome" color, so `signal` was unified into Teal itself rather than keeping a distinct green Bible §1.2 had.
 - **Not changed**: the frozen Policy v2.1 tagline/copy ("Stop guessing. Start deciding with evidence.", "Know why before you act — every time.") — that's a separate governing document from the Brand Guidelines, and this rebrand's scope was visual identity, not copy. The brand doc's own new tagline ("See Right. Decide Right. Win More.") is available if a future copy update wants it, but wasn't applied here without a separate decision.
+
+## Capability accuracy pass (2026-08-01)
+
+Every prior pass above audited this site against *governing documents*
+(the Bible, Policy v2.1, Brand Guidelines v1.0). This pass audits it
+against the **actual built system** instead — `apps/api/src` and
+`packages/database/prisma/schema.prisma`, read directly, not
+Bible/Policy claims about intended behavior. Two Explore-agent research
+passes this session verified every concrete capability/performance claim
+on the homepage with file:line citations; findings and fixes below.
+
+- **Fixed — `<10s verdict` was false, off by ~10x.** `orchestrator.ts`'s
+  own dev comments (lines 173-179, 443) log real observed pipeline
+  latency at 111-116s, not under 10 seconds. Removed from
+  `HeroSection.tsx`'s stats row entirely rather than replaced with a
+  different number — the real `5-agent debate` claim (verified accurate:
+  `orchestrator.ts:427`'s `StageId` is exactly 5 real LLM stages) already
+  carries the quality signal, and the two claims were in direct tension
+  side by side (a real 5-agent debate *is why* the verdict takes over a
+  minute, not under 10 seconds).
+- **Fixed — three vaporware feature claims removed from `CTASection.tsx`.**
+  CRM sync (Pro) and SSO (Enterprise) have zero implementation anywhere
+  in the repo (no Salesforce/HubSpot client exists — `provider` in
+  `schema.prisma:864` is an unimplemented string-enum comment, not code;
+  no SAML/OIDC/enterprise-IdP code exists anywhere in `auth.ts`). API
+  access (Enterprise) exists only as internal plumbing — a real `ApiKey`
+  model and `x-api-key` auth path, but the only key ever issued is
+  auto-generated for the Slack bot integration
+  (`integration.repository.ts:39-44`); no self-serve issuance UI, no
+  public docs. "Full debate view" (Pro) exists only as an internal tool
+  (`AgentOutputsView.tsx`, rendered exclusively under the
+  `ADMIN_EMAILS`-gated `/admin/shadow-decisions`) — every real customer,
+  every tier, sees the same single reasoning paragraph in
+  `QueueItemCard.tsx`. None marked "Coming soon" — that's still a forward
+  commitment this pass wasn't authorized to make; each will be re-added
+  once actually shipped to customers.
+- **Fixed — "outreach sequences" and "CRM updates" removed from the
+  Action Graph description (`FiveGraphsSection.tsx`).** `MessageDraft`
+  (`schema.prisma:753-771`) is one message per channel per decision, no
+  sequence/cadence field anywhere — "message drafts" (real) stayed,
+  "outreach sequences"/"CRM updates" (neither real) didn't.
+- **Fixed — "Custom ICP" de-exclusified from Enterprise.** `icp.service.ts`'s
+  `updateIcpForTeam` gates on role only (ADMIN/FOUNDER/MANAGER) — zero
+  `PlanTier` check. Every tier can already edit ICP today, so listing it
+  as an Enterprise differentiator was inaccurate, not aspirational.
+- **Fixed — every tier's `features` string rewritten, additive not
+  exclusive.** A second, deeper verification pass found `rate-limit.ts`
+  is the *only* `PlanTier` branch anywhere in `apps/api/src` — verdict
+  quality, Slack connect, Queue, Company Memory (`patterns`, `riskFlags`,
+  `topPerformingMessages`, `icpAccuracy`, all genuinely real per
+  `memory.service.ts`), and ICP editing are byte-identical across every
+  plan. There is no monthly decision quota anywhere (only a flat hourly
+  rate limit: 100/hr Free vs. 500/hr for every paid tier alike — Starter/
+  Pro/Enterprise get the same number) and no seat-limit enforcement
+  anywhere (no invite/member-count code exists in `apps/api/src` at all).
+  Rather than silently building quota/seat/feature-gating enforcement
+  alongside a content pass, each tier's `features` copy was rewritten
+  additive-cumulative ("Everything in [previous tier], plus...") to
+  honestly reflect that the real differentiation today is price/scale/
+  support, not feature gates — see "Known gaps" above for the
+  enforcement work this surfaces as a real, separate future priority.
+- **Not changed — dollar amounts, seat counts, decision-count figures.**
+  Frozen per Bible §13.2; nothing found suggests these are the *wrong*
+  numbers, only that nothing in the backend currently enforces them.
