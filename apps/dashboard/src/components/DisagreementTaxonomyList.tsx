@@ -10,7 +10,7 @@ interface Props {
 export function DisagreementTaxonomyList({ verdictAgreement, controllerComparisonApplicable, disagreementCategories }: Props) {
   return (
     <Card className="p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Disagreement taxonomy</p>
+      <p className="text-section-label">Disagreement taxonomy</p>
       {disagreementCategories.length === 0 ? (
         <p className="mt-2 text-sm text-gray-700">
           {verdictAgreement ? "No disagreement detected." : "Disagreement detected, but no taxonomy category fired."}

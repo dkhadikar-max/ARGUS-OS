@@ -61,7 +61,7 @@ export function ExecutionTraceView({
 
   return (
     <Card className="p-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Execution summary</h3>
+      <h3 className="text-section-label">Execution summary</h3>
       <dl className="mt-2 space-y-1 text-sm">
         <div className="flex justify-between gap-4">
           <dt className="text-gray-500">Execution ID</dt>
@@ -88,7 +88,7 @@ export function ExecutionTraceView({
 
       {timings && timings.length > 0 && (
         <div className="mt-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Stage durations</p>
+          <p className="text-section-label">Stage durations</p>
           <ul className="mt-1 space-y-1">
             {timings.map((t) => (
               <li key={t.stage} className="flex justify-between text-xs text-gray-700">
@@ -104,7 +104,7 @@ export function ExecutionTraceView({
         <p className="mt-3 text-xs text-gray-400">No execution trace recorded.</p>
       ) : (
         <details className="mt-3" open={showRaw} onToggle={(e) => setShowRaw(e.currentTarget.open)}>
-          <summary className="flex cursor-pointer items-center justify-between text-xs font-semibold uppercase tracking-wide text-gray-500">
+          <summary className="text-section-label flex cursor-pointer items-center justify-between">
             <span>Show raw trace</span>
             {showRaw && (
               <button

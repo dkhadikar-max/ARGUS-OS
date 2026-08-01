@@ -64,14 +64,14 @@ export default async function AdminAnalyticsPage({
         {metrics.totalShadowDecisions > 0 && (
           <>
             <section>
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <h2 className="text-section-label mb-3">
                 Volume by day
               </h2>
               <ShadowVolumeChart data={volumeData} />
             </section>
 
             <section>
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <h2 className="text-section-label mb-3">
                 Disagreement breakdown
               </h2>
               <ShadowDisagreementChart data={disagreementData} />

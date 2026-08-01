@@ -101,7 +101,7 @@ export function ShadowRolloutTeamOverridesTable({ overrides }: { overrides: Over
       )}
 
       <div className="mt-4 border-t border-gray-100 pt-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Add override</p>
+        <p className="text-section-label">Add override</p>
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
           <input
             type="text"

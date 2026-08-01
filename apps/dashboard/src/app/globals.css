@@ -18,8 +18,10 @@
   /* Tailwind v4's own preflight sets body's font via this theme variable,
      not a plain `body { font-family }` rule -- a bare rule here gets
      overridden by preflight's own cascade layer regardless of source
-     order. Brand v1.0 §3 Typography stack, same as apps/website. */
-  --font-sans: "Satoshi", system-ui, -apple-system, "Segoe UI", sans-serif;
+     order. --font-lato is set by next/font/google in layout.tsx (applied
+     as a className on <html>), not hardcoded here -- keeps the actual
+     font file loading/self-hosting in Next.js's hands. */
+  --font-sans: var(--font-lato), system-ui, -apple-system, "Segoe UI", sans-serif;
 
   /* Design System Pass (2026-08-01) -- ported verbatim from
      apps/website/tailwind.config.ts so both apps draw from one brand

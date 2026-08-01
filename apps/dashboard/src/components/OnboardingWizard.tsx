@@ -72,7 +72,7 @@ export function OnboardingWizard({ initialName, initialCriteria }: Props) {
       </p>
 
       <section className="mt-8">
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Company name</h2>
+        <h2 className="text-section-label mb-2">Company name</h2>
         <input
           type="text"
           value={name}
@@ -83,7 +83,7 @@ export function OnboardingWizard({ initialName, initialCriteria }: Props) {
       </section>
 
       <section className="mt-8">
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <h2 className="text-section-label mb-2">
           Company context
         </h2>
         <p className="mb-3 text-xs text-gray-500">
@@ -118,7 +118,7 @@ export function OnboardingWizard({ initialName, initialCriteria }: Props) {
       </section>
 
       <section className="mt-8">
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <h2 className="text-section-label mb-2">
           Ideal Customer Profile
         </h2>
         <p className="mb-3 text-xs text-gray-500">

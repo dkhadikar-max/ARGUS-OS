@@ -21,7 +21,7 @@ export function AgentOutputsView({ title, agentOutputs }: Props) {
   if (agentOutputs == null) {
     return (
       <Card className="p-4">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">{title}</h3>
+        <h3 className="text-section-label">{title}</h3>
         <p className="mt-2 text-xs text-gray-400">No agent output recorded.</p>
       </Card>
     );
@@ -36,7 +36,7 @@ export function AgentOutputsView({ title, agentOutputs }: Props) {
   return (
     <Card className="p-4">
       <details open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
-        <summary className="flex cursor-pointer items-center justify-between text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <summary className="text-section-label flex cursor-pointer items-center justify-between">
           <span>{title}</span>
           {open && (
             <button

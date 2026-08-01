@@ -11,7 +11,7 @@ export function ConfidenceDeltaBar({ confidenceDelta }: { confidenceDelta: numbe
   return (
     <Card className="p-4">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Confidence delta</p>
+        <p className="text-section-label">Confidence delta</p>
         <span className={`text-sm font-semibold ${positive ? "text-emerald-700" : "text-red-700"}`}>
           {positive ? "+" : ""}
           {confidenceDelta}

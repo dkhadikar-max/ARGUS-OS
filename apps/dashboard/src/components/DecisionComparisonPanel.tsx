@@ -17,7 +17,7 @@ export function DecisionComparisonPanel({ live, shadow }: { live: Side; shadow: 
         { label: "Shadow", side: shadow },
       ].map(({ label, side }) => (
         <Card key={label} className="p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{label}</p>
+          <p className="text-section-label">{label}</p>
           <div className="mt-2 flex items-center gap-2">
             <VerdictBadge verdict={side.verdict} />
             <span className="text-sm font-medium text-gray-600">{side.confidence}%</span>

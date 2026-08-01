@@ -73,7 +73,7 @@ export default async function BillingPage({
       />
 
       <Card className="p-4">
-        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Free</div>
+        <div className="text-section-label mb-2">Free</div>
         <p className="text-sm text-gray-600">$0 — 1 seat, 50 decisions/mo. Basic verdict, LinkedIn only, no Slack.</p>
         {team.plan === "FREE" && <p className="mt-2 text-xs font-medium text-teal-700">Current plan</p>}
       </Card>
@@ -81,7 +81,7 @@ export default async function BillingPage({
       <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
         {PAID_PLANS.map((p) => (
           <Card key={p.plan} className="flex flex-col p-4">
-            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">{p.name}</div>
+            <div className="text-section-label mb-1">{p.name}</div>
             <div className="mb-2 text-xl font-bold text-gray-900">{p.price}</div>
             <p className="mb-1 text-xs text-gray-500">
               {p.seats} · {p.decisions}

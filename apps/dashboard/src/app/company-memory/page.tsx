@@ -1,22 +1,33 @@
 import { api } from "../../lib/api-client";
-import { PatternCard } from "../../components/PatternCard";
 import { Card } from "../../components/ui/Card";
 import { PageHeader } from "../../components/ui/PageHeader";
+import { StatLine } from "../../components/ui/StatLine";
 
 // Bible §18 DSH-4 "Company Memory". Patterns, top-performing messages, risk
 // flags, and ICP accuracy are all real, computed server-side (see README
 // "Company Memory" for exactly what each one does and doesn't mean, and
 // exactly why ICP accuracy can still show its own empty state for a team
 // that hasn't edited its ICP since this feature shipped).
+//
+// Complete the Redesign (2026-08-02) -- restructured around StatLine (a
+// structured stat line leads, description follows) instead of paragraph-
+// first cards/tables, matching the same treatment already applied to the
+// Queue workspace's Memory pane. Presentation-only change: every field
+// shown here is exactly the same real data as before, just re-ordered.
+// No chronological "what changed when" history feed is added -- confirmed
+// (again) that no real event log exists anywhere in the backend, and
+// icpAccuracy.lastUpdated is NOT a real timestamp (memory.service.ts sets
+// it to `new Date()` fresh on every single call) so it must never be
+// surfaced as a recency signal.
 export default async function CompanyMemoryPage() {
   const memory = await api.getCompanyMemory();
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
-      <PageHeader title="Company Memory" description="Patterns ARGUS has learned from your team's logged outcomes." />
+      <PageHeader title="Memory" description="Patterns ARGUS has learned from your team's logged outcomes." />
 
       <section className="mb-8">
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Patterns</h2>
+        <h2 className="text-section-label mb-3">Patterns</h2>
         {memory.patterns.length === 0 ? (
           <Card variant="dashed" className="p-8">
             <p className="text-sm font-medium text-gray-900">No patterns yet</p>
@@ -27,14 +38,18 @@ export default async function CompanyMemoryPage() {
         ) : (
           <ul className="space-y-3">
             {memory.patterns.map((pattern) => (
-              <PatternCard key={pattern.id} pattern={pattern} />
+              <li key={pattern.id}>
+                <StatLine label={pattern.type} stat={`${pattern.confidence}% confidence`}>
+                  {pattern.description}
+                </StatLine>
+              </li>
             ))}
           </ul>
         )}
       </section>
 
       <section className="mb-8">
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Risk flags</h2>
+        <h2 className="text-section-label mb-3">Risk flags</h2>
         {memory.riskFlags.length === 0 ? (
           <Card variant="dashed" className="p-8">
             <p className="text-sm font-medium text-gray-900">No risk flags yet</p>
@@ -43,36 +58,27 @@ export default async function CompanyMemoryPage() {
             </p>
           </Card>
         ) : (
-          <table className="w-full overflow-hidden rounded-lg border border-gray-200 bg-white text-sm">
-            <thead className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-              <tr>
-                <th className="px-4 py-2">Condition</th>
-                <th className="px-4 py-2">Severity</th>
-                <th className="px-4 py-2">Occurrence</th>
-                <th className="px-4 py-2">Recommendation</th>
-              </tr>
-            </thead>
-            <tbody>
-              {memory.riskFlags.map((flag) => (
-                <tr key={flag.id} className="border-t border-gray-100">
-                  <td className="px-4 py-2">{flag.condition}</td>
-                  <td className="px-4 py-2">{flag.severity}</td>
-                  <td className="px-4 py-2">{Math.round(flag.occurrenceRate * 100)}%</td>
-                  <td className="px-4 py-2">{flag.recommendation}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ul className="space-y-3">
+            {memory.riskFlags.map((flag) => (
+              <li key={flag.id}>
+                <StatLine label={flag.severity} stat={`${Math.round(flag.occurrenceRate * 100)}% occurrence`}>
+                  {flag.condition} → {flag.recommendation}
+                </StatLine>
+              </li>
+            ))}
+          </ul>
         )}
       </section>
 
       <section className="mb-8">
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">ICP accuracy</h2>
+        <h2 className="text-section-label mb-3">ICP accuracy</h2>
         {memory.icpAccuracy ? (
-          <p className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700">
-            {Math.round(memory.icpAccuracy.current * 100)}% ({memory.icpAccuracy.trend}) — based on{" "}
-            {memory.icpAccuracy.sampleSize} decision{memory.icpAccuracy.sampleSize === 1 ? "" : "s"}
-          </p>
+          <StatLine
+            label="ICP accuracy"
+            stat={`${Math.round(memory.icpAccuracy.current * 100)}% · ${memory.icpAccuracy.trend}`}
+          >
+            Based on {memory.icpAccuracy.sampleSize} decision{memory.icpAccuracy.sampleSize === 1 ? "" : "s"}
+          </StatLine>
         ) : (
           <Card variant="dashed" className="p-8">
             <p className="text-sm font-medium text-gray-900">Not enough data yet</p>
@@ -85,9 +91,7 @@ export default async function CompanyMemoryPage() {
       </section>
 
       <section>
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-          Top performing messages
-        </h2>
+        <h2 className="text-section-label mb-3">Top performing messages</h2>
         {memory.topPerformingMessages.length === 0 ? (
           <Card variant="dashed" className="p-8">
             <p className="text-sm font-medium text-gray-900">No patterns yet</p>
@@ -96,31 +100,20 @@ export default async function CompanyMemoryPage() {
             </p>
           </Card>
         ) : (
-          <table className="w-full overflow-hidden rounded-lg border border-gray-200 bg-white text-sm">
-            <thead className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-              <tr>
-                <th className="px-4 py-2">Personalization hook</th>
-                <th className="px-4 py-2">Reply rate</th>
-                <th className="px-4 py-2">Sample size</th>
-              </tr>
-            </thead>
-            <tbody>
-              {memory.topPerformingMessages.map((message) => (
-                <tr key={message.pattern} className="border-t border-gray-100">
-                  <td className="px-4 py-2">{message.pattern}</td>
-                  <td className="px-4 py-2">{Math.round(message.replyRate * 100)}%</td>
-                  <td className="px-4 py-2">{message.sampleSize}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ul className="space-y-3">
+            {memory.topPerformingMessages.map((message) => (
+              <li key={message.pattern}>
+                <StatLine label="Reply rate" stat={`${Math.round(message.replyRate * 100)}% · n=${message.sampleSize}`}>
+                  {message.pattern}
+                </StatLine>
+              </li>
+            ))}
+          </ul>
         )}
       </section>
 
-      <section>
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-          Learning Agent report
-        </h2>
+      <section className="mt-8">
+        <h2 className="text-section-label mb-3">Learning Agent report</h2>
         {memory.learningInsights ? (
           <Card className="space-y-4 p-4 text-sm">
             <p className="text-gray-500">
@@ -131,9 +124,7 @@ export default async function CompanyMemoryPage() {
 
             {memory.learningInsights.systematic_errors.length > 0 && (
               <div>
-                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Systematic errors
-                </h3>
+                <h3 className="text-section-label mb-1">Systematic errors</h3>
                 <ul className="list-inside list-disc space-y-1 text-gray-700">
                   {memory.learningInsights.systematic_errors.map((error, i) => (
                     <li key={i}>{error}</li>
@@ -144,9 +135,7 @@ export default async function CompanyMemoryPage() {
 
             {memory.learningInsights.patterns.length > 0 && (
               <div>
-                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Patterns found
-                </h3>
+                <h3 className="text-section-label mb-1">Patterns found</h3>
                 <ul className="space-y-2">
                   {memory.learningInsights.patterns.map((pattern, i) => (
                     <li key={i} className="rounded border border-gray-100 p-2">
@@ -161,9 +150,7 @@ export default async function CompanyMemoryPage() {
 
             {memory.learningInsights.prompt_adjustments.length > 0 && (
               <div>
-                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  Suggested prompt adjustments
-                </h3>
+                <h3 className="text-section-label mb-1">Suggested prompt adjustments</h3>
                 <ul className="space-y-2">
                   {memory.learningInsights.prompt_adjustments.map((adj, i) => (
                     <li key={i} className="rounded border border-gray-100 p-2">
@@ -177,9 +164,7 @@ export default async function CompanyMemoryPage() {
 
             {memory.learningInsights.icp_recommendations.length > 0 && (
               <div>
-                <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                  ICP recommendations
-                </h3>
+                <h3 className="text-section-label mb-1">ICP recommendations</h3>
                 <ul className="list-inside list-disc space-y-1 text-gray-700">
                   {memory.learningInsights.icp_recommendations.map((rec, i) => (
                     <li key={i}>{rec}</li>

@@ -1,20 +1,28 @@
 import { api } from "../../lib/api-client";
-import { QueueList } from "../../components/QueueList";
-import { LiveQueueBanner } from "../../components/LiveQueueBanner";
+import { QueueWorkspace } from "../../components/QueueWorkspace";
 import { PageHeader } from "../../components/ui/PageHeader";
 
-// Bible §18 DSH-2 "Queue page layout" + "Prospect cards with verdicts" (P0)
-// + "Filter and sort controls" (P1, components/QueueList.tsx).
+// Decision Workspace -- Bible §18 DSH-2 "Queue page layout" +
+// "Prospect cards with verdicts" (P0), now rendered as a persistent
+// 3-pane workspace (Queue | Decision Workspace | Memory) instead of a
+// scrolling card list. `/queue` stays the route -- already the nav entry
+// point, no reason to invent a new URL. Company Memory is fetched here
+// too (api.getCompanyMemory(), already a real, existing client method)
+// so the Memory pane never needs a second page load.
 export default async function QueuePage({
   searchParams,
 }: {
   searchParams: Promise<{ slack?: string }>;
 }) {
-  const [queue, slackStatus] = await Promise.all([api.getQueue(), api.getSlackStatus()]);
+  const [queue, memory, slackStatus] = await Promise.all([
+    api.getQueue(),
+    api.getCompanyMemory(),
+    api.getSlackStatus(),
+  ]);
   const { slack } = await searchParams;
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
+    <main className="mx-auto max-w-[1600px] px-4 py-8">
       {slack === "connected" && (
         <p className="mb-4 rounded-md bg-green-50 px-3 py-2 text-sm text-green-800">
           Slack connected — alerts and slash commands are live for your team.
@@ -27,7 +35,7 @@ export default async function QueuePage({
       )}
 
       <PageHeader
-        title={`Today's Queue — ${queue.stats.total} prospect${queue.stats.total === 1 ? "" : "s"}`}
+        title={`Queue — ${queue.stats.total} prospect${queue.stats.total === 1 ? "" : "s"}`}
         description={
           <>
             {queue.stats.strongYes} strong yes · {queue.stats.yes} yes · {queue.stats.wait} wait ·{" "}
@@ -62,9 +70,7 @@ export default async function QueuePage({
         }
       />
 
-      <LiveQueueBanner />
-
-      <QueueList items={queue.items} />
+      <QueueWorkspace items={queue.items} memory={memory} />
     </main>
   );
 }

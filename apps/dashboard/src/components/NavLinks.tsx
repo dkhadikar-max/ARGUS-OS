@@ -3,10 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+// Complete the Redesign (2026-08-02) -- relabeled to the "four core
+// nouns" (Queue/Memory/Performance/Settings); Billing and Admin are kept
+// as-is (secondary utility links, not part of the core-noun set). hrefs
+// are unchanged -- this is a label-only rename, no route moved.
 const LINKS = [
-  { href: "/queue", label: "Today's Queue" },
-  { href: "/analytics", label: "Analytics" },
-  { href: "/company-memory", label: "Company Memory" },
+  { href: "/queue", label: "Queue" },
+  { href: "/analytics", label: "Performance" },
+  { href: "/company-memory", label: "Memory" },
   { href: "/settings", label: "Settings" },
   { href: "/billing", label: "Billing" },
   // Admin API Increment A -- always rendered, not conditionally hidden.

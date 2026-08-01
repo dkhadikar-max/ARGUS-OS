@@ -19,7 +19,7 @@ export function EvidenceSummaryList({ evidence }: { evidence: EvidenceCard[] }) 
       {evidence.map((e) => (
         <li key={e.id} className="rounded-lg border border-gray-200 bg-white p-3">
           <div className="flex items-center justify-between gap-4">
-            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">{e.type}</span>
+            <span className="text-section-label">{e.type}</span>
             <span className="text-xs text-gray-500">{e.confidence}% confidence</span>
           </div>
           <p className="mt-1 text-sm text-gray-800">{e.signal || "—"}</p>

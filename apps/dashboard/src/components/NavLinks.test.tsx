@@ -17,11 +17,11 @@ describe("NavLinks", () => {
   it("highlights the current route with the active teal treatment", () => {
     pathname = "/queue";
     render(<NavLinks />);
-    const active = screen.getByRole("link", { name: "Today's Queue" }).className;
+    const active = screen.getByRole("link", { name: "Queue" }).className;
     expect(active).toContain("text-teal-700");
     expect(active).not.toContain("text-gray-600");
 
-    const inactive = screen.getByRole("link", { name: "Analytics" }).className;
+    const inactive = screen.getByRole("link", { name: "Performance" }).className;
     expect(inactive).toContain("text-gray-600");
   });
 
@@ -43,7 +43,7 @@ describe("NavLinks", () => {
   it("renders all expected links", () => {
     pathname = "/queue";
     render(<NavLinks />);
-    for (const label of ["Today's Queue", "Analytics", "Company Memory", "Settings", "Billing", "Admin"]) {
+    for (const label of ["Queue", "Performance", "Memory", "Settings", "Billing", "Admin"]) {
       expect(screen.getByRole("link", { name: label })).toBeInTheDocument();
     }
   });
