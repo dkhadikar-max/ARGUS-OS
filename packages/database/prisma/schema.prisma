@@ -125,6 +125,7 @@ model Team {
   webhooks                  Webhook[]
   integrations              Integration[]
   shadowDecisions           ShadowDecision[]
+  shadowRolloutOverride     ShadowRolloutTeamOverride?
 
   @@index([slug])
 }
@@ -685,6 +686,48 @@ model ShadowDecision {
   @@index([createdAt])
   @@index([teamId, createdAt])
   @@index([verdictAgreement])
+}
+
+// Gate 3 Increment 1.8 -- DB-backed rollout control for Shadow Mode,
+// replacing the env-var-only SHADOW_SAMPLE_RATE_PERCENT (redeploy
+// required to change) with a runtime-editable global percent + per-team
+// overrides. Read fresh on every decision (no cache), same pattern
+// PolicyDefinition already establishes for per-team config. This is
+// deliberately a SECOND, softer gate -- env.SHADOW_MODE_ENABLED remains
+// the hard, deploy-time kill switch, checked first and unaffected by
+// this table.
+model ShadowRolloutConfig {
+  id            String   @id @default(cuid())
+  // Singleton lookup key, not identity -- avoids conflating a
+  // business-meaning string into the primary key itself.
+  key           String   @unique @default("SHADOW_ROLLOUT")
+  enabled       Boolean  @default(false)
+  globalPercent Int      @default(0)
+  version       Int      @default(1)
+  updatedBy     String
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
+}
+
+// A team override's percent of 0/100 already behaves exactly like a
+// deny/allow-list entry -- deliberately not a separate boolean list (see
+// ShadowRolloutConfig's own comment). expiresAt is checked at resolution
+// time only (shadow-rollout.service.ts) -- an expired row falls back to
+// the global percent but is NOT auto-deleted; no cron/sweep exists in
+// this codebase and none is being added for this.
+model ShadowRolloutTeamOverride {
+  id        String    @id @default(cuid())
+  team      Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  teamId    String    @unique
+  percent   Int
+  version   Int       @default(1)
+  reason    String? // e.g. "Customer validation", a ticket ref -- optional, encouraged in the UI, not enforced
+  expiresAt DateTime?
+  updatedBy String
+  updatedAt DateTime  @updatedAt
+  createdAt DateTime  @default(now())
+
+  @@index([teamId])
 }
 
 model Override {

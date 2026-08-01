@@ -7,6 +7,10 @@ import type {
   AdminShadowHealthResponse,
   AdminShadowMetricsQuery,
   AdminShadowMetricsResponse,
+  AdminShadowRolloutAuditQuery,
+  AdminShadowRolloutAuditResponse,
+  AdminShadowRolloutPreviewResponse,
+  AdminShadowRolloutResponse,
   CompanyMemoryResponse,
   CompleteOnboardingRequest,
   CreateActionRequest,
@@ -25,7 +29,9 @@ import type {
   UpdateCompanyContextRequest,
   UpdateIcpRequest,
   UpdatePolicyRequest,
+  UpdateShadowRolloutConfigRequest,
   UpdateUserPreferencesRequest,
+  UpsertShadowRolloutTeamOverrideRequest,
   UserPreferencesResponse,
 } from "@argus/shared";
 import { env } from "./env";
@@ -181,5 +187,30 @@ export const api = {
     const query = new URLSearchParams();
     if (params?.teamId) query.set("teamId", params.teamId);
     return apiFetch<AdminShadowHealthResponse>(`/api/v1/admin/shadow-health?${query.toString()}`);
+  },
+  // Gate 3 Increment 1.8 -- Shadow Rollout Controller. This module's first
+  // write paths (PUT/DELETE), all still gated server-side by requireAdmin.
+  getShadowRollout: () => apiFetch<AdminShadowRolloutResponse>("/api/v1/admin/shadow-rollout"),
+  updateShadowRolloutConfig: (body: UpdateShadowRolloutConfigRequest) =>
+    apiFetch<AdminShadowRolloutResponse>("/api/v1/admin/shadow-rollout", {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  upsertShadowRolloutTeamOverride: (teamId: string, body: UpsertShadowRolloutTeamOverrideRequest) =>
+    apiFetch<AdminShadowRolloutResponse>(`/api/v1/admin/shadow-rollout/teams/${teamId}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  deleteShadowRolloutTeamOverride: (teamId: string) =>
+    apiFetch<AdminShadowRolloutResponse>(`/api/v1/admin/shadow-rollout/teams/${teamId}`, { method: "DELETE" }),
+  getShadowRolloutAudit: (params?: Partial<AdminShadowRolloutAuditQuery>) => {
+    const query = new URLSearchParams();
+    query.set("limit", String(params?.limit ?? 50));
+    if (params?.before) query.set("before", params.before);
+    return apiFetch<AdminShadowRolloutAuditResponse>(`/api/v1/admin/shadow-rollout/audit?${query.toString()}`);
+  },
+  previewShadowRollout: (prospectId: string, teamId: string) => {
+    const query = new URLSearchParams({ prospectId, teamId });
+    return apiFetch<AdminShadowRolloutPreviewResponse>(`/api/v1/admin/shadow-rollout/preview?${query.toString()}`);
   },
 };

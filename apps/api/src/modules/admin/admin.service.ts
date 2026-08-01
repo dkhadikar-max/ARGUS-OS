@@ -6,10 +6,27 @@ import type {
   AdminShadowHealthResponse,
   AdminShadowMetricsQuery,
   AdminShadowMetricsResponse,
+  AdminShadowRolloutAuditQuery,
+  AdminShadowRolloutAuditResponse,
+  AdminShadowRolloutPreviewResponse,
+  AdminShadowRolloutResponse,
+  UpdateShadowRolloutConfigRequest,
+  UpsertShadowRolloutTeamOverrideRequest,
 } from "@argus/shared";
 import { getShadowMetricsSummary } from "../../agents/shadow-metrics.service.js";
 import { getShadowCircuitBreakerState } from "../../agents/shadow-runner.service.js";
 import { countShadowErrorsSince } from "../../agents/shadow-error-log.js";
+import {
+  getRolloutConfig,
+  listTeamOverrides,
+  deleteTeamOverride as deleteTeamOverrideRepo,
+  listRolloutAuditEntries,
+} from "../../agents/shadow-rollout.repository.js";
+import {
+  updateRolloutConfig,
+  upsertTeamOverride as upsertTeamOverrideDomain,
+  previewShadowSampling,
+} from "../../agents/shadow-rollout.service.js";
 import { env } from "../../config/env.js";
 import { listShadowDecisions as listShadowDecisionsRepo, getShadowDecisionById, getLastShadowDecisionAt } from "./admin.repository.js";
 
@@ -117,27 +134,110 @@ export async function getShadowDecisionDetail(id: string): Promise<AdminShadowDe
   };
 }
 
-/** Gate 3 Increment 1.7 -- combines three real sources: env config
- *  (SHADOW_MODE_ENABLED/SHADOW_SAMPLE_RATE_PERCENT), this apps/api
- *  instance's own live in-process state (circuit breaker state, the
+/** Gate 3 Increment 1.7/1.8 -- combines four real sources: the hard env
+ *  kill switch (SHADOW_MODE_ENABLED), the DB-backed rollout config (soft
+ *  kill switch + global percent, Increment 1.8), this apps/api instance's
+ *  own live in-process state (circuit breaker state, the
  *  shadow-error-log ring buffer -- both per-process, not a cross-instance
  *  global view), and the ShadowDecision table. Reuses
  *  getShadowMetricsSummary's existing 24h-window aggregate for the
- *  agreement figure rather than a new hourly-granularity query. */
+ *  agreement figure rather than a new hourly-granularity query.
+ *
+ *  `enabled` reflects whether shadow mode is ACTUALLY running for real
+ *  traffic right now -- both the env AND the DB switch have to be on --
+ *  not just one of the two, since either alone means nothing is sampled.
+ *
+ *  Revised after review: `globalPercent` is always the real global
+ *  percent, never a per-team resolved "effective" percent -- this card
+ *  represents cross-tenant system health, and showing one team's override
+ *  as though it were "the" sampling rate would be ambiguous. Exceptions
+ *  to the global rule are surfaced honestly instead, as a count
+ *  (`activeOverrideCount`, unexpired overrides across ALL teams, not
+ *  scoped to `query.teamId`) -- see the Rollout Controller page
+ *  (`/admin/shadow-rollout`) for which teams and what percent. */
 export async function getShadowHealth(query: AdminShadowHealthQuery): Promise<AdminShadowHealthResponse> {
-  const [lastDecisionAt, metrics] = await Promise.all([
+  const [lastDecisionAt, metrics, rolloutConfig, overrides] = await Promise.all([
     getLastShadowDecisionAt(query.teamId),
     getShadowMetricsSummary(query.teamId, 1),
+    getRolloutConfig(),
+    listTeamOverrides(),
   ]);
+
+  const now = new Date();
+  const activeOverrideCount = overrides.filter((o) => !o.expiresAt || o.expiresAt > now).length;
 
   return {
     scope: { teamId: query.teamId ?? null },
-    enabled: env.SHADOW_MODE_ENABLED,
-    samplePercent: env.SHADOW_SAMPLE_RATE_PERCENT,
+    enabled: env.SHADOW_MODE_ENABLED && (rolloutConfig?.enabled ?? false),
+    globalPercent: rolloutConfig?.globalPercent ?? 0,
+    activeOverrideCount,
     circuitBreakerState: getShadowCircuitBreakerState(),
     lastDecisionAt: lastDecisionAt?.toISOString() ?? null,
     verdictAgreementRate24h: metrics.verdictAgreementRate,
     totalShadowDecisions24h: metrics.totalShadowDecisions,
     recentErrorCount1h: countShadowErrorsSince(60 * 60 * 1000),
   };
+}
+
+// Gate 3 Increment 1.8 -- Shadow Rollout Controller. These 6 functions are
+// thin DTO-shaping wrappers over shadow-rollout.service.ts/.repository.ts,
+// which own all real business logic and validation -- matching how
+// getShadowMetrics above already just wraps getShadowMetricsSummary
+// rather than reimplementing aggregation itself.
+
+export async function getShadowRollout(): Promise<AdminShadowRolloutResponse> {
+  const [config, overrides] = await Promise.all([getRolloutConfig(), listTeamOverrides()]);
+  return {
+    enabled: config?.enabled ?? false,
+    globalPercent: config?.globalPercent ?? 0,
+    version: config?.version ?? 0,
+    teamOverrides: overrides.map((o) => ({
+      teamId: o.teamId,
+      teamName: o.team.name,
+      percent: o.percent,
+      version: o.version,
+      reason: o.reason,
+      expiresAt: o.expiresAt?.toISOString() ?? null,
+      updatedAt: o.updatedAt.toISOString(),
+      updatedBy: o.updatedBy,
+    })),
+  };
+}
+
+/** Returns {before, after} (both the domain rows, not DTOs) so the
+ *  controller can build a real audit diff without an extra query. */
+export function updateShadowRolloutConfig(input: UpdateShadowRolloutConfigRequest, updatedBy: string) {
+  return updateRolloutConfig(input, updatedBy);
+}
+
+export function upsertShadowRolloutTeamOverride(teamId: string, input: UpsertShadowRolloutTeamOverrideRequest, updatedBy: string) {
+  return upsertTeamOverrideDomain(teamId, input, updatedBy);
+}
+
+export function deleteShadowRolloutTeamOverride(teamId: string) {
+  return deleteTeamOverrideRepo(teamId);
+}
+
+export async function getShadowRolloutAudit(query: AdminShadowRolloutAuditQuery): Promise<AdminShadowRolloutAuditResponse> {
+  const before = query.before ? new Date(query.before) : undefined;
+  const entries = await listRolloutAuditEntries(query.limit, before);
+  const nextBefore = entries.length === query.limit ? (entries[entries.length - 1]?.createdAt.toISOString() ?? null) : null;
+
+  return {
+    entries: entries.map((e) => ({
+      id: e.id,
+      entityType: e.entityType,
+      entityId: e.entityId,
+      action: e.action,
+      actorId: e.actorId,
+      beforeState: e.beforeState,
+      afterState: e.afterState,
+      createdAt: e.createdAt.toISOString(),
+    })),
+    nextBefore,
+  };
+}
+
+export function previewShadowRollout(prospectId: string, teamId: string): Promise<AdminShadowRolloutPreviewResponse> {
+  return previewShadowSampling(prospectId, teamId);
 }

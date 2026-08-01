@@ -9,6 +9,22 @@ vi.mock("../../agents/shadow-runner.service.js", () => ({ getShadowCircuitBreake
 const countShadowErrorsSince = vi.fn();
 vi.mock("../../agents/shadow-error-log.js", () => ({ countShadowErrorsSince }));
 
+const getRolloutConfig = vi.fn();
+const listTeamOverrides = vi.fn();
+const deleteTeamOverride = vi.fn();
+const listRolloutAuditEntries = vi.fn();
+vi.mock("../../agents/shadow-rollout.repository.js", () => ({
+  getRolloutConfig,
+  listTeamOverrides,
+  deleteTeamOverride,
+  listRolloutAuditEntries,
+}));
+
+const updateRolloutConfig = vi.fn();
+const upsertTeamOverride = vi.fn();
+const previewShadowSampling = vi.fn();
+vi.mock("../../agents/shadow-rollout.service.js", () => ({ updateRolloutConfig, upsertTeamOverride, previewShadowSampling }));
+
 vi.mock("../../config/env.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../config/env.js")>();
   return { env: { ...actual.env } };
@@ -23,13 +39,23 @@ vi.mock("./admin.repository.js", () => ({
   getLastShadowDecisionAt: getLastShadowDecisionAtRepo,
 }));
 
-const { getShadowMetrics, listShadowDecisions, getShadowDecisionDetail, getShadowHealth } = await import("./admin.service.js");
+const {
+  getShadowMetrics,
+  listShadowDecisions,
+  getShadowDecisionDetail,
+  getShadowHealth,
+  getShadowRollout,
+  updateShadowRolloutConfig,
+  upsertShadowRolloutTeamOverride,
+  deleteShadowRolloutTeamOverride,
+  getShadowRolloutAudit,
+  previewShadowRollout,
+} = await import("./admin.service.js");
 const { env } = await import("../../config/env.js");
 
 beforeEach(() => {
   vi.clearAllMocks();
   env.SHADOW_MODE_ENABLED = true;
-  env.SHADOW_SAMPLE_RATE_PERCENT = 5;
 });
 
 describe("getShadowMetrics", () => {
@@ -274,11 +300,17 @@ describe("getShadowDecisionDetail", () => {
   });
 });
 
+function overrideRow(overrides: Partial<{ teamId: string; expiresAt: Date | null }> = {}) {
+  return { teamId: "team_1", team: { name: "Team" }, percent: 100, version: 1, reason: null, expiresAt: null, updatedAt: new Date(), updatedBy: "user_1", ...overrides };
+}
+
 describe("getShadowHealth", () => {
   beforeEach(() => {
     getLastShadowDecisionAtRepo.mockResolvedValue(null);
     getShadowCircuitBreakerState.mockReturnValue("closed");
     countShadowErrorsSince.mockReturnValue(0);
+    getRolloutConfig.mockResolvedValue({ enabled: true, globalPercent: 5, version: 1 });
+    listTeamOverrides.mockResolvedValue([]);
     getShadowMetricsSummary.mockResolvedValue({
       totalShadowDecisions: 0,
       verdictAgreementRate: 0,
@@ -291,9 +323,9 @@ describe("getShadowHealth", () => {
     });
   });
 
-  it("combines env flags, live circuit breaker state, the error log, and the 24h metrics window into one response", async () => {
+  it("combines env flags, the DB rollout config, live circuit breaker state, the error log, and the 24h metrics window into one response", async () => {
     env.SHADOW_MODE_ENABLED = true;
-    env.SHADOW_SAMPLE_RATE_PERCENT = 5;
+    getRolloutConfig.mockResolvedValue({ enabled: true, globalPercent: 5, version: 1 });
     getShadowCircuitBreakerState.mockReturnValue("open");
     countShadowErrorsSince.mockReturnValue(3);
     getLastShadowDecisionAtRepo.mockResolvedValue(new Date("2026-07-31T12:00:00Z"));
@@ -313,7 +345,8 @@ describe("getShadowHealth", () => {
     expect(result).toEqual({
       scope: { teamId: null },
       enabled: true,
-      samplePercent: 5,
+      globalPercent: 5,
+      activeOverrideCount: 0,
       circuitBreakerState: "open",
       lastDecisionAt: "2026-07-31T12:00:00.000Z",
       verdictAgreementRate24h: 0.9,
@@ -322,6 +355,65 @@ describe("getShadowHealth", () => {
     });
     expect(getShadowMetricsSummary).toHaveBeenCalledWith(undefined, 1);
     expect(countShadowErrorsSince).toHaveBeenCalledWith(60 * 60 * 1000);
+  });
+
+  it("enabled is false when the env kill switch is on but the DB rollout config is disabled", async () => {
+    env.SHADOW_MODE_ENABLED = true;
+    getRolloutConfig.mockResolvedValue({ enabled: false, globalPercent: 50, version: 1 });
+
+    const result = await getShadowHealth({});
+
+    expect(result.enabled).toBe(false);
+  });
+
+  it("enabled is false when the DB rollout config is enabled but the env kill switch is off", async () => {
+    env.SHADOW_MODE_ENABLED = false;
+    getRolloutConfig.mockResolvedValue({ enabled: true, globalPercent: 50, version: 1 });
+
+    const result = await getShadowHealth({});
+
+    expect(result.enabled).toBe(false);
+  });
+
+  it("enabled is false and globalPercent is 0 when no rollout config row exists yet (fail-closed)", async () => {
+    env.SHADOW_MODE_ENABLED = true;
+    getRolloutConfig.mockResolvedValue(null);
+
+    const result = await getShadowHealth({});
+
+    expect(result.enabled).toBe(false);
+    expect(result.globalPercent).toBe(0);
+  });
+
+  it("globalPercent is always the real global percent, never a team's resolved effective percent -- even when the query is scoped to a team with a 100% override", async () => {
+    getRolloutConfig.mockResolvedValue({ enabled: true, globalPercent: 5, version: 1 });
+    listTeamOverrides.mockResolvedValue([overrideRow({ teamId: "team_1", expiresAt: null })]);
+
+    const result = await getShadowHealth({ teamId: "team_1" });
+
+    expect(result.globalPercent).toBe(5);
+  });
+
+  it("activeOverrideCount counts unexpired overrides across ALL teams, not scoped to query.teamId", async () => {
+    listTeamOverrides.mockResolvedValue([
+      overrideRow({ teamId: "team_1", expiresAt: null }),
+      overrideRow({ teamId: "team_2", expiresAt: null }),
+    ]);
+
+    const result = await getShadowHealth({ teamId: "team_1" });
+
+    expect(result.activeOverrideCount).toBe(2);
+  });
+
+  it("activeOverrideCount excludes expired overrides", async () => {
+    listTeamOverrides.mockResolvedValue([
+      overrideRow({ teamId: "team_1", expiresAt: null }),
+      overrideRow({ teamId: "team_2", expiresAt: new Date("2020-01-01T00:00:00Z") }),
+    ]);
+
+    const result = await getShadowHealth({});
+
+    expect(result.activeOverrideCount).toBe(1);
   });
 
   it("lastDecisionAt is null (not a fabricated date) when no shadow decisions exist yet", async () => {
@@ -340,5 +432,148 @@ describe("getShadowHealth", () => {
     expect(withTeam.scope.teamId).toBe("team_1");
     expect(getLastShadowDecisionAtRepo).toHaveBeenCalledWith("team_1");
     expect(getShadowMetricsSummary).toHaveBeenCalledWith("team_1", 1);
+  });
+});
+
+describe("getShadowRollout", () => {
+  it("flattens the config and team overrides into the response shape, unpacking the team name", async () => {
+    getRolloutConfig.mockResolvedValue({ enabled: true, globalPercent: 10, version: 3 });
+    listTeamOverrides.mockResolvedValue([
+      {
+        teamId: "team_1",
+        team: { name: "DataFlow Inc." },
+        percent: 100,
+        version: 2,
+        reason: "Customer validation",
+        expiresAt: null,
+        updatedAt: new Date("2026-07-31T12:00:00Z"),
+        updatedBy: "user_1",
+      },
+    ]);
+
+    const result = await getShadowRollout();
+
+    expect(result).toEqual({
+      enabled: true,
+      globalPercent: 10,
+      version: 3,
+      teamOverrides: [
+        {
+          teamId: "team_1",
+          teamName: "DataFlow Inc.",
+          percent: 100,
+          version: 2,
+          reason: "Customer validation",
+          expiresAt: null,
+          updatedAt: "2026-07-31T12:00:00.000Z",
+          updatedBy: "user_1",
+        },
+      ],
+    });
+  });
+
+  it("defaults to disabled/0%/version 0 when no config row exists yet", async () => {
+    getRolloutConfig.mockResolvedValue(null);
+    listTeamOverrides.mockResolvedValue([]);
+
+    const result = await getShadowRollout();
+
+    expect(result).toEqual({ enabled: false, globalPercent: 0, version: 0, teamOverrides: [] });
+  });
+});
+
+describe("updateShadowRolloutConfig / upsertShadowRolloutTeamOverride / deleteShadowRolloutTeamOverride", () => {
+  it("updateShadowRolloutConfig delegates straight through to the domain service", async () => {
+    updateRolloutConfig.mockResolvedValue({ before: null, after: { enabled: true, globalPercent: 5 } });
+
+    const result = await updateShadowRolloutConfig({ enabled: true, globalPercent: 5 }, "user_1");
+
+    expect(updateRolloutConfig).toHaveBeenCalledWith({ enabled: true, globalPercent: 5 }, "user_1");
+    expect(result).toEqual({ before: null, after: { enabled: true, globalPercent: 5 } });
+  });
+
+  it("upsertShadowRolloutTeamOverride delegates straight through to the domain service", async () => {
+    upsertTeamOverride.mockResolvedValue({ before: null, after: { teamId: "team_1", percent: 100 } });
+
+    const result = await upsertShadowRolloutTeamOverride("team_1", { percent: 100 }, "user_1");
+
+    expect(upsertTeamOverride).toHaveBeenCalledWith("team_1", { percent: 100 }, "user_1");
+    expect(result).toEqual({ before: null, after: { teamId: "team_1", percent: 100 } });
+  });
+
+  it("deleteShadowRolloutTeamOverride delegates straight through to the repository", async () => {
+    deleteTeamOverride.mockResolvedValue({ count: 1 });
+
+    await deleteShadowRolloutTeamOverride("team_1");
+
+    expect(deleteTeamOverride).toHaveBeenCalledWith("team_1");
+  });
+});
+
+describe("getShadowRolloutAudit", () => {
+  function auditRow(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "audit_1",
+      entityType: "shadow_rollout_config",
+      entityId: "global",
+      action: "updated",
+      actorId: "user_1",
+      beforeState: { globalPercent: 5 },
+      afterState: { globalPercent: 10 },
+      createdAt: new Date("2026-07-31T12:00:00Z"),
+      ...overrides,
+    };
+  }
+
+  it("maps rows and computes nextBefore from the oldest row when a full page is returned", async () => {
+    listRolloutAuditEntries.mockResolvedValue([
+      auditRow({ id: "audit_1", createdAt: new Date("2026-07-31T12:00:00Z") }),
+      auditRow({ id: "audit_2", createdAt: new Date("2026-07-31T11:00:00Z") }),
+    ]);
+
+    const result = await getShadowRolloutAudit({ limit: 2 });
+
+    expect(result.entries).toHaveLength(2);
+    expect(result.entries[0]).toEqual({
+      id: "audit_1",
+      entityType: "shadow_rollout_config",
+      entityId: "global",
+      action: "updated",
+      actorId: "user_1",
+      beforeState: { globalPercent: 5 },
+      afterState: { globalPercent: 10 },
+      createdAt: "2026-07-31T12:00:00.000Z",
+    });
+    expect(result.nextBefore).toBe("2026-07-31T11:00:00.000Z");
+  });
+
+  it("nextBefore is null when fewer rows than the limit are returned (last page)", async () => {
+    listRolloutAuditEntries.mockResolvedValue([auditRow()]);
+
+    const result = await getShadowRolloutAudit({ limit: 50 });
+
+    expect(result.nextBefore).toBeNull();
+  });
+
+  it("passes the before cursor through to the repository as a real Date, only when given", async () => {
+    listRolloutAuditEntries.mockResolvedValue([]);
+
+    await getShadowRolloutAudit({ limit: 50 });
+    expect(listRolloutAuditEntries).toHaveBeenCalledWith(50, undefined);
+
+    await getShadowRolloutAudit({ limit: 50, before: "2026-07-31T12:00:00.000Z" });
+    expect(listRolloutAuditEntries).toHaveBeenCalledWith(50, new Date("2026-07-31T12:00:00.000Z"));
+  });
+});
+
+describe("previewShadowRollout", () => {
+  it("delegates straight through to the domain service's previewShadowSampling", async () => {
+    const preview = { enabled: true, globalPercent: 5, override: null, effectivePercent: 5, bucket: 42, sampled: false };
+    previewShadowSampling.mockResolvedValue(preview);
+
+    const result = await previewShadowRollout("prospect_1", "team_1");
+
+    expect(previewShadowSampling).toHaveBeenCalledWith("prospect_1", "team_1");
+    expect(result).toEqual(preview);
   });
 });

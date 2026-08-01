@@ -139,7 +139,6 @@ beforeEach(() => {
   env.EVIDENCE_POPULATOR_V1 = false; // real default -- tests that care override explicitly
   populateEvidenceFromEnrichment.mockResolvedValue({ evidenceCreated: 0, edgesCreated: 0, staleMarked: 0 });
   env.SHADOW_MODE_ENABLED = false; // real default
-  env.SHADOW_SAMPLE_RATE_PERCENT = 0; // real default
   runShadowDecision.mockResolvedValue(undefined);
 });
 

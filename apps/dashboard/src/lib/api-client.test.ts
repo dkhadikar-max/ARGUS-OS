@@ -205,6 +205,79 @@ describe("api.getShadowHealth", () => {
   });
 });
 
+describe("api.getShadowRollout / updateShadowRolloutConfig", () => {
+  it("getShadowRollout fetches the plain endpoint", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { enabled: false, globalPercent: 0, version: 0, teamOverrides: [] }));
+    await api.getShadowRollout();
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:4000/api/v1/admin/shadow-rollout", expect.anything());
+  });
+
+  it("updateShadowRolloutConfig PUTs the real body", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { enabled: true, globalPercent: 5, version: 1, teamOverrides: [] }));
+    await api.updateShadowRolloutConfig({ enabled: true, globalPercent: 5 });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:4000/api/v1/admin/shadow-rollout",
+      expect.objectContaining({ method: "PUT", body: JSON.stringify({ enabled: true, globalPercent: 5 }) }),
+    );
+  });
+
+  it("propagates a 403 ApiError from a non-admin caller", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(403, { error: { message: "Admin access required" } }));
+    await expect(api.getShadowRollout()).rejects.toMatchObject({ status: 403 });
+  });
+});
+
+describe("api.upsertShadowRolloutTeamOverride / deleteShadowRolloutTeamOverride", () => {
+  it("upsert PUTs to the real teamId path with the real body", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { enabled: false, globalPercent: 0, version: 0, teamOverrides: [] }));
+    await api.upsertShadowRolloutTeamOverride("team_1", { percent: 100, reason: "Customer validation" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:4000/api/v1/admin/shadow-rollout/teams/team_1",
+      expect.objectContaining({ method: "PUT", body: JSON.stringify({ percent: 100, reason: "Customer validation" }) }),
+    );
+  });
+
+  it("delete DELETEs the real teamId path", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { enabled: false, globalPercent: 0, version: 0, teamOverrides: [] }));
+    await api.deleteShadowRolloutTeamOverride("team_1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:4000/api/v1/admin/shadow-rollout/teams/team_1",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+});
+
+describe("api.getShadowRolloutAudit", () => {
+  it("defaults limit to 50 and omits before when not provided", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { entries: [], nextBefore: null }));
+    await api.getShadowRolloutAudit();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:4000/api/v1/admin/shadow-rollout/audit?limit=50",
+      expect.anything(),
+    );
+  });
+
+  it("includes before when provided", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { entries: [], nextBefore: null }));
+    await api.getShadowRolloutAudit({ limit: 10, before: "2026-07-31T12:00:00.000Z" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:4000/api/v1/admin/shadow-rollout/audit?limit=10&before=2026-07-31T12%3A00%3A00.000Z",
+      expect.anything(),
+    );
+  });
+});
+
+describe("api.previewShadowRollout", () => {
+  it("fetches the preview endpoint with the real prospectId/teamId", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { enabled: true, globalPercent: 5, override: null, effectivePercent: 5, bucket: 17, sampled: false }));
+    await api.previewShadowRollout("prospect_1", "team_1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:4000/api/v1/admin/shadow-rollout/preview?prospectId=prospect_1&teamId=team_1",
+      expect.anything(),
+    );
+  });
+});
+
 describe("api.getOutcomes", () => {
   it("omits userId from the query string when not provided", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, {}));

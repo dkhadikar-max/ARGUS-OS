@@ -1,5 +1,16 @@
 import type { Request, Response, NextFunction } from "express";
-import { AppError, type AdminListShadowDecisionsQuery, type AdminShadowDecisionParams, type AdminShadowHealthQuery, type AdminShadowMetricsQuery } from "@argus/shared";
+import {
+  AppError,
+  type AdminListShadowDecisionsQuery,
+  type AdminShadowDecisionParams,
+  type AdminShadowHealthQuery,
+  type AdminShadowMetricsQuery,
+  type AdminShadowRolloutAuditQuery,
+  type AdminShadowRolloutPreviewQuery,
+  type UpdateShadowRolloutConfigRequest,
+  type UpsertShadowRolloutTeamOverrideParams,
+  type UpsertShadowRolloutTeamOverrideRequest,
+} from "@argus/shared";
 import * as adminService from "./admin.service.js";
 import { recordAudit, requestMeta } from "../../lib/audit.js";
 
@@ -64,6 +75,144 @@ export async function getShadowHealthHandler(req: Request, res: Response, next: 
       action: "viewed",
       actorId: req.auth.userId,
       afterState: { teamId: query.teamId ?? null },
+      meta: requestMeta(req),
+    });
+
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getShadowRolloutHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.auth?.userId) throw new AppError("UNAUTHORIZED", "Authentication required");
+
+    const result = await adminService.getShadowRollout();
+
+    await recordAudit({
+      entityType: "shadow_rollout_config",
+      entityId: "global",
+      action: "viewed",
+      actorId: req.auth.userId,
+      afterState: { enabled: result.enabled, globalPercent: result.globalPercent, version: result.version },
+      meta: requestMeta(req),
+    });
+
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** This module's first real mutation -- audited with both beforeState AND
+ *  afterState (unlike every read-only handler above, which only ever has
+ *  afterState), since a config *change* is genuinely more useful to audit
+ *  as a diff. adminService.updateShadowRolloutConfig already fetched the
+ *  prior row, so no extra query is needed here to build that diff. */
+export async function updateShadowRolloutConfigHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.auth?.userId) throw new AppError("UNAUTHORIZED", "Authentication required");
+    const body = req.body as UpdateShadowRolloutConfigRequest;
+
+    const { before, after } = await adminService.updateShadowRolloutConfig(body, req.auth.userId);
+
+    await recordAudit({
+      entityType: "shadow_rollout_config",
+      entityId: "global",
+      action: "updated",
+      actorId: req.auth.userId,
+      beforeState: before ? { enabled: before.enabled, globalPercent: before.globalPercent, version: before.version } : null,
+      afterState: { enabled: after.enabled, globalPercent: after.globalPercent, version: after.version },
+      meta: requestMeta(req),
+    });
+
+    res.status(200).json(await adminService.getShadowRollout());
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function upsertShadowRolloutTeamOverrideHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.auth?.userId) throw new AppError("UNAUTHORIZED", "Authentication required");
+    const params = req.params as unknown as UpsertShadowRolloutTeamOverrideParams;
+    const body = req.body as UpsertShadowRolloutTeamOverrideRequest;
+
+    const { before, after } = await adminService.upsertShadowRolloutTeamOverride(params.teamId, body, req.auth.userId);
+
+    await recordAudit({
+      entityType: "shadow_rollout_team_override",
+      entityId: params.teamId,
+      action: "updated",
+      actorId: req.auth.userId,
+      beforeState: before ? { percent: before.percent, reason: before.reason, expiresAt: before.expiresAt, version: before.version } : null,
+      afterState: { percent: after.percent, reason: after.reason, expiresAt: after.expiresAt, version: after.version },
+      meta: requestMeta(req),
+    });
+
+    res.status(200).json(await adminService.getShadowRollout());
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteShadowRolloutTeamOverrideHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.auth?.userId) throw new AppError("UNAUTHORIZED", "Authentication required");
+    const params = req.params as unknown as UpsertShadowRolloutTeamOverrideParams;
+
+    await adminService.deleteShadowRolloutTeamOverride(params.teamId);
+
+    await recordAudit({
+      entityType: "shadow_rollout_team_override",
+      entityId: params.teamId,
+      action: "deleted",
+      actorId: req.auth.userId,
+      meta: requestMeta(req),
+    });
+
+    res.status(200).json(await adminService.getShadowRollout());
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getShadowRolloutAuditHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.auth?.userId) throw new AppError("UNAUTHORIZED", "Authentication required");
+    const query = req.query as unknown as AdminShadowRolloutAuditQuery;
+
+    const result = await adminService.getShadowRolloutAudit(query);
+
+    await recordAudit({
+      entityType: "admin_shadow_rollout_audit",
+      entityId: "global",
+      action: "viewed",
+      actorId: req.auth.userId,
+      afterState: { limit: query.limit, before: query.before ?? null, resultCount: result.entries.length },
+      meta: requestMeta(req),
+    });
+
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function previewShadowRolloutHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.auth?.userId) throw new AppError("UNAUTHORIZED", "Authentication required");
+    const query = req.query as unknown as AdminShadowRolloutPreviewQuery;
+
+    const result = await adminService.previewShadowRollout(query.prospectId, query.teamId);
+
+    await recordAudit({
+      entityType: "admin_shadow_rollout_preview",
+      entityId: query.teamId,
+      action: "viewed",
+      actorId: req.auth.userId,
+      afterState: { prospectId: query.prospectId, teamId: query.teamId, sampled: result.sampled },
       meta: requestMeta(req),
     });
 

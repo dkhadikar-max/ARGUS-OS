@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const LINKS = [
   { href: "/admin/shadow-decisions", label: "Shadow Decisions" },
   { href: "/admin/analytics", label: "Analytics" },
+  { href: "/admin/shadow-rollout", label: "Rollout" },
 ];
 
 // Lightweight in-section nav -- the top-level NavBar's single "Admin" link

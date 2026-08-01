@@ -156,13 +156,6 @@ const envSchema = z.object({
     .default("false")
     .transform((v) => v === "true"),
 
-  // Percentage of sampled decisions to shadow when SHADOW_MODE_ENABLED is
-  // true, 0-100. Default 0: two independent gates, not one -- "deployed"
-  // and "actually shadowing traffic" are never conflated. z.coerce.number()
-  // is fine here (unlike z.coerce.boolean(), avoided everywhere else in
-  // this file) -- Number("50") behaves correctly.
-  SHADOW_SAMPLE_RATE_PERCENT: z.coerce.number().int().min(0).max(100).default(0),
-
   // Gate 3 Increment 1.5 -- caps how many shadow evaluate() runs (each a
   // full 5-call LLM debate) can be in flight at once in this process (see
   // agents/shadow-concurrency.ts). Excess sampled decisions are DROPPED,

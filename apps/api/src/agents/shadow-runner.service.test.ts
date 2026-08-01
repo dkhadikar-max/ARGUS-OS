@@ -15,6 +15,9 @@ vi.mock("../lib/datadog.js", () => ({ increment, timing }));
 const recordShadowError = vi.fn();
 vi.mock("./shadow-error-log.js", () => ({ recordShadowError }));
 
+const resolveShadowSampling = vi.fn();
+vi.mock("./shadow-rollout.service.js", () => ({ resolveShadowSampling }));
+
 // Only relevant to the "independent circuit breaker wiring" tests below --
 // every other test in this file bypasses the real provider chain entirely
 // via the evaluate() mock above, so this has no effect on them. Mocked
@@ -96,7 +99,7 @@ function shadowResult(overrides: { verdict?: Verdict; confidence?: number; weigh
 beforeEach(() => {
   vi.clearAllMocks();
   env.SHADOW_MODE_ENABLED = false;
-  env.SHADOW_SAMPLE_RATE_PERCENT = 0;
+  resolveShadowSampling.mockResolvedValue(false); // real default -- no rollout config row means fail-closed
   // Generous enough that none of the pre-existing tests below trip these
   // new gates incidentally -- only the dedicated "concurrency limiting"/
   // "timeout" describe blocks override them to something tight.
@@ -109,7 +112,7 @@ beforeEach(() => {
 describe("runShadowDecision", () => {
   it("SHADOW_MODE_ENABLED false -- evaluate() and persistence never called, regardless of sample rate", async () => {
     env.SHADOW_MODE_ENABLED = false;
-    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    resolveShadowSampling.mockResolvedValue(true);
 
     await runShadowDecision(baseInput());
 
@@ -117,9 +120,9 @@ describe("runShadowDecision", () => {
     expect(prisma.shadowDecision.create).not.toHaveBeenCalled();
   });
 
-  it("SHADOW_MODE_ENABLED true, SHADOW_SAMPLE_RATE_PERCENT 0 -- still never called (sampling gates independently of the kill switch)", async () => {
+  it("SHADOW_MODE_ENABLED true, resolveShadowSampling false -- still never called (rollout gate is independent of the kill switch)", async () => {
     env.SHADOW_MODE_ENABLED = true;
-    env.SHADOW_SAMPLE_RATE_PERCENT = 0;
+    resolveShadowSampling.mockResolvedValue(false);
 
     await runShadowDecision(baseInput());
 
@@ -129,7 +132,7 @@ describe("runShadowDecision", () => {
 
   it("both gates open -- evaluate() is called once with the real pack/input/identity", async () => {
     env.SHADOW_MODE_ENABLED = true;
-    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    resolveShadowSampling.mockResolvedValue(true);
     evaluateMock.mockResolvedValue(shadowResult());
 
     await runShadowDecision(baseInput());
@@ -141,9 +144,19 @@ describe("runShadowDecision", () => {
     expect(identity).toEqual({ teamId: "team_1", userId: "user_1", prospectId: "prospect_1", prospectName: "Sarah Chen" });
   });
 
+  it("resolveShadowSampling (Gate 3 Increment 1.8's DB-backed rollout gate) is called with the real prospectId and teamId", async () => {
+    env.SHADOW_MODE_ENABLED = true;
+    resolveShadowSampling.mockResolvedValue(true);
+    evaluateMock.mockResolvedValue(shadowResult());
+
+    await runShadowDecision(baseInput({ prospectId: "prospect_42", teamId: "team_7" }));
+
+    expect(resolveShadowSampling).toHaveBeenCalledWith("prospect_42", "team_7");
+  });
+
   it("success path -- persists correct FKs, derived verdict (scoreToVerdict, not output.judge.verdict), and never touches result.graph", async () => {
     env.SHADOW_MODE_ENABLED = true;
-    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    resolveShadowSampling.mockResolvedValue(true);
     // weighted_score 25 -> scoreToVerdict -> HARD_PASS, but judge.verdict itself says "YES" (the real mislabeling bug this must NOT reproduce)
     evaluateMock.mockResolvedValue(shadowResult({ verdict: "YES", weighted_score: 25 }));
 
@@ -163,7 +176,7 @@ describe("runShadowDecision", () => {
 
   it("evaluate() throws -- resolves cleanly, never persists, logs + increments the right error reason", async () => {
     env.SHADOW_MODE_ENABLED = true;
-    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    resolveShadowSampling.mockResolvedValue(true);
     evaluateMock.mockRejectedValue(new Error("real provider failure"));
     const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger);
 
@@ -180,7 +193,7 @@ describe("runShadowDecision", () => {
 
   it("evaluate() rejects with a breaker-open AppError -- records reason breaker_open, not evaluate_threw", async () => {
     env.SHADOW_MODE_ENABLED = true;
-    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    resolveShadowSampling.mockResolvedValue(true);
     evaluateMock.mockRejectedValue(new AppError("AI_UNAVAILABLE", "Unable to generate a decision right now. Please retry shortly."));
 
     await expect(runShadowDecision(baseInput())).resolves.toBeUndefined();
@@ -193,7 +206,7 @@ describe("runShadowDecision", () => {
 
   it("persistence throws -- resolves cleanly, logs + increments persist_failed", async () => {
     env.SHADOW_MODE_ENABLED = true;
-    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    resolveShadowSampling.mockResolvedValue(true);
     evaluateMock.mockResolvedValue(shadowResult());
     prisma.shadowDecision.create.mockRejectedValue(new Error("db down"));
     const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger);
@@ -207,7 +220,7 @@ describe("runShadowDecision", () => {
 
   it("metrics fire the right number of times on success -- timing once, count once, one disagreement.count per real category", async () => {
     env.SHADOW_MODE_ENABLED = true;
-    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    resolveShadowSampling.mockResolvedValue(true);
     // live: YES/conf80/stop; shadow: WAIT (mismatch) at conf 80 (no delta) with a differing controller action -> 2 categories
     evaluateMock.mockResolvedValue(shadowResult({ verdict: "WAIT", confidence: 80, weighted_score: 55, controllerAction: "continue" }));
 
@@ -222,7 +235,7 @@ describe("runShadowDecision", () => {
 
   it("no disagreement categories -- shadow.disagreement.count is never called", async () => {
     env.SHADOW_MODE_ENABLED = true;
-    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    resolveShadowSampling.mockResolvedValue(true);
     evaluateMock.mockResolvedValue(shadowResult({ verdict: "YES", confidence: 80, weighted_score: 78, controllerAction: "stop" }));
 
     await runShadowDecision(baseInput({ liveControllerAction: "stop" }));
@@ -232,7 +245,7 @@ describe("runShadowDecision", () => {
 
   it("live side has no real controller action (cache hit / legacy pipeline) -- persisted controllerComparisonApplicable is false, no controller_action_mismatch even though actions differ", async () => {
     env.SHADOW_MODE_ENABLED = true;
-    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    resolveShadowSampling.mockResolvedValue(true);
     evaluateMock.mockResolvedValue(shadowResult({ verdict: "YES", confidence: 80, weighted_score: 78, controllerAction: "invoke_capability", controllerTargetCapability: "risk" }));
 
     await runShadowDecision(baseInput({ liveControllerAction: null, liveControllerTargetCapability: null }));
@@ -256,7 +269,7 @@ function deferred<T>() {
 describe("concurrency limiting (Gate 3 Increment 1.5)", () => {
   it("at the concurrency limit -- evaluate() is not called for the dropped call, shadow.decision.dropped increments, resolves cleanly", async () => {
     env.SHADOW_MODE_ENABLED = true;
-    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    resolveShadowSampling.mockResolvedValue(true);
     env.SHADOW_MAX_CONCURRENT = 1;
     const first = deferred<ReturnType<typeof shadowResult>>();
     evaluateMock.mockReturnValueOnce(first.promise); // never resolves within this test
@@ -279,7 +292,7 @@ describe("concurrency limiting (Gate 3 Increment 1.5)", () => {
 
   it("a released slot (evaluate() resolved) allows a subsequent call through", async () => {
     env.SHADOW_MODE_ENABLED = true;
-    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    resolveShadowSampling.mockResolvedValue(true);
     env.SHADOW_MAX_CONCURRENT = 1;
     evaluateMock.mockResolvedValueOnce(shadowResult());
     await runShadowDecision(baseInput());
@@ -292,7 +305,7 @@ describe("concurrency limiting (Gate 3 Increment 1.5)", () => {
 
   it("evaluate() throwing still releases its concurrency slot", async () => {
     env.SHADOW_MODE_ENABLED = true;
-    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    resolveShadowSampling.mockResolvedValue(true);
     env.SHADOW_MAX_CONCURRENT = 1;
     evaluateMock.mockRejectedValueOnce(new Error("boom"));
     await runShadowDecision(baseInput());
@@ -308,7 +321,7 @@ describe("concurrency limiting (Gate 3 Increment 1.5)", () => {
 describe("independent timeout (Gate 3 Increment 1.5)", () => {
   it("evaluate() slower than SHADOW_TIMEOUT_MS -- times out, records shadow.decision.error/timeout, never persists", async () => {
     env.SHADOW_MODE_ENABLED = true;
-    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    resolveShadowSampling.mockResolvedValue(true);
     env.SHADOW_TIMEOUT_MS = 20;
     evaluateMock.mockImplementation(
       () => new Promise((resolve) => setTimeout(() => resolve(shadowResult()), 300)),
@@ -323,7 +336,7 @@ describe("independent timeout (Gate 3 Increment 1.5)", () => {
 
   it("evaluate() faster than SHADOW_TIMEOUT_MS -- succeeds normally, timeout reason never recorded", async () => {
     env.SHADOW_MODE_ENABLED = true;
-    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    resolveShadowSampling.mockResolvedValue(true);
     env.SHADOW_TIMEOUT_MS = 5000;
     evaluateMock.mockImplementation(
       () => new Promise((resolve) => setTimeout(() => resolve(shadowResult()), 10)),
@@ -337,7 +350,7 @@ describe("independent timeout (Gate 3 Increment 1.5)", () => {
 
   it("a released slot after a timeout admits the next call (finally releases at the timeout boundary, not when the orphaned call eventually settles)", async () => {
     env.SHADOW_MODE_ENABLED = true;
-    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    resolveShadowSampling.mockResolvedValue(true);
     env.SHADOW_MAX_CONCURRENT = 1;
     env.SHADOW_TIMEOUT_MS = 20;
     evaluateMock.mockImplementationOnce(
@@ -356,7 +369,7 @@ describe("independent timeout (Gate 3 Increment 1.5)", () => {
 describe("independent circuit breaker wiring (Gate 3 Increment 1.5)", () => {
   it("evaluate() is called with shadow-specific synthesizer/stageExecutor, not left undefined", async () => {
     env.SHADOW_MODE_ENABLED = true;
-    env.SHADOW_SAMPLE_RATE_PERCENT = 100;
+    resolveShadowSampling.mockResolvedValue(true);
     evaluateMock.mockResolvedValue(shadowResult());
 
     await runShadowDecision(baseInput());

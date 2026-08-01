@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Card } from "@tremor/react";
 import type { AdminShadowHealthResponse } from "@argus/shared";
 
@@ -33,6 +34,13 @@ function formatRelativeTime(iso: string | null): string {
 // documented limitation) -- surfaced in the caption below, not just in code
 // comments, so an operator running multiple apps/api instances isn't misled
 // into reading this as a global view.
+//
+// Gate 3 Increment 1.8 revision (post-review): this card is a cross-tenant
+// health view, so "Global %" always shows the real global rollout percent
+// -- never a per-team resolved "effective" percent, which would be
+// ambiguous here (which team's number would it even be?). Exceptions to
+// the global rule are surfaced honestly as a count instead, linking to the
+// Rollout Controller page for the actual per-team breakdown.
 export function ShadowHealthCard({ health }: { health: AdminShadowHealthResponse }) {
   return (
     <Card>
@@ -48,8 +56,20 @@ export function ShadowHealthCard({ health }: { health: AdminShadowHealthResponse
 
       <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
         <div>
-          <dt className="text-xs text-gray-500">Sampling</dt>
-          <dd className="mt-0.5 text-sm font-medium text-gray-900">{health.samplePercent}%</dd>
+          <dt className="text-xs text-gray-500">Global %</dt>
+          <dd className="mt-0.5 text-sm font-medium text-gray-900">{health.globalPercent}%</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-gray-500">Overrides</dt>
+          <dd className="mt-0.5 text-sm font-medium text-gray-900">
+            {health.activeOverrideCount > 0 ? (
+              <Link href="/admin/shadow-rollout" className="text-teal-700 hover:underline">
+                {health.activeOverrideCount} active
+              </Link>
+            ) : (
+              "None"
+            )}
+          </dd>
         </div>
         <div>
           <dt className="text-xs text-gray-500">Last decision</dt>

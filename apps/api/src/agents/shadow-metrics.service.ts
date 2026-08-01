@@ -3,9 +3,9 @@ import type { DisagreementCategory } from "./decision-disagreement.js";
 
 /**
  * Gate 3 Shadow Mode, Increment 2 groundwork -- real aggregate queries
- * over the ShadowDecision table, built ahead of real traffic
- * (SHADOW_SAMPLE_RATE_PERCENT is still 0 everywhere) so there's zero lag
- * between raising the sample rate and having visibility.
+ * over the ShadowDecision table, built ahead of real traffic (the
+ * DB-backed rollout percent, Increment 1.8, is still 0 everywhere) so
+ * there's zero lag between raising the sample rate and having visibility.
  *
  * Deliberately scoped to what's actually queryable from ShadowDecision:
  * volume over time, verdict agreement rate, confidence drift, cost per

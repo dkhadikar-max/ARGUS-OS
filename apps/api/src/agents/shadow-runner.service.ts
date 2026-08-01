@@ -9,7 +9,7 @@ import { CircuitBreakerProvider, type CircuitState } from "./providers/circuit-b
 import { ClaudeProvider } from "./providers/claude-provider.js";
 import { calculateInferenceCostUsd } from "./decision-value.service.js";
 import { compareForShadow, type NormalizedShadowOutcome } from "./decision-disagreement.js";
-import { shouldSampleShadow } from "./shadow-sampling.js";
+import { resolveShadowSampling } from "./shadow-rollout.service.js";
 import { tryAcquireShadowSlot, releaseShadowSlot } from "./shadow-concurrency.js";
 import { raceWithTimeout, ShadowTimeoutError } from "./shadow-timeout.js";
 import { recordShadowError } from "./shadow-error-log.js";
@@ -57,9 +57,11 @@ export function getShadowCircuitBreakerState(): CircuitState {
  * Gate 3 Shadow Mode, Increment 1 -- runs the v5.0 DecisionEngine
  * (evaluate()) in shadow alongside the live decision path, on a sampled
  * percentage of real traffic, and persists a comparable ShadowDecision
- * row. Gated internally on both env.SHADOW_MODE_ENABLED and
- * env.SHADOW_SAMPLE_RATE_PERCENT (so this function is safe to call
- * unconditionally in tests without duplicating the gating logic).
+ * row. Gated internally on both env.SHADOW_MODE_ENABLED (the hard,
+ * deploy-time kill switch) and resolveShadowSampling() (Gate 3 Increment
+ * 1.8's DB-backed rollout config -- global percent + per-team overrides,
+ * editable at runtime with no restart) -- so this function is safe to
+ * call unconditionally in tests without duplicating the gating logic.
  *
  * Every failure mode (evaluate() throws, persistence throws) is caught
  * internally -- this function always resolves, never rejects, and never
@@ -87,7 +89,7 @@ export interface ShadowRunnerInput {
 
 export async function runShadowDecision(input: ShadowRunnerInput): Promise<void> {
   if (!env.SHADOW_MODE_ENABLED) return;
-  if (!shouldSampleShadow(input.prospectId, env.SHADOW_SAMPLE_RATE_PERCENT)) return;
+  if (!(await resolveShadowSampling(input.prospectId, input.teamId))) return;
 
   // Gate 3 Increment 1.5 -- concurrency cap. Occupies a slot only for
   // traffic that's already passed both gates above; excess sampled

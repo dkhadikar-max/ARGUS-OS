@@ -7,7 +7,8 @@ function health(overrides: Partial<AdminShadowHealthResponse> = {}): AdminShadow
   return {
     scope: { teamId: null },
     enabled: true,
-    samplePercent: 5,
+    globalPercent: 5,
+    activeOverrideCount: 0,
     circuitBreakerState: "closed",
     lastDecisionAt: "2026-07-31T11:59:37.000Z",
     verdictAgreementRate24h: 0.964,
@@ -28,10 +29,22 @@ describe("ShadowHealthCard", () => {
     expect(screen.getByText("Disabled")).toBeInTheDocument();
   });
 
-  it("renders sampling percent and error count", () => {
-    render(<ShadowHealthCard health={health({ samplePercent: 5, recentErrorCount1h: 3 })} />);
+  it("renders the global percent and error count", () => {
+    render(<ShadowHealthCard health={health({ globalPercent: 5, recentErrorCount1h: 3 })} />);
     expect(screen.getByText("5%")).toBeInTheDocument();
     expect(screen.getByText("3")).toBeInTheDocument();
+  });
+
+  it("shows 'None' when there are no active overrides", () => {
+    render(<ShadowHealthCard health={health({ activeOverrideCount: 0 })} />);
+    expect(screen.getByText("None")).toBeInTheDocument();
+  });
+
+  it("shows a clickable active-override count linking to the Rollout Controller page", () => {
+    render(<ShadowHealthCard health={health({ activeOverrideCount: 3 })} />);
+    const link = screen.getByRole("link", { name: "3 active" });
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute("href", "/admin/shadow-rollout");
   });
 
   it("renders rounded agreement percent when decisions exist in the window", () => {

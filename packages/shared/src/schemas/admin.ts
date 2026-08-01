@@ -171,7 +171,15 @@ export const adminShadowHealthResponseSchema = z.object({
     teamId: z.string().nullable(),
   }),
   enabled: z.boolean(),
-  samplePercent: z.number().int().min(0).max(100),
+  // Gate 3 Increment 1.8 revision -- always the GLOBAL rollout percent,
+  // never a resolved per-team effective percent. This card represents
+  // cross-tenant system health; showing an "effective" percent derived
+  // from whichever team happens to have an override is ambiguous on a
+  // global view. activeOverrideCount is the honest way to surface "there
+  // are exceptions to the global rule" without picking one team's number
+  // to represent the whole system.
+  globalPercent: z.number().int().min(0).max(100),
+  activeOverrideCount: z.number().int().nonnegative(),
   circuitBreakerState: z.enum(["closed", "open", "half_open"]),
   lastDecisionAt: z.string().datetime().nullable(),
   verdictAgreementRate24h: z.number().min(0).max(1),
@@ -179,3 +187,103 @@ export const adminShadowHealthResponseSchema = z.object({
   recentErrorCount1h: z.number().int().nonnegative(),
 });
 export type AdminShadowHealthResponse = z.infer<typeof adminShadowHealthResponseSchema>;
+
+// Gate 3 Increment 1.8 -- Shadow Rollout Controller. env.SHADOW_MODE_ENABLED
+// remains the hard, deploy-time kill switch (unaffected by any of this);
+// `enabled` here is the DB-backed, dashboard-editable soft switch on top
+// of it. A team override's percent of 0/100 IS the deny/allow list --
+// deliberately no separate boolean list.
+
+const shadowRolloutTeamOverrideSchema = z.object({
+  teamId: z.string(),
+  teamName: z.string(),
+  percent: z.number().int().min(0).max(100),
+  version: z.number().int(),
+  reason: z.string().nullable(),
+  expiresAt: z.string().datetime().nullable(),
+  updatedAt: z.string().datetime(),
+  updatedBy: z.string(),
+});
+
+// GET /api/v1/admin/shadow-rollout
+export const adminShadowRolloutResponseSchema = z.object({
+  enabled: z.boolean(),
+  globalPercent: z.number().int().min(0).max(100),
+  version: z.number().int(),
+  teamOverrides: z.array(shadowRolloutTeamOverrideSchema),
+});
+export type AdminShadowRolloutResponse = z.infer<typeof adminShadowRolloutResponseSchema>;
+
+// PUT /api/v1/admin/shadow-rollout
+export const updateShadowRolloutConfigRequestSchema = z.object({
+  enabled: z.boolean(),
+  globalPercent: z.number().int().min(0).max(100),
+});
+export type UpdateShadowRolloutConfigRequest = z.infer<typeof updateShadowRolloutConfigRequestSchema>;
+
+// PUT/DELETE /api/v1/admin/shadow-rollout/teams/:teamId
+export const upsertShadowRolloutTeamOverrideParamsSchema = z.object({
+  teamId: z.string(),
+});
+export type UpsertShadowRolloutTeamOverrideParams = z.infer<typeof upsertShadowRolloutTeamOverrideParamsSchema>;
+
+export const upsertShadowRolloutTeamOverrideRequestSchema = z.object({
+  percent: z.number().int().min(0).max(100),
+  reason: z.string().optional(),
+  expiresAt: z.string().datetime().optional(),
+});
+export type UpsertShadowRolloutTeamOverrideRequest = z.infer<typeof upsertShadowRolloutTeamOverrideRequestSchema>;
+
+// GET /api/v1/admin/shadow-rollout/audit -- plain keyset pagination
+// (limit + before), not an opaque cursor token, matching the from/to
+// datetime-string convention adminListShadowDecisionsQuerySchema already
+// established.
+export const adminShadowRolloutAuditQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  before: z.string().datetime().optional(),
+});
+export type AdminShadowRolloutAuditQuery = z.infer<typeof adminShadowRolloutAuditQuerySchema>;
+
+export const adminShadowRolloutAuditResponseSchema = z.object({
+  entries: z.array(
+    z.object({
+      id: z.string(),
+      entityType: z.string(),
+      entityId: z.string(),
+      action: z.string(),
+      actorId: z.string(),
+      beforeState: z.unknown().nullable(),
+      afterState: z.unknown().nullable(),
+      createdAt: z.string().datetime(),
+    }),
+  ),
+  nextBefore: z.string().datetime().nullable(),
+});
+export type AdminShadowRolloutAuditResponse = z.infer<typeof adminShadowRolloutAuditResponseSchema>;
+
+// GET /api/v1/admin/shadow-rollout/preview -- Dry Run Preview. Built on
+// the exact same resolution function (shadow-rollout.service.ts's
+// previewShadowSampling) the live path uses, so this can never disagree
+// with real behavior.
+export const adminShadowRolloutPreviewQuerySchema = z.object({
+  prospectId: z.string(),
+  teamId: z.string(),
+});
+export type AdminShadowRolloutPreviewQuery = z.infer<typeof adminShadowRolloutPreviewQuerySchema>;
+
+export const adminShadowRolloutPreviewResponseSchema = z.object({
+  enabled: z.boolean(),
+  globalPercent: z.number().int().min(0).max(100),
+  override: z
+    .object({
+      teamId: z.string(),
+      percent: z.number().int().min(0).max(100),
+      reason: z.string().nullable(),
+      expiresAt: z.string().datetime().nullable(),
+    })
+    .nullable(),
+  effectivePercent: z.number().int().min(0).max(100),
+  bucket: z.number().int().min(0).max(99),
+  sampled: z.boolean(),
+});
+export type AdminShadowRolloutPreviewResponse = z.infer<typeof adminShadowRolloutPreviewResponseSchema>;
